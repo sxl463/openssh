@@ -57,16 +57,16 @@
         -:   55:}
         -:   56:
         -:   57:int
-      152:   58:sshbuf_get_u32(struct sshbuf *buf, u_int32_t *valp)
+      176:   58:sshbuf_get_u32(struct sshbuf *buf, u_int32_t *valp)
         -:   59:{
-      152:   60:	const u_char *p = sshbuf_ptr(buf);
+      176:   60:	const u_char *p = sshbuf_ptr(buf);
         -:   61:	int r;
         -:   62:
-      152:   63:	if ((r = sshbuf_consume(buf, 4)) < 0)
+      176:   63:	if ((r = sshbuf_consume(buf, 4)) < 0)
     #####:   64:		return r;
-      152:   65:	if (valp != NULL)
-      149:   66:		*valp = PEEK_U32(p);
-      152:   67:	return 0;
+      176:   65:	if (valp != NULL)
+      172:   66:		*valp = PEEK_U32(p);
+      176:   67:	return 0;
         -:   68:}
         -:   69:
         -:   70:int
@@ -83,135 +83,135 @@
         -:   81:}
         -:   82:
         -:   83:int
-      215:   84:sshbuf_get_u8(struct sshbuf *buf, u_char *valp)
+      260:   84:sshbuf_get_u8(struct sshbuf *buf, u_char *valp)
         -:   85:{
-      215:   86:	const u_char *p = sshbuf_ptr(buf);
+      260:   86:	const u_char *p = sshbuf_ptr(buf);
         -:   87:	int r;
         -:   88:
-      215:   89:	if ((r = sshbuf_consume(buf, 1)) < 0)
+      260:   89:	if ((r = sshbuf_consume(buf, 1)) < 0)
     #####:   90:		return r;
-      215:   91:	if (valp != NULL)
-      164:   92:		*valp = (u_int8_t)*p;
-      215:   93:	return 0;
+      260:   91:	if (valp != NULL)
+      192:   92:		*valp = (u_int8_t)*p;
+      260:   93:	return 0;
         -:   94:}
         -:   95:
         -:   96:int
-       54:   97:sshbuf_get_string(struct sshbuf *buf, u_char **valp, size_t *lenp)
+       72:   97:sshbuf_get_string(struct sshbuf *buf, u_char **valp, size_t *lenp)
         -:   98:{
         -:   99:	const u_char *val;
         -:  100:	size_t len;
         -:  101:	int r;
         -:  102:
-       54:  103:	if (valp != NULL)
-       24:  104:		*valp = NULL;
-       54:  105:	if (lenp != NULL)
-       24:  106:		*lenp = 0;
-       54:  107:	if ((r = sshbuf_get_string_direct(buf, &val, &len)) < 0)
+       72:  103:	if (valp != NULL)
+       32:  104:		*valp = NULL;
+       72:  105:	if (lenp != NULL)
+       32:  106:		*lenp = 0;
+       72:  107:	if ((r = sshbuf_get_string_direct(buf, &val, &len)) < 0)
     #####:  108:		return r;
-       54:  109:	if (valp != NULL) {
-       24:  110:		if ((*valp = malloc(len + 1)) == NULL) {
+       72:  109:	if (valp != NULL) {
+       32:  110:		if ((*valp = malloc(len + 1)) == NULL) {
         -:  111:			SSHBUF_DBG(("SSH_ERR_ALLOC_FAIL"));
     #####:  112:			return SSH_ERR_ALLOC_FAIL;
         -:  113:		}
-       24:  114:		if (len != 0)
-       24:  115:			memcpy(*valp, val, len);
-       24:  116:		(*valp)[len] = '\0';
+       32:  114:		if (len != 0)
+       32:  115:			memcpy(*valp, val, len);
+       32:  116:		(*valp)[len] = '\0';
         -:  117:	}
-       54:  118:	if (lenp != NULL)
-       24:  119:		*lenp = len;
-       54:  120:	return 0;
+       72:  118:	if (lenp != NULL)
+       32:  119:		*lenp = len;
+       72:  120:	return 0;
         -:  121:}
         -:  122:
         -:  123:int
-      257:  124:sshbuf_get_string_direct(struct sshbuf *buf, const u_char **valp, size_t *lenp)
+      316:  124:sshbuf_get_string_direct(struct sshbuf *buf, const u_char **valp, size_t *lenp)
         -:  125:{
         -:  126:	size_t len;
         -:  127:	const u_char *p;
         -:  128:	int r;
         -:  129:
-      257:  130:	if (valp != NULL)
-      158:  131:		*valp = NULL;
-      257:  132:	if (lenp != NULL)
-      158:  133:		*lenp = 0;
-      257:  134:	if ((r = sshbuf_peek_string_direct(buf, &p, &len)) < 0)
+      316:  130:	if (valp != NULL)
+      184:  131:		*valp = NULL;
+      316:  132:	if (lenp != NULL)
+      184:  133:		*lenp = 0;
+      316:  134:	if ((r = sshbuf_peek_string_direct(buf, &p, &len)) < 0)
     #####:  135:		return r;
-      257:  136:	if (valp != NULL)
-      158:  137:		*valp = p;
-      257:  138:	if (lenp != NULL)
-      158:  139:		*lenp = len;
-      257:  140:	if (sshbuf_consume(buf, len + 4) != 0) {
+      316:  136:	if (valp != NULL)
+      184:  137:		*valp = p;
+      316:  138:	if (lenp != NULL)
+      184:  139:		*lenp = len;
+      316:  140:	if (sshbuf_consume(buf, len + 4) != 0) {
         -:  141:		/* Shouldn't happen */
         -:  142:		SSHBUF_DBG(("SSH_ERR_INTERNAL_ERROR"));
         -:  143:		SSHBUF_ABORT();
     #####:  144:		return SSH_ERR_INTERNAL_ERROR;
         -:  145:	}
-      257:  146:	return 0;
+      316:  146:	return 0;
         -:  147:}
         -:  148:
         -:  149:int
-      377:  150:sshbuf_peek_string_direct(const struct sshbuf *buf, const u_char **valp,
+      476:  150:sshbuf_peek_string_direct(const struct sshbuf *buf, const u_char **valp,
         -:  151:    size_t *lenp)
         -:  152:{
         -:  153:	u_int32_t len;
-      377:  154:	const u_char *p = sshbuf_ptr(buf);
+      476:  154:	const u_char *p = sshbuf_ptr(buf);
         -:  155:
-      377:  156:	if (valp != NULL)
-      377:  157:		*valp = NULL;
-      377:  158:	if (lenp != NULL)
-      377:  159:		*lenp = 0;
-      377:  160:	if (sshbuf_len(buf) < 4) {
+      476:  156:	if (valp != NULL)
+      476:  157:		*valp = NULL;
+      476:  158:	if (lenp != NULL)
+      476:  159:		*lenp = 0;
+      476:  160:	if (sshbuf_len(buf) < 4) {
         -:  161:		SSHBUF_DBG(("SSH_ERR_MESSAGE_INCOMPLETE"));
     #####:  162:		return SSH_ERR_MESSAGE_INCOMPLETE;
         -:  163:	}
-      377:  164:	len = PEEK_U32(p);
-      377:  165:	if (len > SSHBUF_SIZE_MAX - 4) {
+      476:  164:	len = PEEK_U32(p);
+      476:  165:	if (len > SSHBUF_SIZE_MAX - 4) {
         -:  166:		SSHBUF_DBG(("SSH_ERR_STRING_TOO_LARGE"));
     #####:  167:		return SSH_ERR_STRING_TOO_LARGE;
         -:  168:	}
-      377:  169:	if (sshbuf_len(buf) - 4 < len) {
+      476:  169:	if (sshbuf_len(buf) - 4 < len) {
         -:  170:		SSHBUF_DBG(("SSH_ERR_MESSAGE_INCOMPLETE"));
     #####:  171:		return SSH_ERR_MESSAGE_INCOMPLETE;
         -:  172:	}
-      377:  173:	if (valp != NULL)
-      377:  174:		*valp = p + 4;
-      377:  175:	if (lenp != NULL)
-      377:  176:		*lenp = len;
-      377:  177:	return 0;
+      476:  173:	if (valp != NULL)
+      476:  174:		*valp = p + 4;
+      476:  175:	if (lenp != NULL)
+      476:  176:		*lenp = len;
+      476:  177:	return 0;
         -:  178:}
         -:  179:
         -:  180:int
-       90:  181:sshbuf_get_cstring(struct sshbuf *buf, char **valp, size_t *lenp)
+      120:  181:sshbuf_get_cstring(struct sshbuf *buf, char **valp, size_t *lenp)
         -:  182:{
         -:  183:	size_t len;
         -:  184:	const u_char *p, *z;
         -:  185:	int r;
         -:  186:
-       90:  187:	if (valp != NULL)
-       90:  188:		*valp = NULL;
-       90:  189:	if (lenp != NULL)
+      120:  187:	if (valp != NULL)
+      120:  188:		*valp = NULL;
+      120:  189:	if (lenp != NULL)
     #####:  190:		*lenp = 0;
-       90:  191:	if ((r = sshbuf_peek_string_direct(buf, &p, &len)) != 0)
+      120:  191:	if ((r = sshbuf_peek_string_direct(buf, &p, &len)) != 0)
     #####:  192:		return r;
         -:  193:	/* Allow a \0 only at the end of the string */
-      168:  194:	if (len > 0 &&
-       78:  195:	    (z = memchr(p , '\0', len)) != NULL && z < p + len - 1) {
+      224:  194:	if (len > 0 &&
+      104:  195:	    (z = memchr(p , '\0', len)) != NULL && z < p + len - 1) {
         -:  196:		SSHBUF_DBG(("SSH_ERR_INVALID_FORMAT"));
     #####:  197:		return SSH_ERR_INVALID_FORMAT;
         -:  198:	}
-       90:  199:	if ((r = sshbuf_skip_string(buf)) != 0)
+      120:  199:	if ((r = sshbuf_skip_string(buf)) != 0)
     #####:  200:		return -1;
-       90:  201:	if (valp != NULL) {
-       90:  202:		if ((*valp = malloc(len + 1)) == NULL) {
+      120:  201:	if (valp != NULL) {
+      120:  202:		if ((*valp = malloc(len + 1)) == NULL) {
         -:  203:			SSHBUF_DBG(("SSH_ERR_ALLOC_FAIL"));
     #####:  204:			return SSH_ERR_ALLOC_FAIL;
         -:  205:		}
-       90:  206:		if (len != 0)
-       78:  207:			memcpy(*valp, p, len);
-       90:  208:		(*valp)[len] = '\0';
+      120:  206:		if (len != 0)
+      104:  207:			memcpy(*valp, p, len);
+      120:  208:		(*valp)[len] = '\0';
         -:  209:	}
-       90:  210:	if (lenp != NULL)
+      120:  210:	if (lenp != NULL)
     #####:  211:		*lenp = (size_t)len;
-       90:  212:	return 0;
+      120:  212:	return 0;
         -:  213:}
         -:  214:
         -:  215:int
@@ -235,22 +235,22 @@
         -:  233:}
         -:  234:
         -:  235:int
-      394:  236:sshbuf_put(struct sshbuf *buf, const void *v, size_t len)
+      456:  236:sshbuf_put(struct sshbuf *buf, const void *v, size_t len)
         -:  237:{
         -:  238:	u_char *p;
         -:  239:	int r;
         -:  240:
-      394:  241:	if ((r = sshbuf_reserve(buf, len, &p)) < 0)
+      456:  241:	if ((r = sshbuf_reserve(buf, len, &p)) < 0)
     #####:  242:		return r;
-      394:  243:	if (len != 0)
-      394:  244:		memcpy(p, v, len);
-      394:  245:	return 0;
+      456:  243:	if (len != 0)
+      456:  244:		memcpy(p, v, len);
+      456:  245:	return 0;
         -:  246:}
         -:  247:
         -:  248:int
-        3:  249:sshbuf_putb(struct sshbuf *buf, const struct sshbuf *v)
+        4:  249:sshbuf_putb(struct sshbuf *buf, const struct sshbuf *v)
         -:  250:{
-        3:  251:	return sshbuf_put(buf, sshbuf_ptr(v), sshbuf_len(v));
+        4:  251:	return sshbuf_put(buf, sshbuf_ptr(v), sshbuf_len(v));
         -:  252:}
         -:  253:
         -:  254:int
@@ -311,15 +311,15 @@
         -:  309:}
         -:  310:
         -:  311:int
-      272:  312:sshbuf_put_u32(struct sshbuf *buf, u_int32_t val)
+      344:  312:sshbuf_put_u32(struct sshbuf *buf, u_int32_t val)
         -:  313:{
         -:  314:	u_char *p;
         -:  315:	int r;
         -:  316:
-      272:  317:	if ((r = sshbuf_reserve(buf, 4, &p)) < 0)
+      344:  317:	if ((r = sshbuf_reserve(buf, 4, &p)) < 0)
     #####:  318:		return r;
-      272:  319:	POKE_U32(p, val);
-      272:  320:	return 0;
+      344:  319:	POKE_U32(p, val);
+      344:  320:	return 0;
         -:  321:}
         -:  322:
         -:  323:int
@@ -335,39 +335,39 @@
         -:  333:}
         -:  334:
         -:  335:int
-      356:  336:sshbuf_put_u8(struct sshbuf *buf, u_char val)
+      456:  336:sshbuf_put_u8(struct sshbuf *buf, u_char val)
         -:  337:{
         -:  338:	u_char *p;
         -:  339:	int r;
         -:  340:
-      356:  341:	if ((r = sshbuf_reserve(buf, 1, &p)) < 0)
+      456:  341:	if ((r = sshbuf_reserve(buf, 1, &p)) < 0)
     #####:  342:		return r;
-      356:  343:	p[0] = val;
-      356:  344:	return 0;
+      456:  343:	p[0] = val;
+      456:  344:	return 0;
         -:  345:}
         -:  346:
         -:  347:int
-      272:  348:sshbuf_put_string(struct sshbuf *buf, const void *v, size_t len)
+      344:  348:sshbuf_put_string(struct sshbuf *buf, const void *v, size_t len)
         -:  349:{
         -:  350:	u_char *d;
         -:  351:	int r;
         -:  352:
-      272:  353:	if (len > SSHBUF_SIZE_MAX - 4) {
+      344:  353:	if (len > SSHBUF_SIZE_MAX - 4) {
         -:  354:		SSHBUF_DBG(("SSH_ERR_NO_BUFFER_SPACE"));
     #####:  355:		return SSH_ERR_NO_BUFFER_SPACE;
         -:  356:	}
-      272:  357:	if ((r = sshbuf_reserve(buf, len + 4, &d)) < 0)
+      344:  357:	if ((r = sshbuf_reserve(buf, len + 4, &d)) < 0)
     #####:  358:		return r;
-      272:  359:	POKE_U32(d, len);
-      272:  360:	if (len != 0)
-      257:  361:		memcpy(d + 4, v, len);
-      272:  362:	return 0;
+      344:  359:	POKE_U32(d, len);
+      344:  360:	if (len != 0)
+      324:  361:		memcpy(d + 4, v, len);
+      344:  362:	return 0;
         -:  363:}
         -:  364:
         -:  365:int
-      144:  366:sshbuf_put_cstring(struct sshbuf *buf, const char *v)
+      192:  366:sshbuf_put_cstring(struct sshbuf *buf, const char *v)
         -:  367:{
-      144:  368:	return sshbuf_put_string(buf, (u_char *)v, v == NULL ? 0 : strlen(v));
+      192:  368:	return sshbuf_put_string(buf, (u_char *)v, v == NULL ? 0 : strlen(v));
         -:  369:}
         -:  370:
         -:  371:int
@@ -377,90 +377,90 @@
         -:  375:}
         -:  376:
         -:  377:int
-        3:  378:sshbuf_froms(struct sshbuf *buf, struct sshbuf **bufp)
+        4:  378:sshbuf_froms(struct sshbuf *buf, struct sshbuf **bufp)
         -:  379:{
         -:  380:	const u_char *p;
         -:  381:	size_t len;
         -:  382:	struct sshbuf *ret;
         -:  383:	int r;
         -:  384:
-        3:  385:	if (buf == NULL || bufp == NULL)
+        4:  385:	if (buf == NULL || bufp == NULL)
     #####:  386:		return SSH_ERR_INVALID_ARGUMENT;
-        3:  387:	*bufp = NULL;
-        3:  388:	if ((r = sshbuf_peek_string_direct(buf, &p, &len)) != 0)
+        4:  387:	*bufp = NULL;
+        4:  388:	if ((r = sshbuf_peek_string_direct(buf, &p, &len)) != 0)
     #####:  389:		return r;
-        3:  390:	if ((ret = sshbuf_from(p, len)) == NULL)
+        4:  390:	if ((ret = sshbuf_from(p, len)) == NULL)
     #####:  391:		return SSH_ERR_ALLOC_FAIL;
-        3:  392:	if ((r = sshbuf_consume(buf, len + 4)) != 0 ||  /* Shouldn't happen */
+        4:  392:	if ((r = sshbuf_consume(buf, len + 4)) != 0 ||  /* Shouldn't happen */
         -:  393:	    (r = sshbuf_set_parent(ret, buf)) != 0) {
     #####:  394:		sshbuf_free(ret);
     #####:  395:		return r;
         -:  396:	}
-        3:  397:	*bufp = ret;
-        3:  398:	return 0;
+        4:  397:	*bufp = ret;
+        4:  398:	return 0;
         -:  399:}
         -:  400:
         -:  401:int
-        3:  402:sshbuf_put_bignum2_bytes(struct sshbuf *buf, const void *v, size_t len)
+        4:  402:sshbuf_put_bignum2_bytes(struct sshbuf *buf, const void *v, size_t len)
         -:  403:{
         -:  404:	u_char *d;
-        3:  405:	const u_char *s = (const u_char *)v;
+        4:  405:	const u_char *s = (const u_char *)v;
         -:  406:	int r, prepend;
         -:  407:
-        3:  408:	if (len > SSHBUF_SIZE_MAX - 5) {
+        4:  408:	if (len > SSHBUF_SIZE_MAX - 5) {
         -:  409:		SSHBUF_DBG(("SSH_ERR_NO_BUFFER_SPACE"));
     #####:  410:		return SSH_ERR_NO_BUFFER_SPACE;
         -:  411:	}
         -:  412:	/* Skip leading zero bytes */
-        3:  413:	for (; len > 0 && *s == 0; len--, s++)
+        4:  413:	for (; len > 0 && *s == 0; len--, s++)
         -:  414:		;
         -:  415:	/*
         -:  416:	 * If most significant bit is set then prepend a zero byte to
         -:  417:	 * avoid interpretation as a negative number.
         -:  418:	 */
-        3:  419:	prepend = len > 0 && (s[0] & 0x80) != 0;
-        3:  420:	if ((r = sshbuf_reserve(buf, len + 4 + prepend, &d)) < 0)
+        4:  419:	prepend = len > 0 && (s[0] & 0x80) != 0;
+        4:  420:	if ((r = sshbuf_reserve(buf, len + 4 + prepend, &d)) < 0)
     #####:  421:		return r;
-        3:  422:	POKE_U32(d, len + prepend);
-        3:  423:	if (prepend)
-    #####:  424:		d[4] = 0;
-        3:  425:	if (len != 0)
-        3:  426:		memcpy(d + 4 + prepend, s, len);
-        3:  427:	return 0;
+        4:  422:	POKE_U32(d, len + prepend);
+        4:  423:	if (prepend)
+        1:  424:		d[4] = 0;
+        4:  425:	if (len != 0)
+        4:  426:		memcpy(d + 4 + prepend, s, len);
+        4:  427:	return 0;
         -:  428:}
         -:  429:
         -:  430:int
-       18:  431:sshbuf_get_bignum2_bytes_direct(struct sshbuf *buf,
+       24:  431:sshbuf_get_bignum2_bytes_direct(struct sshbuf *buf,
         -:  432:    const u_char **valp, size_t *lenp)
         -:  433:{
         -:  434:	const u_char *d;
         -:  435:	size_t len, olen;
         -:  436:	int r;
         -:  437:
-       18:  438:	if ((r = sshbuf_peek_string_direct(buf, &d, &olen)) < 0)
+       24:  438:	if ((r = sshbuf_peek_string_direct(buf, &d, &olen)) < 0)
     #####:  439:		return r;
-       18:  440:	len = olen;
+       24:  440:	len = olen;
         -:  441:	/* Refuse negative (MSB set) bignums */
-       18:  442:	if ((len != 0 && (*d & 0x80) != 0))
+       24:  442:	if ((len != 0 && (*d & 0x80) != 0))
     #####:  443:		return SSH_ERR_BIGNUM_IS_NEGATIVE;
         -:  444:	/* Refuse overlong bignums, allow prepended \0 to avoid MSB set */
-       18:  445:	if (len > SSHBUF_MAX_BIGNUM + 1 ||
+       24:  445:	if (len > SSHBUF_MAX_BIGNUM + 1 ||
     #####:  446:	    (len == SSHBUF_MAX_BIGNUM + 1 && *d != 0))
     #####:  447:		return SSH_ERR_BIGNUM_TOO_LARGE;
         -:  448:	/* Trim leading zeros */
-       44:  449:	while (len > 0 && *d == 0x00) {
-        8:  450:		d++;
-        8:  451:		len--;
+       60:  449:	while (len > 0 && *d == 0x00) {
+       12:  450:		d++;
+       12:  451:		len--;
         -:  452:	}
-       18:  453:	if (valp != NULL)
-       18:  454:		*valp = d;
-       18:  455:	if (lenp != NULL)
-       18:  456:		*lenp = len;
-       18:  457:	if (sshbuf_consume(buf, olen + 4) != 0) {
+       24:  453:	if (valp != NULL)
+       24:  454:		*valp = d;
+       24:  455:	if (lenp != NULL)
+       24:  456:		*lenp = len;
+       24:  457:	if (sshbuf_consume(buf, olen + 4) != 0) {
         -:  458:		/* Shouldn't happen */
         -:  459:		SSHBUF_DBG(("SSH_ERR_INTERNAL_ERROR"));
         -:  460:		SSHBUF_ABORT();
     #####:  461:		return SSH_ERR_INTERNAL_ERROR;
         -:  462:	}
-       18:  463:	return 0;
+       24:  463:	return 0;
         -:  464:}

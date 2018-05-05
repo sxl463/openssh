@@ -50,49 +50,49 @@
         -:   48:static int _in_raw_mode = 0;
         -:   49:
         -:   50:struct termios *
-        3:   51:get_saved_tio(void)
+        4:   51:get_saved_tio(void)
         -:   52:{
-        3:   53:	return _in_raw_mode ? &_saved_tio : NULL;
+        4:   53:	return _in_raw_mode ? &_saved_tio : NULL;
         -:   54:}
         -:   55:
         -:   56:void
-        6:   57:leave_raw_mode(int quiet)
+        8:   57:leave_raw_mode(int quiet)
         -:   58:{
-        6:   59:	if (!_in_raw_mode)
-        9:   60:		return;
-        3:   61:	if (tcsetattr(fileno(stdin), TCSADRAIN, &_saved_tio) == -1) {
+        8:   59:	if (!_in_raw_mode)
+       12:   60:		return;
+        4:   61:	if (tcsetattr(fileno(stdin), TCSADRAIN, &_saved_tio) == -1) {
     #####:   62:		if (!quiet)
     #####:   63:			perror("tcsetattr");
         -:   64:	} else
-        3:   65:		_in_raw_mode = 0;
+        4:   65:		_in_raw_mode = 0;
         -:   66:}
         -:   67:
         -:   68:void
-        3:   69:enter_raw_mode(int quiet)
+        4:   69:enter_raw_mode(int quiet)
         -:   70:{
         -:   71:	struct termios tio;
         -:   72:
-        3:   73:	if (tcgetattr(fileno(stdin), &tio) == -1) {
+        4:   73:	if (tcgetattr(fileno(stdin), &tio) == -1) {
     #####:   74:		if (!quiet)
     #####:   75:			perror("tcgetattr");
-        3:   76:		return;
+        4:   76:		return;
         -:   77:	}
-        3:   78:	_saved_tio = tio;
-        3:   79:	tio.c_iflag |= IGNPAR;
-        3:   80:	tio.c_iflag &= ~(ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXANY | IXOFF);
+        4:   78:	_saved_tio = tio;
+        4:   79:	tio.c_iflag |= IGNPAR;
+        4:   80:	tio.c_iflag &= ~(ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXANY | IXOFF);
         -:   81:#ifdef IUCLC
-        3:   82:	tio.c_iflag &= ~IUCLC;
+        4:   82:	tio.c_iflag &= ~IUCLC;
         -:   83:#endif
-        3:   84:	tio.c_lflag &= ~(ISIG | ICANON | ECHO | ECHOE | ECHOK | ECHONL);
+        4:   84:	tio.c_lflag &= ~(ISIG | ICANON | ECHO | ECHOE | ECHOK | ECHONL);
         -:   85:#ifdef IEXTEN
-        3:   86:	tio.c_lflag &= ~IEXTEN;
+        4:   86:	tio.c_lflag &= ~IEXTEN;
         -:   87:#endif
-        3:   88:	tio.c_oflag &= ~OPOST;
-        3:   89:	tio.c_cc[VMIN] = 1;
-        3:   90:	tio.c_cc[VTIME] = 0;
-        3:   91:	if (tcsetattr(fileno(stdin), TCSADRAIN, &tio) == -1) {
+        4:   88:	tio.c_oflag &= ~OPOST;
+        4:   89:	tio.c_cc[VMIN] = 1;
+        4:   90:	tio.c_cc[VTIME] = 0;
+        4:   91:	if (tcsetattr(fileno(stdin), TCSADRAIN, &tio) == -1) {
     #####:   92:		if (!quiet)
     #####:   93:			perror("tcsetattr");
         -:   94:	} else
-        3:   95:		_in_raw_mode = 1;
+        4:   95:		_in_raw_mode = 1;
         -:   96:}

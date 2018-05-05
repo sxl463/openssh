@@ -90,23 +90,23 @@
         -:   88:static char *istates[] = { "open", "drain", "wait_oclose", "closed" };
         -:   89:
         -:   90:static void
-        3:   91:chan_set_istate(Channel *c, u_int next)
+        4:   91:chan_set_istate(Channel *c, u_int next)
         -:   92:{
-        3:   93:	if (c->istate > CHAN_INPUT_CLOSED || next > CHAN_INPUT_CLOSED)
+        4:   93:	if (c->istate > CHAN_INPUT_CLOSED || next > CHAN_INPUT_CLOSED)
     #####:   94:		fatal("chan_set_istate: bad state %d -> %d", c->istate, next);
-        3:   95:	debug2("channel %d: input %s -> %s", c->self, istates[c->istate],
+        4:   95:	debug2("channel %d: input %s -> %s", c->self, istates[c->istate],
         -:   96:	    istates[next]);
-        3:   97:	c->istate = next;
-        3:   98:}
+        4:   97:	c->istate = next;
+        4:   98:}
         -:   99:static void
-        6:  100:chan_set_ostate(Channel *c, u_int next)
+        8:  100:chan_set_ostate(Channel *c, u_int next)
         -:  101:{
-        6:  102:	if (c->ostate > CHAN_OUTPUT_CLOSED || next > CHAN_OUTPUT_CLOSED)
+        8:  102:	if (c->ostate > CHAN_OUTPUT_CLOSED || next > CHAN_OUTPUT_CLOSED)
     #####:  103:		fatal("chan_set_ostate: bad state %d -> %d", c->ostate, next);
-        6:  104:	debug2("channel %d: output %s -> %s", c->self, ostates[c->ostate],
+        8:  104:	debug2("channel %d: output %s -> %s", c->self, ostates[c->ostate],
         -:  105:	    ostates[next]);
-        6:  106:	c->ostate = next;
-        6:  107:}
+        8:  106:	c->ostate = next;
+        8:  107:}
         -:  108:
         -:  109:/*
         -:  110: * SSH1 specific implementation of event functions
@@ -216,21 +216,21 @@
         -:  214:	}
     #####:  215:}
         -:  216:void
-        3:  217:chan_obuf_empty(Channel *c)
+        4:  217:chan_obuf_empty(Channel *c)
         -:  218:{
-        3:  219:	debug2("channel %d: obuf empty", c->self);
-        3:  220:	if (buffer_len(&c->output)) {
+        4:  219:	debug2("channel %d: obuf empty", c->self);
+        4:  220:	if (buffer_len(&c->output)) {
     #####:  221:		error("channel %d: chan_obuf_empty for non empty buffer",
         -:  222:		    c->self);
-        3:  223:		return;
+        4:  223:		return;
         -:  224:	}
-        3:  225:	switch (c->ostate) {
+        4:  225:	switch (c->ostate) {
         -:  226:	case CHAN_OUTPUT_WAIT_DRAIN:
-        3:  227:		chan_shutdown_write(c);
-        3:  228:		if (!compat20)
+        4:  227:		chan_shutdown_write(c);
+        4:  228:		if (!compat20)
     #####:  229:			chan_send_oclose1(c);
-        3:  230:		chan_set_ostate(c, CHAN_OUTPUT_CLOSED);
-        3:  231:		break;
+        4:  230:		chan_set_ostate(c, CHAN_OUTPUT_CLOSED);
+        4:  231:		break;
         -:  232:	default:
     #####:  233:		error("channel %d: internal error: obuf_empty for ostate %d",
         -:  234:		    c->self, c->ostate);
@@ -277,22 +277,22 @@
         -:  275: * the same for SSH2
         -:  276: */
         -:  277:static void
-        3:  278:chan_rcvd_close2(Channel *c)
+        4:  278:chan_rcvd_close2(Channel *c)
         -:  279:{
-        3:  280:	debug2("channel %d: rcvd close", c->self);
-        3:  281:	if (!(c->flags & CHAN_LOCAL)) {
-        3:  282:		if (c->flags & CHAN_CLOSE_RCVD)
+        4:  280:	debug2("channel %d: rcvd close", c->self);
+        4:  281:	if (!(c->flags & CHAN_LOCAL)) {
+        4:  282:		if (c->flags & CHAN_CLOSE_RCVD)
     #####:  283:			error("channel %d: protocol error: close rcvd twice",
         -:  284:			    c->self);
-        3:  285:		c->flags |= CHAN_CLOSE_RCVD;
+        4:  285:		c->flags |= CHAN_CLOSE_RCVD;
         -:  286:	}
-        3:  287:	if (c->type == SSH_CHANNEL_LARVAL) {
+        4:  287:	if (c->type == SSH_CHANNEL_LARVAL) {
         -:  288:		/* tear down larval channels immediately */
     #####:  289:		chan_set_ostate(c, CHAN_OUTPUT_CLOSED);
     #####:  290:		chan_set_istate(c, CHAN_INPUT_CLOSED);
-        3:  291:		return;
+        4:  291:		return;
         -:  292:	}
-        3:  293:	switch (c->ostate) {
+        4:  293:	switch (c->ostate) {
         -:  294:	case CHAN_OUTPUT_OPEN:
         -:  295:		/*
         -:  296:		 * wait until a data from the channel is consumed if a CLOSE
@@ -301,7 +301,7 @@
     #####:  299:		chan_set_ostate(c, CHAN_OUTPUT_WAIT_DRAIN);
     #####:  300:		break;
         -:  301:	}
-        3:  302:	switch (c->istate) {
+        4:  302:	switch (c->istate) {
         -:  303:	case CHAN_INPUT_OPEN:
     #####:  304:		chan_shutdown_read(c);
     #####:  305:		chan_set_istate(c, CHAN_INPUT_CLOSED);
@@ -315,24 +315,24 @@
         -:  313:}
         -:  314:
         -:  315:void
-        3:  316:chan_rcvd_eow(Channel *c)
+        4:  316:chan_rcvd_eow(Channel *c)
         -:  317:{
-        3:  318:	debug2("channel %d: rcvd eow", c->self);
-        3:  319:	switch (c->istate) {
+        4:  318:	debug2("channel %d: rcvd eow", c->self);
+        4:  319:	switch (c->istate) {
         -:  320:	case CHAN_INPUT_OPEN:
-        3:  321:		chan_shutdown_read(c);
-        3:  322:		chan_set_istate(c, CHAN_INPUT_CLOSED);
-        3:  323:		break;
+        4:  321:		chan_shutdown_read(c);
+        4:  322:		chan_set_istate(c, CHAN_INPUT_CLOSED);
+        4:  323:		break;
         -:  324:	}
-        3:  325:}
+        4:  325:}
         -:  326:static void
-        3:  327:chan_rcvd_eof2(Channel *c)
+        4:  327:chan_rcvd_eof2(Channel *c)
         -:  328:{
-        3:  329:	debug2("channel %d: rcvd eof", c->self);
-        3:  330:	c->flags |= CHAN_EOF_RCVD;
-        3:  331:	if (c->ostate == CHAN_OUTPUT_OPEN)
-        3:  332:		chan_set_ostate(c, CHAN_OUTPUT_WAIT_DRAIN);
-        3:  333:}
+        4:  329:	debug2("channel %d: rcvd eof", c->self);
+        4:  330:	c->flags |= CHAN_EOF_RCVD;
+        4:  331:	if (c->ostate == CHAN_OUTPUT_OPEN)
+        4:  332:		chan_set_ostate(c, CHAN_OUTPUT_WAIT_DRAIN);
+        4:  333:}
         -:  334:static void
     #####:  335:chan_write_failed2(Channel *c)
         -:  336:{
@@ -369,22 +369,22 @@
         -:  367:	}
     #####:  368:}
         -:  369:static void
-        3:  370:chan_send_close2(Channel *c)
+        4:  370:chan_send_close2(Channel *c)
         -:  371:{
-        3:  372:	debug2("channel %d: send close", c->self);
-        6:  373:	if (c->ostate != CHAN_OUTPUT_CLOSED ||
-        3:  374:	    c->istate != CHAN_INPUT_CLOSED) {
+        4:  372:	debug2("channel %d: send close", c->self);
+        8:  373:	if (c->ostate != CHAN_OUTPUT_CLOSED ||
+        4:  374:	    c->istate != CHAN_INPUT_CLOSED) {
     #####:  375:		error("channel %d: cannot send close for istate/ostate %d/%d",
         -:  376:		    c->self, c->istate, c->ostate);
-        3:  377:	} else if (c->flags & CHAN_CLOSE_SENT) {
+        4:  377:	} else if (c->flags & CHAN_CLOSE_SENT) {
     #####:  378:		error("channel %d: already sent close", c->self);
         -:  379:	} else {
-        3:  380:		packet_start(SSH2_MSG_CHANNEL_CLOSE);
-        3:  381:		packet_put_int(c->remote_id);
-        3:  382:		packet_send();
-        3:  383:		c->flags |= CHAN_CLOSE_SENT;
+        4:  380:		packet_start(SSH2_MSG_CHANNEL_CLOSE);
+        4:  381:		packet_put_int(c->remote_id);
+        4:  382:		packet_send();
+        4:  383:		c->flags |= CHAN_CLOSE_SENT;
         -:  384:	}
-        3:  385:}
+        4:  385:}
         -:  386:static void
     #####:  387:chan_send_eow2(Channel *c)
         -:  388:{
@@ -406,25 +406,25 @@
         -:  404:/* shared */
         -:  405:
         -:  406:void
-        3:  407:chan_rcvd_ieof(Channel *c)
+        4:  407:chan_rcvd_ieof(Channel *c)
         -:  408:{
-        3:  409:	if (compat20)
-        3:  410:		chan_rcvd_eof2(c);
+        4:  409:	if (compat20)
+        4:  410:		chan_rcvd_eof2(c);
         -:  411:	else
     #####:  412:		chan_rcvd_ieof1(c);
-        6:  413:	if (c->ostate == CHAN_OUTPUT_WAIT_DRAIN &&
-        6:  414:	    buffer_len(&c->output) == 0 &&
-        6:  415:	    !CHANNEL_EFD_OUTPUT_ACTIVE(c))
-        3:  416:		chan_obuf_empty(c);
-        3:  417:}
+        8:  413:	if (c->ostate == CHAN_OUTPUT_WAIT_DRAIN &&
+        8:  414:	    buffer_len(&c->output) == 0 &&
+        8:  415:	    !CHANNEL_EFD_OUTPUT_ACTIVE(c))
+        4:  416:		chan_obuf_empty(c);
+        4:  417:}
         -:  418:void
-        3:  419:chan_rcvd_oclose(Channel *c)
+        4:  419:chan_rcvd_oclose(Channel *c)
         -:  420:{
-        3:  421:	if (compat20)
-        3:  422:		chan_rcvd_close2(c);
+        4:  421:	if (compat20)
+        4:  422:		chan_rcvd_close2(c);
         -:  423:	else
     #####:  424:		chan_rcvd_oclose1(c);
-        3:  425:}
+        4:  425:}
         -:  426:void
     #####:  427:chan_write_failed(Channel *c)
         -:  428:{
@@ -441,19 +441,19 @@
     #####:  439:}
         -:  440:
         -:  441:int
-      688:  442:chan_is_dead(Channel *c, int do_send)
+      750:  442:chan_is_dead(Channel *c, int do_send)
         -:  443:{
-      688:  444:	if (c->type == SSH_CHANNEL_ZOMBIE) {
+      750:  444:	if (c->type == SSH_CHANNEL_ZOMBIE) {
     #####:  445:		debug2("channel %d: zombie", c->self);
     #####:  446:		return 1;
         -:  447:	}
-      688:  448:	if (c->istate != CHAN_INPUT_CLOSED || c->ostate != CHAN_OUTPUT_CLOSED)
-      682:  449:		return 0;
-        6:  450:	if (!compat20) {
+      750:  448:	if (c->istate != CHAN_INPUT_CLOSED || c->ostate != CHAN_OUTPUT_CLOSED)
+      742:  449:		return 0;
+        8:  450:	if (!compat20) {
     #####:  451:		debug2("channel %d: is dead", c->self);
     #####:  452:		return 1;
         -:  453:	}
-        6:  454:	if ((datafellows & SSH_BUG_EXTEOF) &&
+        8:  454:	if ((datafellows & SSH_BUG_EXTEOF) &&
     #####:  455:	    c->extended_usage == CHAN_EXTENDED_WRITE &&
     #####:  456:	    c->efd != -1 &&
     #####:  457:	    buffer_len(&c->extended) > 0) {
@@ -461,58 +461,58 @@
     #####:  459:		    c->self, c->efd, buffer_len(&c->extended));
     #####:  460:		return 0;
         -:  461:	}
-        6:  462:	if (c->flags & CHAN_LOCAL) {
+        8:  462:	if (c->flags & CHAN_LOCAL) {
     #####:  463:		debug2("channel %d: is dead (local)", c->self);
     #####:  464:		return 1;
         -:  465:	}		
-        6:  466:	if (!(c->flags & CHAN_CLOSE_SENT)) {
-        6:  467:		if (do_send) {
-        3:  468:			chan_send_close2(c);
+        8:  466:	if (!(c->flags & CHAN_CLOSE_SENT)) {
+        8:  467:		if (do_send) {
+        4:  468:			chan_send_close2(c);
         -:  469:		} else {
         -:  470:			/* channel would be dead if we sent a close */
-        3:  471:			if (c->flags & CHAN_CLOSE_RCVD) {
-        3:  472:				debug2("channel %d: almost dead",
+        4:  471:			if (c->flags & CHAN_CLOSE_RCVD) {
+        4:  472:				debug2("channel %d: almost dead",
         -:  473:				    c->self);
-        3:  474:				return 1;
+        4:  474:				return 1;
         -:  475:			}
         -:  476:		}
         -:  477:	}
-        6:  478:	if ((c->flags & CHAN_CLOSE_SENT) &&
-        3:  479:	    (c->flags & CHAN_CLOSE_RCVD)) {
-        3:  480:		debug2("channel %d: is dead", c->self);
-        3:  481:		return 1;
+        8:  478:	if ((c->flags & CHAN_CLOSE_SENT) &&
+        4:  479:	    (c->flags & CHAN_CLOSE_RCVD)) {
+        4:  480:		debug2("channel %d: is dead", c->self);
+        4:  481:		return 1;
         -:  482:	}
     #####:  483:	return 0;
         -:  484:}
         -:  485:
         -:  486:/* helper */
         -:  487:static void
-        3:  488:chan_shutdown_write(Channel *c)
+        4:  488:chan_shutdown_write(Channel *c)
         -:  489:{
-        3:  490:	buffer_clear(&c->output);
-        3:  491:	if (compat20 && c->type == SSH_CHANNEL_LARVAL)
-        3:  492:		return;
+        4:  490:	buffer_clear(&c->output);
+        4:  491:	if (compat20 && c->type == SSH_CHANNEL_LARVAL)
+        4:  492:		return;
         -:  493:	/* shutdown failure is allowed if write failed already */
-        3:  494:	debug2("channel %d: close_write", c->self);
-        3:  495:	if (c->sock != -1) {
+        4:  494:	debug2("channel %d: close_write", c->self);
+        4:  495:	if (c->sock != -1) {
     #####:  496:		if (shutdown(c->sock, SHUT_WR) < 0)
     #####:  497:			debug2("channel %d: chan_shutdown_write: "
         -:  498:			    "shutdown() failed for fd %d: %.100s",
     #####:  499:			    c->self, c->sock, strerror(errno));
         -:  500:	} else {
-        3:  501:		if (channel_close_fd(&c->wfd) < 0)
+        4:  501:		if (channel_close_fd(&c->wfd) < 0)
     #####:  502:			logit("channel %d: chan_shutdown_write: "
         -:  503:			    "close() failed for fd %d: %.100s",
     #####:  504:			    c->self, c->wfd, strerror(errno));
         -:  505:	}
         -:  506:}
         -:  507:static void
-        3:  508:chan_shutdown_read(Channel *c)
+        4:  508:chan_shutdown_read(Channel *c)
         -:  509:{
-        3:  510:	if (compat20 && c->type == SSH_CHANNEL_LARVAL)
-        3:  511:		return;
-        3:  512:	debug2("channel %d: close_read", c->self);
-        3:  513:	if (c->sock != -1) {
+        4:  510:	if (compat20 && c->type == SSH_CHANNEL_LARVAL)
+        4:  511:		return;
+        4:  512:	debug2("channel %d: close_read", c->self);
+        4:  513:	if (c->sock != -1) {
         -:  514:		/*
         -:  515:		 * shutdown(sock, SHUT_READ) may return ENOTCONN if the
         -:  516:		 * write side has been closed already. (bug on Linux)
@@ -525,7 +525,7 @@
         -:  523:			    c->self, c->sock, c->istate, c->ostate,
     #####:  524:			    strerror(errno));
         -:  525:	} else {
-        3:  526:		if (channel_close_fd(&c->rfd) < 0)
+        4:  526:		if (channel_close_fd(&c->rfd) < 0)
     #####:  527:			logit("channel %d: chan_shutdown_read: "
         -:  528:			    "close() failed for fd %d: %.100s",
     #####:  529:			    c->self, c->rfd, strerror(errno));

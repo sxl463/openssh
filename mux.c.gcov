@@ -1256,17 +1256,17 @@
         -: 1254:
         -: 1255:/* Prepare a mux master to listen on a Unix domain socket. */
         -: 1256:void
-        3: 1257:muxserver_listen(void)
+        4: 1257:muxserver_listen(void)
         -: 1258:{
         -: 1259:	mode_t old_umask;
-        3: 1260:	char *orig_control_path = options.control_path;
+        4: 1260:	char *orig_control_path = options.control_path;
         -: 1261:	char rbuf[16+1];
         -: 1262:	u_int i, r;
         -: 1263:	int oerrno;
         -: 1264:
-        3: 1265:	if (options.control_path == NULL ||
+        4: 1265:	if (options.control_path == NULL ||
     #####: 1266:	    options.control_master == SSHCTL_MASTER_NO)
-        6: 1267:		return;
+        8: 1267:		return;
         -: 1268:
     #####: 1269:	debug("setting up multiplex master socket");
         -: 1270:

@@ -31,14 +31,14 @@
         -:   29:#include "cipher-chachapoly.h"
         -:   30:
         -:   31:int
-        6:   32:chachapoly_init(struct chachapoly_ctx *ctx,
+        8:   32:chachapoly_init(struct chachapoly_ctx *ctx,
         -:   33:    const u_char *key, u_int keylen)
         -:   34:{
-        6:   35:	if (keylen != (32 + 32)) /* 2 x 256 bit keys */
+        8:   35:	if (keylen != (32 + 32)) /* 2 x 256 bit keys */
     #####:   36:		return SSH_ERR_INVALID_ARGUMENT;
-        6:   37:	chacha_keysetup(&ctx->main_ctx, key, 256);
-        6:   38:	chacha_keysetup(&ctx->header_ctx, key + 32, 256);
-        6:   39:	return 0;
+        8:   37:	chacha_keysetup(&ctx->main_ctx, key, 256);
+        8:   38:	chacha_keysetup(&ctx->header_ctx, key + 32, 256);
+        8:   39:	return 0;
         -:   40:}
         -:   41:
         -:   42:/*
@@ -51,71 +51,71 @@
         -:   49: * tag. This tag is written on encryption and verified on decryption.
         -:   50: */
         -:   51:int
-      241:   52:chachapoly_crypt(struct chachapoly_ctx *ctx, u_int seqnr, u_char *dest,
+      276:   52:chachapoly_crypt(struct chachapoly_ctx *ctx, u_int seqnr, u_char *dest,
         -:   53:    const u_char *src, u_int len, u_int aadlen, u_int authlen, int do_encrypt)
         -:   54:{
         -:   55:	u_char seqbuf[8];
-      241:   56:	const u_char one[8] = { 1, 0, 0, 0, 0, 0, 0, 0 }; /* NB little-endian */
+      276:   56:	const u_char one[8] = { 1, 0, 0, 0, 0, 0, 0, 0 }; /* NB little-endian */
         -:   57:	u_char expected_tag[POLY1305_TAGLEN], poly_key[POLY1305_KEYLEN];
-      241:   58:	int r = SSH_ERR_INTERNAL_ERROR;
+      276:   58:	int r = SSH_ERR_INTERNAL_ERROR;
         -:   59:
         -:   60:	/*
         -:   61:	 * Run ChaCha20 once to generate the Poly1305 key. The IV is the
         -:   62:	 * packet sequence number.
         -:   63:	 */
-      241:   64:	memset(poly_key, 0, sizeof(poly_key));
-      241:   65:	POKE_U64(seqbuf, seqnr);
-      241:   66:	chacha_ivsetup(&ctx->main_ctx, seqbuf, NULL);
-      241:   67:	chacha_encrypt_bytes(&ctx->main_ctx,
+      276:   64:	memset(poly_key, 0, sizeof(poly_key));
+      276:   65:	POKE_U64(seqbuf, seqnr);
+      276:   66:	chacha_ivsetup(&ctx->main_ctx, seqbuf, NULL);
+      276:   67:	chacha_encrypt_bytes(&ctx->main_ctx,
         -:   68:	    poly_key, poly_key, sizeof(poly_key));
         -:   69:
         -:   70:	/* If decrypting, check tag before anything else */
-      241:   71:	if (!do_encrypt) {
-      140:   72:		const u_char *tag = src + aadlen + len;
+      276:   71:	if (!do_encrypt) {
+      160:   72:		const u_char *tag = src + aadlen + len;
         -:   73:
-      140:   74:		poly1305_auth(expected_tag, src, aadlen + len, poly_key);
-      140:   75:		if (timingsafe_bcmp(expected_tag, tag, POLY1305_TAGLEN) != 0) {
+      160:   74:		poly1305_auth(expected_tag, src, aadlen + len, poly_key);
+      160:   75:		if (timingsafe_bcmp(expected_tag, tag, POLY1305_TAGLEN) != 0) {
     #####:   76:			r = SSH_ERR_MAC_INVALID;
     #####:   77:			goto out;
         -:   78:		}
         -:   79:	}
         -:   80:
         -:   81:	/* Crypt additional data */
-      241:   82:	if (aadlen) {
-      241:   83:		chacha_ivsetup(&ctx->header_ctx, seqbuf, NULL);
-      241:   84:		chacha_encrypt_bytes(&ctx->header_ctx, src, dest, aadlen);
+      276:   82:	if (aadlen) {
+      276:   83:		chacha_ivsetup(&ctx->header_ctx, seqbuf, NULL);
+      276:   84:		chacha_encrypt_bytes(&ctx->header_ctx, src, dest, aadlen);
         -:   85:	}
         -:   86:
         -:   87:	/* Set Chacha's block counter to 1 */
-      241:   88:	chacha_ivsetup(&ctx->main_ctx, seqbuf, one);
-      241:   89:	chacha_encrypt_bytes(&ctx->main_ctx, src + aadlen,
+      276:   88:	chacha_ivsetup(&ctx->main_ctx, seqbuf, one);
+      276:   89:	chacha_encrypt_bytes(&ctx->main_ctx, src + aadlen,
         -:   90:	    dest + aadlen, len);
         -:   91:
         -:   92:	/* If encrypting, calculate and append tag */
-      241:   93:	if (do_encrypt) {
-      101:   94:		poly1305_auth(dest + aadlen + len, dest, aadlen + len,
+      276:   93:	if (do_encrypt) {
+      116:   94:		poly1305_auth(dest + aadlen + len, dest, aadlen + len,
         -:   95:		    poly_key);
         -:   96:	}
-      241:   97:	r = 0;
+      276:   97:	r = 0;
         -:   98: out:
-      241:   99:	explicit_bzero(expected_tag, sizeof(expected_tag));
-      241:  100:	explicit_bzero(seqbuf, sizeof(seqbuf));
-      241:  101:	explicit_bzero(poly_key, sizeof(poly_key));
-      241:  102:	return r;
+      276:   99:	explicit_bzero(expected_tag, sizeof(expected_tag));
+      276:  100:	explicit_bzero(seqbuf, sizeof(seqbuf));
+      276:  101:	explicit_bzero(poly_key, sizeof(poly_key));
+      276:  102:	return r;
         -:  103:}
         -:  104:
         -:  105:/* Decrypt and extract the encrypted packet length */
         -:  106:int
-      499:  107:chachapoly_get_length(struct chachapoly_ctx *ctx,
+      555:  107:chachapoly_get_length(struct chachapoly_ctx *ctx,
         -:  108:    u_int *plenp, u_int seqnr, const u_char *cp, u_int len)
         -:  109:{
         -:  110:	u_char buf[4], seqbuf[8];
         -:  111:
-      499:  112:	if (len < 4)
-      359:  113:		return SSH_ERR_MESSAGE_INCOMPLETE;
-      140:  114:	POKE_U64(seqbuf, seqnr);
-      140:  115:	chacha_ivsetup(&ctx->header_ctx, seqbuf, NULL);
-      140:  116:	chacha_encrypt_bytes(&ctx->header_ctx, cp, buf, 4);
-      140:  117:	*plenp = PEEK_U32(buf);
-      140:  118:	return 0;
+      555:  112:	if (len < 4)
+      395:  113:		return SSH_ERR_MESSAGE_INCOMPLETE;
+      160:  114:	POKE_U64(seqbuf, seqnr);
+      160:  115:	chacha_ivsetup(&ctx->header_ctx, seqbuf, NULL);
+      160:  116:	chacha_encrypt_bytes(&ctx->header_ctx, cp, buf, 4);
+      160:  117:	*plenp = PEEK_U32(buf);
+      160:  118:	return 0;
         -:  119:}

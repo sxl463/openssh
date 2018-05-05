@@ -139,13 +139,13 @@
         -:  137:}
         -:  138:
         -:  139:static const struct kexalg *
-        3:  140:kex_alg_by_name(const char *name)
+        4:  140:kex_alg_by_name(const char *name)
         -:  141:{
         -:  142:	const struct kexalg *k;
         -:  143:
-       36:  144:	for (k = kexalgs; k->name != NULL; k++) {
-       36:  145:		if (strcmp(k->name, name) == 0)
-        3:  146:			return k;
+       48:  144:	for (k = kexalgs; k->name != NULL; k++) {
+       48:  145:		if (strcmp(k->name, name) == 0)
+        4:  146:			return k;
         -:  147:	}
     #####:  148:	return NULL;
         -:  149:}
@@ -178,36 +178,36 @@
         -:  176: * Caller must free returned string.
         -:  177: */
         -:  178:char *
-        3:  179:kex_names_cat(const char *a, const char *b)
+        4:  179:kex_names_cat(const char *a, const char *b)
         -:  180:{
-        3:  181:	char *ret = NULL, *tmp = NULL, *cp, *p;
+        4:  181:	char *ret = NULL, *tmp = NULL, *cp, *p;
         -:  182:	size_t len;
         -:  183:
-        3:  184:	if (a == NULL || *a == '\0')
+        4:  184:	if (a == NULL || *a == '\0')
     #####:  185:		return NULL;
-        3:  186:	if (b == NULL || *b == '\0')
+        4:  186:	if (b == NULL || *b == '\0')
     #####:  187:		return strdup(a);
-        3:  188:	if (strlen(b) > 1024*1024)
+        4:  188:	if (strlen(b) > 1024*1024)
     #####:  189:		return NULL;
-        3:  190:	len = strlen(a) + strlen(b) + 2;
-        3:  191:	if ((tmp = cp = strdup(b)) == NULL ||
+        4:  190:	len = strlen(a) + strlen(b) + 2;
+        4:  191:	if ((tmp = cp = strdup(b)) == NULL ||
         -:  192:	    (ret = calloc(1, len)) == NULL) {
     #####:  193:		free(tmp);
     #####:  194:		return NULL;
         -:  195:	}
-        3:  196:	strlcpy(ret, a, len);
-        6:  197:	for ((p = strsep(&cp, ",")); p && *p != '\0'; (p = strsep(&cp, ","))) {
-        3:  198:		if (match_list(ret, p, NULL) != NULL)
+        4:  196:	strlcpy(ret, a, len);
+        8:  197:	for ((p = strsep(&cp, ",")); p && *p != '\0'; (p = strsep(&cp, ","))) {
+        4:  198:		if (match_list(ret, p, NULL) != NULL)
     #####:  199:			continue; /* Algorithm already present */
-        6:  200:		if (strlcat(ret, ",", len) >= len ||
-        3:  201:		    strlcat(ret, p, len) >= len) {
+        8:  200:		if (strlcat(ret, ",", len) >= len ||
+        4:  201:		    strlcat(ret, p, len) >= len) {
     #####:  202:			free(tmp);
     #####:  203:			free(ret);
     #####:  204:			return NULL; /* Shouldn't happen */
         -:  205:		}
         -:  206:	}
-        3:  207:	free(tmp);
-        3:  208:	return ret;
+        4:  207:	free(tmp);
+        4:  208:	return ret;
         -:  209:}
         -:  210:
         -:  211:/*
@@ -216,13 +216,13 @@
         -:  214: * indicate that it should be appended to the default.
         -:  215: */
         -:  216:int
-       15:  217:kex_assemble_names(const char *def, char **list)
+       20:  217:kex_assemble_names(const char *def, char **list)
         -:  218:{
         -:  219:	char *ret;
         -:  220:
-       15:  221:	if (list == NULL || *list == NULL || **list == '\0') {
-       15:  222:		*list = strdup(def);
-       15:  223:		return 0;
+       20:  221:	if (list == NULL || *list == NULL || **list == '\0') {
+       20:  222:		*list = strdup(def);
+       20:  223:		return 0;
         -:  224:	}
     #####:  225:	if (**list != '+') {
     #####:  226:		return 0;
@@ -237,83 +237,83 @@
         -:  235:
         -:  236:/* put algorithm proposal into buffer */
         -:  237:int
-        6:  238:kex_prop2buf(struct sshbuf *b, char *proposal[PROPOSAL_MAX])
+        8:  238:kex_prop2buf(struct sshbuf *b, char *proposal[PROPOSAL_MAX])
         -:  239:{
         -:  240:	u_int i;
         -:  241:	int r;
         -:  242:
-        6:  243:	sshbuf_reset(b);
+        8:  243:	sshbuf_reset(b);
         -:  244:
         -:  245:	/*
         -:  246:	 * add a dummy cookie, the cookie will be overwritten by
         -:  247:	 * kex_send_kexinit(), each time a kexinit is set
         -:  248:	 */
-      102:  249:	for (i = 0; i < KEX_COOKIE_LEN; i++) {
-       96:  250:		if ((r = sshbuf_put_u8(b, 0)) != 0)
+      136:  249:	for (i = 0; i < KEX_COOKIE_LEN; i++) {
+      128:  250:		if ((r = sshbuf_put_u8(b, 0)) != 0)
     #####:  251:			return r;
         -:  252:	}
-       66:  253:	for (i = 0; i < PROPOSAL_MAX; i++) {
-       60:  254:		if ((r = sshbuf_put_cstring(b, proposal[i])) != 0)
+       88:  253:	for (i = 0; i < PROPOSAL_MAX; i++) {
+       80:  254:		if ((r = sshbuf_put_cstring(b, proposal[i])) != 0)
     #####:  255:			return r;
         -:  256:	}
-        6:  257:	if ((r = sshbuf_put_u8(b, 0)) != 0 ||	/* first_kex_packet_follows */
+        8:  257:	if ((r = sshbuf_put_u8(b, 0)) != 0 ||	/* first_kex_packet_follows */
         -:  258:	    (r = sshbuf_put_u32(b, 0)) != 0)	/* uint32 reserved */
     #####:  259:		return r;
-        6:  260:	return 0;
+        8:  260:	return 0;
         -:  261:}
         -:  262:
         -:  263:/* parse buffer and return algorithm proposal */
         -:  264:int
-        6:  265:kex_buf2prop(struct sshbuf *raw, int *first_kex_follows, char ***propp)
+        8:  265:kex_buf2prop(struct sshbuf *raw, int *first_kex_follows, char ***propp)
         -:  266:{
-        6:  267:	struct sshbuf *b = NULL;
+        8:  267:	struct sshbuf *b = NULL;
         -:  268:	u_char v;
         -:  269:	u_int i;
-        6:  270:	char **proposal = NULL;
+        8:  270:	char **proposal = NULL;
         -:  271:	int r;
         -:  272:
-        6:  273:	*propp = NULL;
-        6:  274:	if ((proposal = calloc(PROPOSAL_MAX, sizeof(char *))) == NULL)
+        8:  273:	*propp = NULL;
+        8:  274:	if ((proposal = calloc(PROPOSAL_MAX, sizeof(char *))) == NULL)
     #####:  275:		return SSH_ERR_ALLOC_FAIL;
-        6:  276:	if ((b = sshbuf_fromb(raw)) == NULL) {
+        8:  276:	if ((b = sshbuf_fromb(raw)) == NULL) {
     #####:  277:		r = SSH_ERR_ALLOC_FAIL;
     #####:  278:		goto out;
         -:  279:	}
-        6:  280:	if ((r = sshbuf_consume(b, KEX_COOKIE_LEN)) != 0) /* skip cookie */
+        8:  280:	if ((r = sshbuf_consume(b, KEX_COOKIE_LEN)) != 0) /* skip cookie */
     #####:  281:		goto out;
         -:  282:	/* extract kex init proposal strings */
-       66:  283:	for (i = 0; i < PROPOSAL_MAX; i++) {
-       60:  284:		if ((r = sshbuf_get_cstring(b, &(proposal[i]), NULL)) != 0)
+       88:  283:	for (i = 0; i < PROPOSAL_MAX; i++) {
+       80:  284:		if ((r = sshbuf_get_cstring(b, &(proposal[i]), NULL)) != 0)
     #####:  285:			goto out;
-       60:  286:		debug2("%s: %s", proposal_names[i], proposal[i]);
+       80:  286:		debug2("%s: %s", proposal_names[i], proposal[i]);
         -:  287:	}
         -:  288:	/* first kex follows / reserved */
-        6:  289:	if ((r = sshbuf_get_u8(b, &v)) != 0 ||	/* first_kex_follows */
+        8:  289:	if ((r = sshbuf_get_u8(b, &v)) != 0 ||	/* first_kex_follows */
         -:  290:	    (r = sshbuf_get_u32(b, &i)) != 0)	/* reserved */
         -:  291:		goto out;
-        6:  292:	if (first_kex_follows != NULL)
-        3:  293:		*first_kex_follows = v;
-        6:  294:	debug2("first_kex_follows %d ", v);
-        6:  295:	debug2("reserved %u ", i);
-        6:  296:	r = 0;
-        6:  297:	*propp = proposal;
+        8:  292:	if (first_kex_follows != NULL)
+        4:  293:		*first_kex_follows = v;
+        8:  294:	debug2("first_kex_follows %d ", v);
+        8:  295:	debug2("reserved %u ", i);
+        8:  296:	r = 0;
+        8:  297:	*propp = proposal;
         -:  298: out:
-        6:  299:	if (r != 0 && proposal != NULL)
+        8:  299:	if (r != 0 && proposal != NULL)
     #####:  300:		kex_prop_free(proposal);
-        6:  301:	sshbuf_free(b);
-        6:  302:	return r;
+        8:  301:	sshbuf_free(b);
+        8:  302:	return r;
         -:  303:}
         -:  304:
         -:  305:void
-        6:  306:kex_prop_free(char **proposal)
+        8:  306:kex_prop_free(char **proposal)
         -:  307:{
         -:  308:	u_int i;
         -:  309:
-        6:  310:	if (proposal == NULL)
-        6:  311:		return;
-       66:  312:	for (i = 0; i < PROPOSAL_MAX; i++)
-       60:  313:		free(proposal[i]);
-        6:  314:	free(proposal);
+        8:  310:	if (proposal == NULL)
+        8:  311:		return;
+       88:  312:	for (i = 0; i < PROPOSAL_MAX; i++)
+       80:  313:		free(proposal[i]);
+        8:  314:	free(proposal);
         -:  315:}
         -:  316:
         -:  317:/* ARGSUSED */
@@ -332,12 +332,12 @@
         -:  330:}
         -:  331:
         -:  332:static void
-        6:  333:kex_reset_dispatch(struct ssh *ssh)
+        8:  333:kex_reset_dispatch(struct ssh *ssh)
         -:  334:{
-        6:  335:	ssh_dispatch_range(ssh, SSH2_MSG_TRANSPORT_MIN,
+        8:  335:	ssh_dispatch_range(ssh, SSH2_MSG_TRANSPORT_MIN,
         -:  336:	    SSH2_MSG_TRANSPORT_MAX, &kex_protocol_error);
-        6:  337:	ssh_dispatch_set(ssh, SSH2_MSG_KEXINIT, &kex_input_kexinit);
-        6:  338:}
+        8:  337:	ssh_dispatch_set(ssh, SSH2_MSG_KEXINIT, &kex_input_kexinit);
+        8:  338:}
         -:  339:
         -:  340:static int
     #####:  341:kex_send_ext_info(struct ssh *ssh)
@@ -361,21 +361,21 @@
         -:  359:}
         -:  360:
         -:  361:int
-        3:  362:kex_send_newkeys(struct ssh *ssh)
+        4:  362:kex_send_newkeys(struct ssh *ssh)
         -:  363:{
         -:  364:	int r;
         -:  365:
-        3:  366:	kex_reset_dispatch(ssh);
-        3:  367:	if ((r = sshpkt_start(ssh, SSH2_MSG_NEWKEYS)) != 0 ||
+        4:  366:	kex_reset_dispatch(ssh);
+        4:  367:	if ((r = sshpkt_start(ssh, SSH2_MSG_NEWKEYS)) != 0 ||
         -:  368:	    (r = sshpkt_send(ssh)) != 0)
     #####:  369:		return r;
-        3:  370:	debug("SSH2_MSG_NEWKEYS sent");
-        3:  371:	debug("expecting SSH2_MSG_NEWKEYS");
-        3:  372:	ssh_dispatch_set(ssh, SSH2_MSG_NEWKEYS, &kex_input_newkeys);
-        3:  373:	if (ssh->kex->ext_info_c)
+        4:  370:	debug("SSH2_MSG_NEWKEYS sent");
+        4:  371:	debug("expecting SSH2_MSG_NEWKEYS");
+        4:  372:	ssh_dispatch_set(ssh, SSH2_MSG_NEWKEYS, &kex_input_newkeys);
+        4:  373:	if (ssh->kex->ext_info_c)
     #####:  374:		if ((r = kex_send_ext_info(ssh)) != 0)
     #####:  375:			return r;
-        3:  376:	return 0;
+        4:  376:	return 0;
         -:  377:}
         -:  378:
         -:  379:int
@@ -418,82 +418,82 @@
         -:  416:}
         -:  417:
         -:  418:static int
-        3:  419:kex_input_newkeys(int type, u_int32_t seq, void *ctxt)
+        4:  419:kex_input_newkeys(int type, u_int32_t seq, void *ctxt)
         -:  420:{
-        3:  421:	struct ssh *ssh = ctxt;
-        3:  422:	struct kex *kex = ssh->kex;
+        4:  421:	struct ssh *ssh = ctxt;
+        4:  422:	struct kex *kex = ssh->kex;
         -:  423:	int r;
         -:  424:
-        3:  425:	debug("SSH2_MSG_NEWKEYS received");
-        3:  426:	ssh_dispatch_set(ssh, SSH2_MSG_NEWKEYS, &kex_protocol_error);
-        3:  427:	if ((r = sshpkt_get_end(ssh)) != 0)
+        4:  425:	debug("SSH2_MSG_NEWKEYS received");
+        4:  426:	ssh_dispatch_set(ssh, SSH2_MSG_NEWKEYS, &kex_protocol_error);
+        4:  427:	if ((r = sshpkt_get_end(ssh)) != 0)
     #####:  428:		return r;
-        3:  429:	if ((r = ssh_set_newkeys(ssh, MODE_IN)) != 0)
+        4:  429:	if ((r = ssh_set_newkeys(ssh, MODE_IN)) != 0)
     #####:  430:		return r;
-        3:  431:	kex->done = 1;
-        3:  432:	sshbuf_reset(kex->peer);
+        4:  431:	kex->done = 1;
+        4:  432:	sshbuf_reset(kex->peer);
         -:  433:	/* sshbuf_reset(kex->my); */
-        3:  434:	kex->flags &= ~KEX_INIT_SENT;
-        3:  435:	free(kex->name);
-        3:  436:	kex->name = NULL;
-        3:  437:	return 0;
+        4:  434:	kex->flags &= ~KEX_INIT_SENT;
+        4:  435:	free(kex->name);
+        4:  436:	kex->name = NULL;
+        4:  437:	return 0;
         -:  438:}
         -:  439:
         -:  440:int
-        3:  441:kex_send_kexinit(struct ssh *ssh)
+        4:  441:kex_send_kexinit(struct ssh *ssh)
         -:  442:{
         -:  443:	u_char *cookie;
-        3:  444:	struct kex *kex = ssh->kex;
+        4:  444:	struct kex *kex = ssh->kex;
         -:  445:	int r;
         -:  446:
-        3:  447:	if (kex == NULL)
+        4:  447:	if (kex == NULL)
     #####:  448:		return SSH_ERR_INTERNAL_ERROR;
-        3:  449:	if (kex->flags & KEX_INIT_SENT)
+        4:  449:	if (kex->flags & KEX_INIT_SENT)
     #####:  450:		return 0;
-        3:  451:	kex->done = 0;
+        4:  451:	kex->done = 0;
         -:  452:
         -:  453:	/* generate a random cookie */
-        3:  454:	if (sshbuf_len(kex->my) < KEX_COOKIE_LEN)
+        4:  454:	if (sshbuf_len(kex->my) < KEX_COOKIE_LEN)
     #####:  455:		return SSH_ERR_INVALID_FORMAT;
-        3:  456:	if ((cookie = sshbuf_mutable_ptr(kex->my)) == NULL)
+        4:  456:	if ((cookie = sshbuf_mutable_ptr(kex->my)) == NULL)
     #####:  457:		return SSH_ERR_INTERNAL_ERROR;
-        3:  458:	arc4random_buf(cookie, KEX_COOKIE_LEN);
+        4:  458:	arc4random_buf(cookie, KEX_COOKIE_LEN);
         -:  459:
-        6:  460:	if ((r = sshpkt_start(ssh, SSH2_MSG_KEXINIT)) != 0 ||
-        6:  461:	    (r = sshpkt_putb(ssh, kex->my)) != 0 ||
+        8:  460:	if ((r = sshpkt_start(ssh, SSH2_MSG_KEXINIT)) != 0 ||
+        8:  461:	    (r = sshpkt_putb(ssh, kex->my)) != 0 ||
         -:  462:	    (r = sshpkt_send(ssh)) != 0)
     #####:  463:		return r;
-        3:  464:	debug("SSH2_MSG_KEXINIT sent");
-        3:  465:	kex->flags |= KEX_INIT_SENT;
-        3:  466:	return 0;
+        4:  464:	debug("SSH2_MSG_KEXINIT sent");
+        4:  465:	kex->flags |= KEX_INIT_SENT;
+        4:  466:	return 0;
         -:  467:}
         -:  468:
         -:  469:/* ARGSUSED */
         -:  470:int
-        3:  471:kex_input_kexinit(int type, u_int32_t seq, void *ctxt)
+        4:  471:kex_input_kexinit(int type, u_int32_t seq, void *ctxt)
         -:  472:{
-        3:  473:	struct ssh *ssh = ctxt;
-        3:  474:	struct kex *kex = ssh->kex;
+        4:  473:	struct ssh *ssh = ctxt;
+        4:  474:	struct kex *kex = ssh->kex;
         -:  475:	const u_char *ptr;
         -:  476:	u_int i;
         -:  477:	size_t dlen;
         -:  478:	int r;
         -:  479:
-        3:  480:	debug("SSH2_MSG_KEXINIT received");
-        3:  481:	if (kex == NULL)
+        4:  480:	debug("SSH2_MSG_KEXINIT received");
+        4:  481:	if (kex == NULL)
     #####:  482:		return SSH_ERR_INVALID_ARGUMENT;
         -:  483:
-        3:  484:	ssh_dispatch_set(ssh, SSH2_MSG_KEXINIT, NULL);
-        3:  485:	ptr = sshpkt_ptr(ssh, &dlen);
-        3:  486:	if ((r = sshbuf_put(kex->peer, ptr, dlen)) != 0)
+        4:  484:	ssh_dispatch_set(ssh, SSH2_MSG_KEXINIT, NULL);
+        4:  485:	ptr = sshpkt_ptr(ssh, &dlen);
+        4:  486:	if ((r = sshbuf_put(kex->peer, ptr, dlen)) != 0)
     #####:  487:		return r;
         -:  488:
         -:  489:	/* discard packet */
-       51:  490:	for (i = 0; i < KEX_COOKIE_LEN; i++)
-       48:  491:		if ((r = sshpkt_get_u8(ssh, NULL)) != 0)
+       68:  490:	for (i = 0; i < KEX_COOKIE_LEN; i++)
+       64:  491:		if ((r = sshpkt_get_u8(ssh, NULL)) != 0)
     #####:  492:			return r;
-       33:  493:	for (i = 0; i < PROPOSAL_MAX; i++)
-       30:  494:		if ((r = sshpkt_get_string(ssh, NULL, NULL)) != 0)
+       44:  493:	for (i = 0; i < PROPOSAL_MAX; i++)
+       40:  494:		if ((r = sshpkt_get_string(ssh, NULL, NULL)) != 0)
     #####:  495:			return r;
         -:  496:	/*
         -:  497:	 * XXX RFC4253 sec 7: "each side MAY guess" - currently no supported
@@ -505,78 +505,78 @@
         -:  503:	 * for cases where the server *doesn't* go first. I guess we should
         -:  504:	 * ignore it when it is set for these cases, which is what we do now.
         -:  505:	 */
-        3:  506:	if ((r = sshpkt_get_u8(ssh, NULL)) != 0 ||	/* first_kex_follows */
-        3:  507:	    (r = sshpkt_get_u32(ssh, NULL)) != 0 ||	/* reserved */
+        4:  506:	if ((r = sshpkt_get_u8(ssh, NULL)) != 0 ||	/* first_kex_follows */
+        4:  507:	    (r = sshpkt_get_u32(ssh, NULL)) != 0 ||	/* reserved */
         -:  508:	    (r = sshpkt_get_end(ssh)) != 0)
     #####:  509:			return r;
         -:  510:
-        3:  511:	if (!(kex->flags & KEX_INIT_SENT))
+        4:  511:	if (!(kex->flags & KEX_INIT_SENT))
     #####:  512:		if ((r = kex_send_kexinit(ssh)) != 0)
     #####:  513:			return r;
-        3:  514:	if ((r = kex_choose_conf(ssh)) != 0)
+        4:  514:	if ((r = kex_choose_conf(ssh)) != 0)
     #####:  515:		return r;
         -:  516:
-        3:  517:	if (kex->kex_type < KEX_MAX && kex->kex[kex->kex_type] != NULL)
-        3:  518:		return (kex->kex[kex->kex_type])(ssh);
+        4:  517:	if (kex->kex_type < KEX_MAX && kex->kex[kex->kex_type] != NULL)
+        4:  518:		return (kex->kex[kex->kex_type])(ssh);
         -:  519:
     #####:  520:	return SSH_ERR_INTERNAL_ERROR;
         -:  521:}
         -:  522:
         -:  523:int
-        3:  524:kex_new(struct ssh *ssh, char *proposal[PROPOSAL_MAX], struct kex **kexp)
+        4:  524:kex_new(struct ssh *ssh, char *proposal[PROPOSAL_MAX], struct kex **kexp)
         -:  525:{
         -:  526:	struct kex *kex;
         -:  527:	int r;
         -:  528:
-        3:  529:	*kexp = NULL;
-        3:  530:	if ((kex = calloc(1, sizeof(*kex))) == NULL)
+        4:  529:	*kexp = NULL;
+        4:  530:	if ((kex = calloc(1, sizeof(*kex))) == NULL)
     #####:  531:		return SSH_ERR_ALLOC_FAIL;
-        6:  532:	if ((kex->peer = sshbuf_new()) == NULL ||
-        3:  533:	    (kex->my = sshbuf_new()) == NULL) {
+        8:  532:	if ((kex->peer = sshbuf_new()) == NULL ||
+        4:  533:	    (kex->my = sshbuf_new()) == NULL) {
     #####:  534:		r = SSH_ERR_ALLOC_FAIL;
     #####:  535:		goto out;
         -:  536:	}
-        3:  537:	if ((r = kex_prop2buf(kex->my, proposal)) != 0)
+        4:  537:	if ((r = kex_prop2buf(kex->my, proposal)) != 0)
     #####:  538:		goto out;
-        3:  539:	kex->done = 0;
-        3:  540:	kex_reset_dispatch(ssh);
-        3:  541:	r = 0;
-        3:  542:	*kexp = kex;
+        4:  539:	kex->done = 0;
+        4:  540:	kex_reset_dispatch(ssh);
+        4:  541:	r = 0;
+        4:  542:	*kexp = kex;
         -:  543: out:
-        3:  544:	if (r != 0)
+        4:  544:	if (r != 0)
     #####:  545:		kex_free(kex);
-        3:  546:	return r;
+        4:  546:	return r;
         -:  547:}
         -:  548:
         -:  549:void
-        6:  550:kex_free_newkeys(struct newkeys *newkeys)
+        8:  550:kex_free_newkeys(struct newkeys *newkeys)
         -:  551:{
-        6:  552:	if (newkeys == NULL)
-        6:  553:		return;
-        6:  554:	if (newkeys->enc.key) {
-        6:  555:		explicit_bzero(newkeys->enc.key, newkeys->enc.key_len);
-        6:  556:		free(newkeys->enc.key);
-        6:  557:		newkeys->enc.key = NULL;
+        8:  552:	if (newkeys == NULL)
+        8:  553:		return;
+        8:  554:	if (newkeys->enc.key) {
+        8:  555:		explicit_bzero(newkeys->enc.key, newkeys->enc.key_len);
+        8:  556:		free(newkeys->enc.key);
+        8:  557:		newkeys->enc.key = NULL;
         -:  558:	}
-        6:  559:	if (newkeys->enc.iv) {
-        6:  560:		explicit_bzero(newkeys->enc.iv, newkeys->enc.iv_len);
-        6:  561:		free(newkeys->enc.iv);
-        6:  562:		newkeys->enc.iv = NULL;
+        8:  559:	if (newkeys->enc.iv) {
+        8:  560:		explicit_bzero(newkeys->enc.iv, newkeys->enc.iv_len);
+        8:  561:		free(newkeys->enc.iv);
+        8:  562:		newkeys->enc.iv = NULL;
         -:  563:	}
-        6:  564:	free(newkeys->enc.name);
-        6:  565:	explicit_bzero(&newkeys->enc, sizeof(newkeys->enc));
-        6:  566:	free(newkeys->comp.name);
-        6:  567:	explicit_bzero(&newkeys->comp, sizeof(newkeys->comp));
-        6:  568:	mac_clear(&newkeys->mac);
-        6:  569:	if (newkeys->mac.key) {
-        6:  570:		explicit_bzero(newkeys->mac.key, newkeys->mac.key_len);
-        6:  571:		free(newkeys->mac.key);
-        6:  572:		newkeys->mac.key = NULL;
+        8:  564:	free(newkeys->enc.name);
+        8:  565:	explicit_bzero(&newkeys->enc, sizeof(newkeys->enc));
+        8:  566:	free(newkeys->comp.name);
+        8:  567:	explicit_bzero(&newkeys->comp, sizeof(newkeys->comp));
+        8:  568:	mac_clear(&newkeys->mac);
+        8:  569:	if (newkeys->mac.key) {
+        8:  570:		explicit_bzero(newkeys->mac.key, newkeys->mac.key_len);
+        8:  571:		free(newkeys->mac.key);
+        8:  572:		newkeys->mac.key = NULL;
         -:  573:	}
-        6:  574:	free(newkeys->mac.name);
-        6:  575:	explicit_bzero(&newkeys->mac, sizeof(newkeys->mac));
-        6:  576:	explicit_bzero(newkeys, sizeof(*newkeys));
-        6:  577:	free(newkeys);
+        8:  574:	free(newkeys->mac.name);
+        8:  575:	explicit_bzero(&newkeys->mac, sizeof(newkeys->mac));
+        8:  576:	explicit_bzero(newkeys, sizeof(*newkeys));
+        8:  577:	free(newkeys);
         -:  578:}
         -:  579:
         -:  580:void
@@ -608,18 +608,18 @@
     #####:  606:}
         -:  607:
         -:  608:int
-        3:  609:kex_setup(struct ssh *ssh, char *proposal[PROPOSAL_MAX])
+        4:  609:kex_setup(struct ssh *ssh, char *proposal[PROPOSAL_MAX])
         -:  610:{
         -:  611:	int r;
         -:  612:
-        3:  613:	if ((r = kex_new(ssh, proposal, &ssh->kex)) != 0)
+        4:  613:	if ((r = kex_new(ssh, proposal, &ssh->kex)) != 0)
     #####:  614:		return r;
-        3:  615:	if ((r = kex_send_kexinit(ssh)) != 0) {		/* we start */
+        4:  615:	if ((r = kex_send_kexinit(ssh)) != 0) {		/* we start */
     #####:  616:		kex_free(ssh->kex);
     #####:  617:		ssh->kex = NULL;
     #####:  618:		return r;
         -:  619:	}
-        3:  620:	return 0;
+        4:  620:	return 0;
         -:  621:}
         -:  622:
         -:  623:/*
@@ -642,22 +642,22 @@
         -:  640:}
         -:  641:
         -:  642:static int
-        6:  643:choose_enc(struct sshenc *enc, char *client, char *server)
+        8:  643:choose_enc(struct sshenc *enc, char *client, char *server)
         -:  644:{
-        6:  645:	char *name = match_list(client, server, NULL);
+        8:  645:	char *name = match_list(client, server, NULL);
         -:  646:
-        6:  647:	if (name == NULL)
+        8:  647:	if (name == NULL)
     #####:  648:		return SSH_ERR_NO_CIPHER_ALG_MATCH;
-        6:  649:	if ((enc->cipher = cipher_by_name(name)) == NULL)
+        8:  649:	if ((enc->cipher = cipher_by_name(name)) == NULL)
     #####:  650:		return SSH_ERR_INTERNAL_ERROR;
-        6:  651:	enc->name = name;
-        6:  652:	enc->enabled = 0;
-        6:  653:	enc->iv = NULL;
-        6:  654:	enc->iv_len = cipher_ivlen(enc->cipher);
-        6:  655:	enc->key = NULL;
-        6:  656:	enc->key_len = cipher_keylen(enc->cipher);
-        6:  657:	enc->block_size = cipher_blocksize(enc->cipher);
-        6:  658:	return 0;
+        8:  651:	enc->name = name;
+        8:  652:	enc->enabled = 0;
+        8:  653:	enc->iv = NULL;
+        8:  654:	enc->iv_len = cipher_ivlen(enc->cipher);
+        8:  655:	enc->key = NULL;
+        8:  656:	enc->key_len = cipher_keylen(enc->cipher);
+        8:  657:	enc->block_size = cipher_blocksize(enc->cipher);
+        8:  658:	return 0;
         -:  659:}
         -:  660:
         -:  661:static int
@@ -679,57 +679,57 @@
         -:  677:}
         -:  678:
         -:  679:static int
-        6:  680:choose_comp(struct sshcomp *comp, char *client, char *server)
+        8:  680:choose_comp(struct sshcomp *comp, char *client, char *server)
         -:  681:{
-        6:  682:	char *name = match_list(client, server, NULL);
+        8:  682:	char *name = match_list(client, server, NULL);
         -:  683:
-        6:  684:	if (name == NULL)
+        8:  684:	if (name == NULL)
     #####:  685:		return SSH_ERR_NO_COMPRESS_ALG_MATCH;
-        6:  686:	if (strcmp(name, "zlib@openssh.com") == 0) {
+        8:  686:	if (strcmp(name, "zlib@openssh.com") == 0) {
     #####:  687:		comp->type = COMP_DELAYED;
-        6:  688:	} else if (strcmp(name, "zlib") == 0) {
+        8:  688:	} else if (strcmp(name, "zlib") == 0) {
     #####:  689:		comp->type = COMP_ZLIB;
-        6:  690:	} else if (strcmp(name, "none") == 0) {
-        6:  691:		comp->type = COMP_NONE;
+        8:  690:	} else if (strcmp(name, "none") == 0) {
+        8:  691:		comp->type = COMP_NONE;
         -:  692:	} else {
     #####:  693:		return SSH_ERR_INTERNAL_ERROR;
         -:  694:	}
-        6:  695:	comp->name = name;
-        6:  696:	return 0;
+        8:  695:	comp->name = name;
+        8:  696:	return 0;
         -:  697:}
         -:  698:
         -:  699:static int
-        3:  700:choose_kex(struct kex *k, char *client, char *server)
+        4:  700:choose_kex(struct kex *k, char *client, char *server)
         -:  701:{
         -:  702:	const struct kexalg *kexalg;
         -:  703:
-        3:  704:	k->name = match_list(client, server, NULL);
+        4:  704:	k->name = match_list(client, server, NULL);
         -:  705:
-        3:  706:	debug("kex: algorithm: %s", k->name ? k->name : "(no match)");
-        3:  707:	if (k->name == NULL)
+        4:  706:	debug("kex: algorithm: %s", k->name ? k->name : "(no match)");
+        4:  707:	if (k->name == NULL)
     #####:  708:		return SSH_ERR_NO_KEX_ALG_MATCH;
-        3:  709:	if ((kexalg = kex_alg_by_name(k->name)) == NULL)
+        4:  709:	if ((kexalg = kex_alg_by_name(k->name)) == NULL)
     #####:  710:		return SSH_ERR_INTERNAL_ERROR;
-        3:  711:	k->kex_type = kexalg->type;
-        3:  712:	k->hash_alg = kexalg->hash_alg;
-        3:  713:	k->ec_nid = kexalg->ec_nid;
-        3:  714:	return 0;
+        4:  711:	k->kex_type = kexalg->type;
+        4:  712:	k->hash_alg = kexalg->hash_alg;
+        4:  713:	k->ec_nid = kexalg->ec_nid;
+        4:  714:	return 0;
         -:  715:}
         -:  716:
         -:  717:static int
-        3:  718:choose_hostkeyalg(struct kex *k, char *client, char *server)
+        4:  718:choose_hostkeyalg(struct kex *k, char *client, char *server)
         -:  719:{
-        3:  720:	k->hostkey_alg = match_list(client, server, NULL);
+        4:  720:	k->hostkey_alg = match_list(client, server, NULL);
         -:  721:
-        3:  722:	debug("kex: host key algorithm: %s",
-        3:  723:	    k->hostkey_alg ? k->hostkey_alg : "(no match)");
-        3:  724:	if (k->hostkey_alg == NULL)
+        4:  722:	debug("kex: host key algorithm: %s",
+        4:  723:	    k->hostkey_alg ? k->hostkey_alg : "(no match)");
+        4:  724:	if (k->hostkey_alg == NULL)
     #####:  725:		return SSH_ERR_NO_HOSTKEY_ALG_MATCH;
-        3:  726:	k->hostkey_type = sshkey_type_from_name(k->hostkey_alg);
-        3:  727:	if (k->hostkey_type == KEY_UNSPEC)
+        4:  726:	k->hostkey_type = sshkey_type_from_name(k->hostkey_alg);
+        4:  727:	if (k->hostkey_type == KEY_UNSPEC)
     #####:  728:		return SSH_ERR_INTERNAL_ERROR;
-        3:  729:	k->hostkey_nid = sshkey_ecdsa_nid_from_name(k->hostkey_alg);
-        3:  730:	return 0;
+        4:  729:	k->hostkey_nid = sshkey_ecdsa_nid_from_name(k->hostkey_alg);
+        4:  730:	return 0;
         -:  731:}
         -:  732:
         -:  733:static int
@@ -757,33 +757,33 @@
         -:  755:}
         -:  756:
         -:  757:static int
-        3:  758:kex_choose_conf(struct ssh *ssh)
+        4:  758:kex_choose_conf(struct ssh *ssh)
         -:  759:{
-        3:  760:	struct kex *kex = ssh->kex;
+        4:  760:	struct kex *kex = ssh->kex;
         -:  761:	struct newkeys *newkeys;
-        3:  762:	char **my = NULL, **peer = NULL;
+        4:  762:	char **my = NULL, **peer = NULL;
         -:  763:	char **cprop, **sprop;
         -:  764:	int nenc, nmac, ncomp;
         -:  765:	u_int mode, ctos, need, dh_need, authlen;
         -:  766:	int r, first_kex_follows;
         -:  767:
-        3:  768:	debug2("local %s KEXINIT proposal", kex->server ? "server" : "client");
-        3:  769:	if ((r = kex_buf2prop(kex->my, NULL, &my)) != 0)
+        4:  768:	debug2("local %s KEXINIT proposal", kex->server ? "server" : "client");
+        4:  769:	if ((r = kex_buf2prop(kex->my, NULL, &my)) != 0)
     #####:  770:		goto out;
-        3:  771:	debug2("peer %s KEXINIT proposal", kex->server ? "client" : "server");
-        3:  772:	if ((r = kex_buf2prop(kex->peer, &first_kex_follows, &peer)) != 0)
+        4:  771:	debug2("peer %s KEXINIT proposal", kex->server ? "client" : "server");
+        4:  772:	if ((r = kex_buf2prop(kex->peer, &first_kex_follows, &peer)) != 0)
     #####:  773:		goto out;
         -:  774:
-        3:  775:	if (kex->server) {
+        4:  775:	if (kex->server) {
     #####:  776:		cprop=peer;
     #####:  777:		sprop=my;
         -:  778:	} else {
-        3:  779:		cprop=my;
-        3:  780:		sprop=peer;
+        4:  779:		cprop=my;
+        4:  780:		sprop=peer;
         -:  781:	}
         -:  782:
         -:  783:	/* Check whether client supports ext_info_c */
-        3:  784:	if (kex->server) {
+        4:  784:	if (kex->server) {
         -:  785:		char *ext;
         -:  786:
     #####:  787:		ext = match_list("ext-info-c", peer[PROPOSAL_KEX_ALGS], NULL);
@@ -792,172 +792,172 @@
         -:  790:	}
         -:  791:
         -:  792:	/* Algorithm Negotiation */
-        3:  793:	if ((r = choose_kex(kex, cprop[PROPOSAL_KEX_ALGS],
+        4:  793:	if ((r = choose_kex(kex, cprop[PROPOSAL_KEX_ALGS],
         -:  794:	    sprop[PROPOSAL_KEX_ALGS])) != 0) {
     #####:  795:		kex->failed_choice = peer[PROPOSAL_KEX_ALGS];
     #####:  796:		peer[PROPOSAL_KEX_ALGS] = NULL;
     #####:  797:		goto out;
         -:  798:	}
-        3:  799:	if ((r = choose_hostkeyalg(kex, cprop[PROPOSAL_SERVER_HOST_KEY_ALGS],
-        3:  800:	    sprop[PROPOSAL_SERVER_HOST_KEY_ALGS])) != 0) {
+        4:  799:	if ((r = choose_hostkeyalg(kex, cprop[PROPOSAL_SERVER_HOST_KEY_ALGS],
+        4:  800:	    sprop[PROPOSAL_SERVER_HOST_KEY_ALGS])) != 0) {
     #####:  801:		kex->failed_choice = peer[PROPOSAL_SERVER_HOST_KEY_ALGS];
     #####:  802:		peer[PROPOSAL_SERVER_HOST_KEY_ALGS] = NULL;
     #####:  803:		goto out;
         -:  804:	}
-        9:  805:	for (mode = 0; mode < MODE_MAX; mode++) {
-        6:  806:		if ((newkeys = calloc(1, sizeof(*newkeys))) == NULL) {
+       12:  805:	for (mode = 0; mode < MODE_MAX; mode++) {
+        8:  806:		if ((newkeys = calloc(1, sizeof(*newkeys))) == NULL) {
     #####:  807:			r = SSH_ERR_ALLOC_FAIL;
     #####:  808:			goto out;
         -:  809:		}
-        6:  810:		kex->newkeys[mode] = newkeys;
-       12:  811:		ctos = (!kex->server && mode == MODE_OUT) ||
-        3:  812:		    (kex->server && mode == MODE_IN);
-        6:  813:		nenc  = ctos ? PROPOSAL_ENC_ALGS_CTOS  : PROPOSAL_ENC_ALGS_STOC;
-        6:  814:		nmac  = ctos ? PROPOSAL_MAC_ALGS_CTOS  : PROPOSAL_MAC_ALGS_STOC;
-        6:  815:		ncomp = ctos ? PROPOSAL_COMP_ALGS_CTOS : PROPOSAL_COMP_ALGS_STOC;
-        6:  816:		if ((r = choose_enc(&newkeys->enc, cprop[nenc],
-        6:  817:		    sprop[nenc])) != 0) {
+        8:  810:		kex->newkeys[mode] = newkeys;
+       16:  811:		ctos = (!kex->server && mode == MODE_OUT) ||
+        4:  812:		    (kex->server && mode == MODE_IN);
+        8:  813:		nenc  = ctos ? PROPOSAL_ENC_ALGS_CTOS  : PROPOSAL_ENC_ALGS_STOC;
+        8:  814:		nmac  = ctos ? PROPOSAL_MAC_ALGS_CTOS  : PROPOSAL_MAC_ALGS_STOC;
+        8:  815:		ncomp = ctos ? PROPOSAL_COMP_ALGS_CTOS : PROPOSAL_COMP_ALGS_STOC;
+        8:  816:		if ((r = choose_enc(&newkeys->enc, cprop[nenc],
+        8:  817:		    sprop[nenc])) != 0) {
     #####:  818:			kex->failed_choice = peer[nenc];
     #####:  819:			peer[nenc] = NULL;
     #####:  820:			goto out;
         -:  821:		}
-        6:  822:		authlen = cipher_authlen(newkeys->enc.cipher);
+        8:  822:		authlen = cipher_authlen(newkeys->enc.cipher);
         -:  823:		/* ignore mac for authenticated encryption */
-        6:  824:		if (authlen == 0 &&
+        8:  824:		if (authlen == 0 &&
     #####:  825:		    (r = choose_mac(ssh, &newkeys->mac, cprop[nmac],
     #####:  826:		    sprop[nmac])) != 0) {
     #####:  827:			kex->failed_choice = peer[nmac];
     #####:  828:			peer[nmac] = NULL;
     #####:  829:			goto out;
         -:  830:		}
-        6:  831:		if ((r = choose_comp(&newkeys->comp, cprop[ncomp],
-        6:  832:		    sprop[ncomp])) != 0) {
+        8:  831:		if ((r = choose_comp(&newkeys->comp, cprop[ncomp],
+        8:  832:		    sprop[ncomp])) != 0) {
     #####:  833:			kex->failed_choice = peer[ncomp];
     #####:  834:			peer[ncomp] = NULL;
     #####:  835:			goto out;
         -:  836:		}
-        6:  837:		debug("kex: %s cipher: %s MAC: %s compression: %s",
+        8:  837:		debug("kex: %s cipher: %s MAC: %s compression: %s",
         -:  838:		    ctos ? "client->server" : "server->client",
         -:  839:		    newkeys->enc.name,
         -:  840:		    authlen == 0 ? newkeys->mac.name : "<implicit>",
         -:  841:		    newkeys->comp.name);
         -:  842:	}
-        3:  843:	need = dh_need = 0;
-        9:  844:	for (mode = 0; mode < MODE_MAX; mode++) {
-        6:  845:		newkeys = kex->newkeys[mode];
-        6:  846:		need = MAXIMUM(need, newkeys->enc.key_len);
-        6:  847:		need = MAXIMUM(need, newkeys->enc.block_size);
-        6:  848:		need = MAXIMUM(need, newkeys->enc.iv_len);
-        6:  849:		need = MAXIMUM(need, newkeys->mac.key_len);
-        6:  850:		dh_need = MAXIMUM(dh_need, cipher_seclen(newkeys->enc.cipher));
-        6:  851:		dh_need = MAXIMUM(dh_need, newkeys->enc.block_size);
-        6:  852:		dh_need = MAXIMUM(dh_need, newkeys->enc.iv_len);
-        6:  853:		dh_need = MAXIMUM(dh_need, newkeys->mac.key_len);
+        4:  843:	need = dh_need = 0;
+       12:  844:	for (mode = 0; mode < MODE_MAX; mode++) {
+        8:  845:		newkeys = kex->newkeys[mode];
+        8:  846:		need = MAXIMUM(need, newkeys->enc.key_len);
+        8:  847:		need = MAXIMUM(need, newkeys->enc.block_size);
+        8:  848:		need = MAXIMUM(need, newkeys->enc.iv_len);
+        8:  849:		need = MAXIMUM(need, newkeys->mac.key_len);
+        8:  850:		dh_need = MAXIMUM(dh_need, cipher_seclen(newkeys->enc.cipher));
+        8:  851:		dh_need = MAXIMUM(dh_need, newkeys->enc.block_size);
+        8:  852:		dh_need = MAXIMUM(dh_need, newkeys->enc.iv_len);
+        8:  853:		dh_need = MAXIMUM(dh_need, newkeys->mac.key_len);
         -:  854:	}
         -:  855:	/* XXX need runden? */
-        3:  856:	kex->we_need = need;
-        3:  857:	kex->dh_need = dh_need;
+        4:  856:	kex->we_need = need;
+        4:  857:	kex->dh_need = dh_need;
         -:  858:
         -:  859:	/* ignore the next message if the proposals do not match */
-        3:  860:	if (first_kex_follows && !proposals_match(my, peer) &&
+        4:  860:	if (first_kex_follows && !proposals_match(my, peer) &&
     #####:  861:	    !(ssh->compat & SSH_BUG_FIRSTKEX))
     #####:  862:		ssh->dispatch_skip_packets = 1;
-        3:  863:	r = 0;
+        4:  863:	r = 0;
         -:  864: out:
-        3:  865:	kex_prop_free(my);
-        3:  866:	kex_prop_free(peer);
-        3:  867:	return r;
+        4:  865:	kex_prop_free(my);
+        4:  866:	kex_prop_free(peer);
+        4:  867:	return r;
         -:  868:}
         -:  869:
         -:  870:static int
-       18:  871:derive_key(struct ssh *ssh, int id, u_int need, u_char *hash, u_int hashlen,
+       24:  871:derive_key(struct ssh *ssh, int id, u_int need, u_char *hash, u_int hashlen,
         -:  872:    const struct sshbuf *shared_secret, u_char **keyp)
         -:  873:{
-       18:  874:	struct kex *kex = ssh->kex;
-       18:  875:	struct ssh_digest_ctx *hashctx = NULL;
-       18:  876:	char c = id;
+       24:  874:	struct kex *kex = ssh->kex;
+       24:  875:	struct ssh_digest_ctx *hashctx = NULL;
+       24:  876:	char c = id;
         -:  877:	u_int have;
         -:  878:	size_t mdsz;
         -:  879:	u_char *digest;
         -:  880:	int r;
         -:  881:
-       18:  882:	if ((mdsz = ssh_digest_bytes(kex->hash_alg)) == 0)
+       24:  882:	if ((mdsz = ssh_digest_bytes(kex->hash_alg)) == 0)
     #####:  883:		return SSH_ERR_INVALID_ARGUMENT;
-       18:  884:	if ((digest = calloc(1, ROUNDUP(need, mdsz))) == NULL) {
+       24:  884:	if ((digest = calloc(1, ROUNDUP(need, mdsz))) == NULL) {
     #####:  885:		r = SSH_ERR_ALLOC_FAIL;
     #####:  886:		goto out;
         -:  887:	}
         -:  888:
         -:  889:	/* K1 = HASH(K || H || "A" || session_id) */
-       36:  890:	if ((hashctx = ssh_digest_start(kex->hash_alg)) == NULL ||
-       36:  891:	    ssh_digest_update_buffer(hashctx, shared_secret) != 0 ||
-       36:  892:	    ssh_digest_update(hashctx, hash, hashlen) != 0 ||
-       36:  893:	    ssh_digest_update(hashctx, &c, 1) != 0 ||
-       18:  894:	    ssh_digest_update(hashctx, kex->session_id,
-       18:  895:	    kex->session_id_len) != 0 ||
-       18:  896:	    ssh_digest_final(hashctx, digest, mdsz) != 0) {
+       48:  890:	if ((hashctx = ssh_digest_start(kex->hash_alg)) == NULL ||
+       48:  891:	    ssh_digest_update_buffer(hashctx, shared_secret) != 0 ||
+       48:  892:	    ssh_digest_update(hashctx, hash, hashlen) != 0 ||
+       48:  893:	    ssh_digest_update(hashctx, &c, 1) != 0 ||
+       24:  894:	    ssh_digest_update(hashctx, kex->session_id,
+       24:  895:	    kex->session_id_len) != 0 ||
+       24:  896:	    ssh_digest_final(hashctx, digest, mdsz) != 0) {
     #####:  897:		r = SSH_ERR_LIBCRYPTO_ERROR;
     #####:  898:		goto out;
         -:  899:	}
-       18:  900:	ssh_digest_free(hashctx);
-       18:  901:	hashctx = NULL;
+       24:  900:	ssh_digest_free(hashctx);
+       24:  901:	hashctx = NULL;
         -:  902:
         -:  903:	/*
         -:  904:	 * expand key:
         -:  905:	 * Kn = HASH(K || H || K1 || K2 || ... || Kn-1)
         -:  906:	 * Key = K1 || K2 || ... || Kn
         -:  907:	 */
-       36:  908:	for (have = mdsz; need > have; have += mdsz) {
-       36:  909:		if ((hashctx = ssh_digest_start(kex->hash_alg)) == NULL ||
-       36:  910:		    ssh_digest_update_buffer(hashctx, shared_secret) != 0 ||
-       36:  911:		    ssh_digest_update(hashctx, hash, hashlen) != 0 ||
-       36:  912:		    ssh_digest_update(hashctx, digest, have) != 0 ||
-       18:  913:		    ssh_digest_final(hashctx, digest + have, mdsz) != 0) {
+       48:  908:	for (have = mdsz; need > have; have += mdsz) {
+       48:  909:		if ((hashctx = ssh_digest_start(kex->hash_alg)) == NULL ||
+       48:  910:		    ssh_digest_update_buffer(hashctx, shared_secret) != 0 ||
+       48:  911:		    ssh_digest_update(hashctx, hash, hashlen) != 0 ||
+       48:  912:		    ssh_digest_update(hashctx, digest, have) != 0 ||
+       24:  913:		    ssh_digest_final(hashctx, digest + have, mdsz) != 0) {
     #####:  914:			r = SSH_ERR_LIBCRYPTO_ERROR;
     #####:  915:			goto out;
         -:  916:		}
-       18:  917:		ssh_digest_free(hashctx);
-       18:  918:		hashctx = NULL;
+       24:  917:		ssh_digest_free(hashctx);
+       24:  918:		hashctx = NULL;
         -:  919:	}
         -:  920:#ifdef DEBUG_KEX
         -:  921:	fprintf(stderr, "key '%c'== ", c);
         -:  922:	dump_digest("key", digest, need);
         -:  923:#endif
-       18:  924:	*keyp = digest;
-       18:  925:	digest = NULL;
-       18:  926:	r = 0;
+       24:  924:	*keyp = digest;
+       24:  925:	digest = NULL;
+       24:  926:	r = 0;
         -:  927: out:
-       18:  928:	free(digest);
-       18:  929:	ssh_digest_free(hashctx);
-       18:  930:	return r;
+       24:  928:	free(digest);
+       24:  929:	ssh_digest_free(hashctx);
+       24:  930:	return r;
         -:  931:}
         -:  932:
         -:  933:#define NKEYS	6
         -:  934:int
-        3:  935:kex_derive_keys(struct ssh *ssh, u_char *hash, u_int hashlen,
+        4:  935:kex_derive_keys(struct ssh *ssh, u_char *hash, u_int hashlen,
         -:  936:    const struct sshbuf *shared_secret)
         -:  937:{
-        3:  938:	struct kex *kex = ssh->kex;
+        4:  938:	struct kex *kex = ssh->kex;
         -:  939:	u_char *keys[NKEYS];
         -:  940:	u_int i, j, mode, ctos;
         -:  941:	int r;
         -:  942:
-       21:  943:	for (i = 0; i < NKEYS; i++) {
-       18:  944:		if ((r = derive_key(ssh, 'A'+i, kex->we_need, hash, hashlen,
+       28:  943:	for (i = 0; i < NKEYS; i++) {
+       24:  944:		if ((r = derive_key(ssh, 'A'+i, kex->we_need, hash, hashlen,
         -:  945:		    shared_secret, &keys[i])) != 0) {
     #####:  946:			for (j = 0; j < i; j++)
     #####:  947:				free(keys[j]);
     #####:  948:			return r;
         -:  949:		}
         -:  950:	}
-        9:  951:	for (mode = 0; mode < MODE_MAX; mode++) {
-       12:  952:		ctos = (!kex->server && mode == MODE_OUT) ||
-        3:  953:		    (kex->server && mode == MODE_IN);
-        6:  954:		kex->newkeys[mode]->enc.iv  = keys[ctos ? 0 : 1];
-        6:  955:		kex->newkeys[mode]->enc.key = keys[ctos ? 2 : 3];
-        6:  956:		kex->newkeys[mode]->mac.key = keys[ctos ? 4 : 5];
+       12:  951:	for (mode = 0; mode < MODE_MAX; mode++) {
+       16:  952:		ctos = (!kex->server && mode == MODE_OUT) ||
+        4:  953:		    (kex->server && mode == MODE_IN);
+        8:  954:		kex->newkeys[mode]->enc.iv  = keys[ctos ? 0 : 1];
+        8:  955:		kex->newkeys[mode]->enc.key = keys[ctos ? 2 : 3];
+        8:  956:		kex->newkeys[mode]->mac.key = keys[ctos ? 4 : 5];
         -:  957:	}
-        3:  958:	return 0;
+        4:  958:	return 0;
         -:  959:}
         -:  960:
         -:  961:#ifdef WITH_OPENSSL

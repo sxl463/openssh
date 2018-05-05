@@ -204,61 +204,61 @@
         -:  202:/* More detailed messages (information that does not need to go to the log). */
         -:  203:
         -:  204:void
-        9:  205:verbose(const char *fmt,...)
+       12:  205:verbose(const char *fmt,...)
         -:  206:{
         -:  207:	va_list args;
         -:  208:
-        9:  209:	va_start(args, fmt);
-        9:  210:	do_log(SYSLOG_LEVEL_VERBOSE, fmt, args);
-        9:  211:	va_end(args);
-        9:  212:}
+       12:  209:	va_start(args, fmt);
+       12:  210:	do_log(SYSLOG_LEVEL_VERBOSE, fmt, args);
+       12:  211:	va_end(args);
+       12:  212:}
         -:  213:
         -:  214:/* Debugging messages that should not be logged during normal operation. */
         -:  215:
         -:  216:void
-      162:  217:debug(const char *fmt,...)
+      216:  217:debug(const char *fmt,...)
         -:  218:{
         -:  219:	va_list args;
         -:  220:
-      162:  221:	va_start(args, fmt);
-      162:  222:	do_log(SYSLOG_LEVEL_DEBUG1, fmt, args);
-      162:  223:	va_end(args);
-      162:  224:}
+      216:  221:	va_start(args, fmt);
+      216:  222:	do_log(SYSLOG_LEVEL_DEBUG1, fmt, args);
+      216:  223:	va_end(args);
+      216:  224:}
         -:  225:
         -:  226:void
-      198:  227:debug2(const char *fmt,...)
+      264:  227:debug2(const char *fmt,...)
         -:  228:{
         -:  229:	va_list args;
         -:  230:
-      198:  231:	va_start(args, fmt);
-      198:  232:	do_log(SYSLOG_LEVEL_DEBUG2, fmt, args);
-      198:  233:	va_end(args);
-      198:  234:}
+      264:  231:	va_start(args, fmt);
+      264:  232:	do_log(SYSLOG_LEVEL_DEBUG2, fmt, args);
+      264:  233:	va_end(args);
+      264:  234:}
         -:  235:
         -:  236:void
-      135:  237:debug3(const char *fmt,...)
+      180:  237:debug3(const char *fmt,...)
         -:  238:{
         -:  239:	va_list args;
         -:  240:
-      135:  241:	va_start(args, fmt);
-      135:  242:	do_log(SYSLOG_LEVEL_DEBUG3, fmt, args);
-      135:  243:	va_end(args);
-      135:  244:}
+      180:  241:	va_start(args, fmt);
+      180:  242:	do_log(SYSLOG_LEVEL_DEBUG3, fmt, args);
+      180:  243:	va_end(args);
+      180:  244:}
         -:  245:
         -:  246:/*
         -:  247: * Initialize the log.
         -:  248: */
         -:  249:
         -:  250:void
-        6:  251:log_init(char *av0, LogLevel level, SyslogFacility facility, int on_stderr)
+        8:  251:log_init(char *av0, LogLevel level, SyslogFacility facility, int on_stderr)
         -:  252:{
         -:  253:#if defined(HAVE_OPENLOG_R) && defined(SYSLOG_DATA_INIT)
         -:  254:	struct syslog_data sdata = SYSLOG_DATA_INIT;
         -:  255:#endif
         -:  256:
-        6:  257:	argv0 = av0;
+        8:  257:	argv0 = av0;
         -:  258:
-        6:  259:	switch (level) {
+        8:  259:	switch (level) {
         -:  260:	case SYSLOG_LEVEL_QUIET:
         -:  261:	case SYSLOG_LEVEL_FATAL:
         -:  262:	case SYSLOG_LEVEL_ERROR:
@@ -267,20 +267,20 @@
         -:  265:	case SYSLOG_LEVEL_DEBUG1:
         -:  266:	case SYSLOG_LEVEL_DEBUG2:
         -:  267:	case SYSLOG_LEVEL_DEBUG3:
-        6:  268:		log_level = level;
-        6:  269:		break;
+        8:  268:		log_level = level;
+        8:  269:		break;
         -:  270:	default:
     #####:  271:		fprintf(stderr, "Unrecognized internal syslog level code %d\n",
         -:  272:		    (int) level);
     #####:  273:		exit(1);
         -:  274:	}
         -:  275:
-        6:  276:	log_handler = NULL;
-        6:  277:	log_handler_ctx = NULL;
+        8:  276:	log_handler = NULL;
+        8:  277:	log_handler_ctx = NULL;
         -:  278:
-        6:  279:	log_on_stderr = on_stderr;
-        6:  280:	if (on_stderr)
-       12:  281:		return;
+        8:  279:	log_on_stderr = on_stderr;
+        8:  280:	if (on_stderr)
+       16:  281:		return;
         -:  282:
     #####:  283:	switch (facility) {
         -:  284:	case SYSLOG_FACILITY_DAEMON:
@@ -391,20 +391,20 @@
     #####:  389:}
         -:  390:
         -:  391:void
-      506:  392:do_log(LogLevel level, const char *fmt, va_list args)
+      674:  392:do_log(LogLevel level, const char *fmt, va_list args)
         -:  393:{
         -:  394:#if defined(HAVE_OPENLOG_R) && defined(SYSLOG_DATA_INIT)
         -:  395:	struct syslog_data sdata = SYSLOG_DATA_INIT;
         -:  396:#endif
         -:  397:	char msgbuf[MSGBUFSIZ];
         -:  398:	char fmtbuf[MSGBUFSIZ];
-      506:  399:	char *txt = NULL;
-      506:  400:	int pri = LOG_INFO;
-      506:  401:	int saved_errno = errno;
+      674:  399:	char *txt = NULL;
+      674:  400:	int pri = LOG_INFO;
+      674:  401:	int saved_errno = errno;
         -:  402:	log_handler_fn *tmp_handler;
         -:  403:
-      506:  404:	if (level > log_level)
-      953:  405:		return;
+      674:  404:	if (level > log_level)
+     1289:  405:		return;
         -:  406:
        59:  407:	switch (level) {
         -:  408:	case SYSLOG_LEVEL_FATAL:

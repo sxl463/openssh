@@ -97,11 +97,11 @@
         -:   95:}
         -:   96:
         -:   97:void
-        3:   98:deattack_init(struct deattack_ctx *dctx)
+        4:   98:deattack_init(struct deattack_ctx *dctx)
         -:   99:{
-        3:  100:	bzero(dctx, sizeof(*dctx));
-        3:  101:	dctx->n = HASH_MINSIZE / HASH_ENTRYSIZE;
-        3:  102:}
+        4:  100:	bzero(dctx, sizeof(*dctx));
+        4:  101:	dctx->n = HASH_MINSIZE / HASH_ENTRYSIZE;
+        4:  102:}
         -:  103:
         -:  104:/* Detect a crc32 compensation attack on a packet */
         -:  105:int

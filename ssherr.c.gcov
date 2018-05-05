@@ -22,9 +22,9 @@
         -:   20:#include "ssherr.h"
         -:   21:
         -:   22:const char *
-       21:   23:ssh_err(int n)
+       28:   23:ssh_err(int n)
         -:   24:{
-       21:   25:	switch (n) {
+       28:   25:	switch (n) {
         -:   26:	case SSH_ERR_SUCCESS:
     #####:   27:		return "success";
         -:   28:	case SSH_ERR_INTERNAL_ERROR:
@@ -74,7 +74,7 @@
         -:   72:	case SSH_ERR_UNEXPECTED_TRAILING_DATA:
     #####:   73:		return "unexpected bytes remain after decoding";
         -:   74:	case SSH_ERR_SYSTEM_ERROR:
-       21:   75:		return strerror(errno);
+       28:   75:		return strerror(errno);
         -:   76:	case SSH_ERR_KEY_CERT_INVALID:
     #####:   77:		return "invalid certificate";
         -:   78:	case SSH_ERR_AGENT_COMMUNICATION:

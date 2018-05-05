@@ -113,51 +113,51 @@
         -:  111:}
         -:  112:
         -:  113:int
-        9:  114:sshbuf_b64tod(struct sshbuf *buf, const char *b64)
+       12:  114:sshbuf_b64tod(struct sshbuf *buf, const char *b64)
         -:  115:{
-        9:  116:	size_t plen = strlen(b64);
+       12:  116:	size_t plen = strlen(b64);
         -:  117:	int nlen, r;
         -:  118:	u_char *p;
         -:  119:
-        9:  120:	if (plen == 0)
+       12:  120:	if (plen == 0)
     #####:  121:		return 0;
-        9:  122:	if ((p = malloc(plen)) == NULL)
+       12:  122:	if ((p = malloc(plen)) == NULL)
     #####:  123:		return SSH_ERR_ALLOC_FAIL;
-        9:  124:	if ((nlen = b64_pton(b64, p, plen)) < 0) {
+       12:  124:	if ((nlen = b64_pton(b64, p, plen)) < 0) {
     #####:  125:		explicit_bzero(p, plen);
     #####:  126:		free(p);
     #####:  127:		return SSH_ERR_INVALID_FORMAT;
         -:  128:	}
-        9:  129:	if ((r = sshbuf_put(buf, p, nlen)) < 0) {
+       12:  129:	if ((r = sshbuf_put(buf, p, nlen)) < 0) {
     #####:  130:		explicit_bzero(p, plen);
     #####:  131:		free(p);
     #####:  132:		return r;
         -:  133:	}
-        9:  134:	explicit_bzero(p, plen);
-        9:  135:	free(p);
-        9:  136:	return 0;
+       12:  134:	explicit_bzero(p, plen);
+       12:  135:	free(p);
+       12:  136:	return 0;
         -:  137:}
         -:  138:
         -:  139:char *
-        3:  140:sshbuf_dup_string(struct sshbuf *buf)
+        4:  140:sshbuf_dup_string(struct sshbuf *buf)
         -:  141:{
-        3:  142:	const u_char *p = NULL, *s = sshbuf_ptr(buf);
-        3:  143:	size_t l = sshbuf_len(buf);
+        4:  142:	const u_char *p = NULL, *s = sshbuf_ptr(buf);
+        4:  143:	size_t l = sshbuf_len(buf);
         -:  144:	char *r;
         -:  145:
-        3:  146:	if (s == NULL || l > SIZE_MAX)
+        4:  146:	if (s == NULL || l > SIZE_MAX)
     #####:  147:		return NULL;
         -:  148:	/* accept a nul only as the last character in the buffer */
-        3:  149:	if (l > 0 && (p = memchr(s, '\0', l)) != NULL) {
+        4:  149:	if (l > 0 && (p = memchr(s, '\0', l)) != NULL) {
     #####:  150:		if (p != s + l - 1)
     #####:  151:			return NULL;
     #####:  152:		l--; /* the nul is put back below */
         -:  153:	}
-        3:  154:	if ((r = malloc(l + 1)) == NULL)
+        4:  154:	if ((r = malloc(l + 1)) == NULL)
     #####:  155:		return NULL;
-        3:  156:	if (l > 0)
-        3:  157:		memcpy(r, s, l);
-        3:  158:	r[l] = '\0';
-        3:  159:	return r;
+        4:  156:	if (l > 0)
+        4:  157:		memcpy(r, s, l);
+        4:  158:	r[l] = '\0';
+        4:  159:	return r;
         -:  160:}
         -:  161:

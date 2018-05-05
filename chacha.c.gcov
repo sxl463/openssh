@@ -55,167 +55,167 @@
         -:   53:static const char tau[16] = "expand 16-byte k";
         -:   54:
         -:   55:void
-       12:   56:chacha_keysetup(chacha_ctx *x,const u8 *k,u32 kbits)
+       16:   56:chacha_keysetup(chacha_ctx *x,const u8 *k,u32 kbits)
         -:   57:{
         -:   58:  const char *constants;
         -:   59:
-       12:   60:  x->input[4] = U8TO32_LITTLE(k + 0);
-       12:   61:  x->input[5] = U8TO32_LITTLE(k + 4);
-       12:   62:  x->input[6] = U8TO32_LITTLE(k + 8);
-       12:   63:  x->input[7] = U8TO32_LITTLE(k + 12);
-       12:   64:  if (kbits == 256) { /* recommended */
-       12:   65:    k += 16;
-       12:   66:    constants = sigma;
+       16:   60:  x->input[4] = U8TO32_LITTLE(k + 0);
+       16:   61:  x->input[5] = U8TO32_LITTLE(k + 4);
+       16:   62:  x->input[6] = U8TO32_LITTLE(k + 8);
+       16:   63:  x->input[7] = U8TO32_LITTLE(k + 12);
+       16:   64:  if (kbits == 256) { /* recommended */
+       16:   65:    k += 16;
+       16:   66:    constants = sigma;
         -:   67:  } else { /* kbits == 128 */
     #####:   68:    constants = tau;
         -:   69:  }
-       12:   70:  x->input[8] = U8TO32_LITTLE(k + 0);
-       12:   71:  x->input[9] = U8TO32_LITTLE(k + 4);
-       12:   72:  x->input[10] = U8TO32_LITTLE(k + 8);
-       12:   73:  x->input[11] = U8TO32_LITTLE(k + 12);
-       12:   74:  x->input[0] = U8TO32_LITTLE(constants + 0);
-       12:   75:  x->input[1] = U8TO32_LITTLE(constants + 4);
-       12:   76:  x->input[2] = U8TO32_LITTLE(constants + 8);
-       12:   77:  x->input[3] = U8TO32_LITTLE(constants + 12);
-       12:   78:}
+       16:   70:  x->input[8] = U8TO32_LITTLE(k + 0);
+       16:   71:  x->input[9] = U8TO32_LITTLE(k + 4);
+       16:   72:  x->input[10] = U8TO32_LITTLE(k + 8);
+       16:   73:  x->input[11] = U8TO32_LITTLE(k + 12);
+       16:   74:  x->input[0] = U8TO32_LITTLE(constants + 0);
+       16:   75:  x->input[1] = U8TO32_LITTLE(constants + 4);
+       16:   76:  x->input[2] = U8TO32_LITTLE(constants + 8);
+       16:   77:  x->input[3] = U8TO32_LITTLE(constants + 12);
+       16:   78:}
         -:   79:
         -:   80:void
-      863:   81:chacha_ivsetup(chacha_ctx *x, const u8 *iv, const u8 *counter)
+      988:   81:chacha_ivsetup(chacha_ctx *x, const u8 *iv, const u8 *counter)
         -:   82:{
-      863:   83:  x->input[12] = counter == NULL ? 0 : U8TO32_LITTLE(counter + 0);
-      863:   84:  x->input[13] = counter == NULL ? 0 : U8TO32_LITTLE(counter + 4);
-      863:   85:  x->input[14] = U8TO32_LITTLE(iv + 0);
-      863:   86:  x->input[15] = U8TO32_LITTLE(iv + 4);
-      863:   87:}
+      988:   83:  x->input[12] = counter == NULL ? 0 : U8TO32_LITTLE(counter + 0);
+      988:   84:  x->input[13] = counter == NULL ? 0 : U8TO32_LITTLE(counter + 4);
+      988:   85:  x->input[14] = U8TO32_LITTLE(iv + 0);
+      988:   86:  x->input[15] = U8TO32_LITTLE(iv + 4);
+      988:   87:}
         -:   88:
         -:   89:void
-      863:   90:chacha_encrypt_bytes(chacha_ctx *x,const u8 *m,u8 *c,u32 bytes)
+      988:   90:chacha_encrypt_bytes(chacha_ctx *x,const u8 *m,u8 *c,u32 bytes)
         -:   91:{
         -:   92:  u32 x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15;
         -:   93:  u32 j0, j1, j2, j3, j4, j5, j6, j7, j8, j9, j10, j11, j12, j13, j14, j15;
-      863:   94:  u8 *ctarget = NULL;
+      988:   94:  u8 *ctarget = NULL;
         -:   95:  u8 tmp[64];
         -:   96:  u_int i;
         -:   97:
-      863:   98:  if (!bytes) return;
+      988:   98:  if (!bytes) return;
         -:   99:
-      863:  100:  j0 = x->input[0];
-      863:  101:  j1 = x->input[1];
-      863:  102:  j2 = x->input[2];
-      863:  103:  j3 = x->input[3];
-      863:  104:  j4 = x->input[4];
-      863:  105:  j5 = x->input[5];
-      863:  106:  j6 = x->input[6];
-      863:  107:  j7 = x->input[7];
-      863:  108:  j8 = x->input[8];
-      863:  109:  j9 = x->input[9];
-      863:  110:  j10 = x->input[10];
-      863:  111:  j11 = x->input[11];
-      863:  112:  j12 = x->input[12];
-      863:  113:  j13 = x->input[13];
-      863:  114:  j14 = x->input[14];
-      863:  115:  j15 = x->input[15];
+      988:  100:  j0 = x->input[0];
+      988:  101:  j1 = x->input[1];
+      988:  102:  j2 = x->input[2];
+      988:  103:  j3 = x->input[3];
+      988:  104:  j4 = x->input[4];
+      988:  105:  j5 = x->input[5];
+      988:  106:  j6 = x->input[6];
+      988:  107:  j7 = x->input[7];
+      988:  108:  j8 = x->input[8];
+      988:  109:  j9 = x->input[9];
+      988:  110:  j10 = x->input[10];
+      988:  111:  j11 = x->input[11];
+      988:  112:  j12 = x->input[12];
+      988:  113:  j13 = x->input[13];
+      988:  114:  j14 = x->input[14];
+      988:  115:  j15 = x->input[15];
         -:  116:
         -:  117:  for (;;) {
-     1499:  118:    if (bytes < 64) {
-      861:  119:      for (i = 0;i < bytes;++i) tmp[i] = m[i];
-      861:  120:      m = tmp;
-      861:  121:      ctarget = c;
-      861:  122:      c = tmp;
+     1658:  118:    if (bytes < 64) {
+      986:  119:      for (i = 0;i < bytes;++i) tmp[i] = m[i];
+      986:  120:      m = tmp;
+      986:  121:      ctarget = c;
+      986:  122:      c = tmp;
         -:  123:    }
-     1499:  124:    x0 = j0;
-     1499:  125:    x1 = j1;
-     1499:  126:    x2 = j2;
-     1499:  127:    x3 = j3;
-     1499:  128:    x4 = j4;
-     1499:  129:    x5 = j5;
-     1499:  130:    x6 = j6;
-     1499:  131:    x7 = j7;
-     1499:  132:    x8 = j8;
-     1499:  133:    x9 = j9;
-     1499:  134:    x10 = j10;
-     1499:  135:    x11 = j11;
-     1499:  136:    x12 = j12;
-     1499:  137:    x13 = j13;
-     1499:  138:    x14 = j14;
-     1499:  139:    x15 = j15;
-    16489:  140:    for (i = 20;i > 0;i -= 2) {
-    14990:  141:      QUARTERROUND( x0, x4, x8,x12)
-    14990:  142:      QUARTERROUND( x1, x5, x9,x13)
-    14990:  143:      QUARTERROUND( x2, x6,x10,x14)
-    14990:  144:      QUARTERROUND( x3, x7,x11,x15)
-    14990:  145:      QUARTERROUND( x0, x5,x10,x15)
-    14990:  146:      QUARTERROUND( x1, x6,x11,x12)
-    14990:  147:      QUARTERROUND( x2, x7, x8,x13)
-    14990:  148:      QUARTERROUND( x3, x4, x9,x14)
+     1658:  124:    x0 = j0;
+     1658:  125:    x1 = j1;
+     1658:  126:    x2 = j2;
+     1658:  127:    x3 = j3;
+     1658:  128:    x4 = j4;
+     1658:  129:    x5 = j5;
+     1658:  130:    x6 = j6;
+     1658:  131:    x7 = j7;
+     1658:  132:    x8 = j8;
+     1658:  133:    x9 = j9;
+     1658:  134:    x10 = j10;
+     1658:  135:    x11 = j11;
+     1658:  136:    x12 = j12;
+     1658:  137:    x13 = j13;
+     1658:  138:    x14 = j14;
+     1658:  139:    x15 = j15;
+    18238:  140:    for (i = 20;i > 0;i -= 2) {
+    16580:  141:      QUARTERROUND( x0, x4, x8,x12)
+    16580:  142:      QUARTERROUND( x1, x5, x9,x13)
+    16580:  143:      QUARTERROUND( x2, x6,x10,x14)
+    16580:  144:      QUARTERROUND( x3, x7,x11,x15)
+    16580:  145:      QUARTERROUND( x0, x5,x10,x15)
+    16580:  146:      QUARTERROUND( x1, x6,x11,x12)
+    16580:  147:      QUARTERROUND( x2, x7, x8,x13)
+    16580:  148:      QUARTERROUND( x3, x4, x9,x14)
         -:  149:    }
-     1499:  150:    x0 = PLUS(x0,j0);
-     1499:  151:    x1 = PLUS(x1,j1);
-     1499:  152:    x2 = PLUS(x2,j2);
-     1499:  153:    x3 = PLUS(x3,j3);
-     1499:  154:    x4 = PLUS(x4,j4);
-     1499:  155:    x5 = PLUS(x5,j5);
-     1499:  156:    x6 = PLUS(x6,j6);
-     1499:  157:    x7 = PLUS(x7,j7);
-     1499:  158:    x8 = PLUS(x8,j8);
-     1499:  159:    x9 = PLUS(x9,j9);
-     1499:  160:    x10 = PLUS(x10,j10);
-     1499:  161:    x11 = PLUS(x11,j11);
-     1499:  162:    x12 = PLUS(x12,j12);
-     1499:  163:    x13 = PLUS(x13,j13);
-     1499:  164:    x14 = PLUS(x14,j14);
-     1499:  165:    x15 = PLUS(x15,j15);
+     1658:  150:    x0 = PLUS(x0,j0);
+     1658:  151:    x1 = PLUS(x1,j1);
+     1658:  152:    x2 = PLUS(x2,j2);
+     1658:  153:    x3 = PLUS(x3,j3);
+     1658:  154:    x4 = PLUS(x4,j4);
+     1658:  155:    x5 = PLUS(x5,j5);
+     1658:  156:    x6 = PLUS(x6,j6);
+     1658:  157:    x7 = PLUS(x7,j7);
+     1658:  158:    x8 = PLUS(x8,j8);
+     1658:  159:    x9 = PLUS(x9,j9);
+     1658:  160:    x10 = PLUS(x10,j10);
+     1658:  161:    x11 = PLUS(x11,j11);
+     1658:  162:    x12 = PLUS(x12,j12);
+     1658:  163:    x13 = PLUS(x13,j13);
+     1658:  164:    x14 = PLUS(x14,j14);
+     1658:  165:    x15 = PLUS(x15,j15);
         -:  166:
-     1499:  167:    x0 = XOR(x0,U8TO32_LITTLE(m + 0));
-     1499:  168:    x1 = XOR(x1,U8TO32_LITTLE(m + 4));
-     1499:  169:    x2 = XOR(x2,U8TO32_LITTLE(m + 8));
-     1499:  170:    x3 = XOR(x3,U8TO32_LITTLE(m + 12));
-     1499:  171:    x4 = XOR(x4,U8TO32_LITTLE(m + 16));
-     1499:  172:    x5 = XOR(x5,U8TO32_LITTLE(m + 20));
-     1499:  173:    x6 = XOR(x6,U8TO32_LITTLE(m + 24));
-     1499:  174:    x7 = XOR(x7,U8TO32_LITTLE(m + 28));
-     1499:  175:    x8 = XOR(x8,U8TO32_LITTLE(m + 32));
-     1499:  176:    x9 = XOR(x9,U8TO32_LITTLE(m + 36));
-     1499:  177:    x10 = XOR(x10,U8TO32_LITTLE(m + 40));
-     1499:  178:    x11 = XOR(x11,U8TO32_LITTLE(m + 44));
-     1499:  179:    x12 = XOR(x12,U8TO32_LITTLE(m + 48));
-     1499:  180:    x13 = XOR(x13,U8TO32_LITTLE(m + 52));
-     1499:  181:    x14 = XOR(x14,U8TO32_LITTLE(m + 56));
-     1499:  182:    x15 = XOR(x15,U8TO32_LITTLE(m + 60));
+     1658:  167:    x0 = XOR(x0,U8TO32_LITTLE(m + 0));
+     1658:  168:    x1 = XOR(x1,U8TO32_LITTLE(m + 4));
+     1658:  169:    x2 = XOR(x2,U8TO32_LITTLE(m + 8));
+     1658:  170:    x3 = XOR(x3,U8TO32_LITTLE(m + 12));
+     1658:  171:    x4 = XOR(x4,U8TO32_LITTLE(m + 16));
+     1658:  172:    x5 = XOR(x5,U8TO32_LITTLE(m + 20));
+     1658:  173:    x6 = XOR(x6,U8TO32_LITTLE(m + 24));
+     1658:  174:    x7 = XOR(x7,U8TO32_LITTLE(m + 28));
+     1658:  175:    x8 = XOR(x8,U8TO32_LITTLE(m + 32));
+     1658:  176:    x9 = XOR(x9,U8TO32_LITTLE(m + 36));
+     1658:  177:    x10 = XOR(x10,U8TO32_LITTLE(m + 40));
+     1658:  178:    x11 = XOR(x11,U8TO32_LITTLE(m + 44));
+     1658:  179:    x12 = XOR(x12,U8TO32_LITTLE(m + 48));
+     1658:  180:    x13 = XOR(x13,U8TO32_LITTLE(m + 52));
+     1658:  181:    x14 = XOR(x14,U8TO32_LITTLE(m + 56));
+     1658:  182:    x15 = XOR(x15,U8TO32_LITTLE(m + 60));
         -:  183:
-     1499:  184:    j12 = PLUSONE(j12);
-     1499:  185:    if (!j12) {
+     1658:  184:    j12 = PLUSONE(j12);
+     1658:  185:    if (!j12) {
     #####:  186:      j13 = PLUSONE(j13);
         -:  187:      /* stopping at 2^70 bytes per nonce is user's responsibility */
         -:  188:    }
         -:  189:
-     1499:  190:    U32TO8_LITTLE(c + 0,x0);
-     1499:  191:    U32TO8_LITTLE(c + 4,x1);
-     1499:  192:    U32TO8_LITTLE(c + 8,x2);
-     1499:  193:    U32TO8_LITTLE(c + 12,x3);
-     1499:  194:    U32TO8_LITTLE(c + 16,x4);
-     1499:  195:    U32TO8_LITTLE(c + 20,x5);
-     1499:  196:    U32TO8_LITTLE(c + 24,x6);
-     1499:  197:    U32TO8_LITTLE(c + 28,x7);
-     1499:  198:    U32TO8_LITTLE(c + 32,x8);
-     1499:  199:    U32TO8_LITTLE(c + 36,x9);
-     1499:  200:    U32TO8_LITTLE(c + 40,x10);
-     1499:  201:    U32TO8_LITTLE(c + 44,x11);
-     1499:  202:    U32TO8_LITTLE(c + 48,x12);
-     1499:  203:    U32TO8_LITTLE(c + 52,x13);
-     1499:  204:    U32TO8_LITTLE(c + 56,x14);
-     1499:  205:    U32TO8_LITTLE(c + 60,x15);
+     1658:  190:    U32TO8_LITTLE(c + 0,x0);
+     1658:  191:    U32TO8_LITTLE(c + 4,x1);
+     1658:  192:    U32TO8_LITTLE(c + 8,x2);
+     1658:  193:    U32TO8_LITTLE(c + 12,x3);
+     1658:  194:    U32TO8_LITTLE(c + 16,x4);
+     1658:  195:    U32TO8_LITTLE(c + 20,x5);
+     1658:  196:    U32TO8_LITTLE(c + 24,x6);
+     1658:  197:    U32TO8_LITTLE(c + 28,x7);
+     1658:  198:    U32TO8_LITTLE(c + 32,x8);
+     1658:  199:    U32TO8_LITTLE(c + 36,x9);
+     1658:  200:    U32TO8_LITTLE(c + 40,x10);
+     1658:  201:    U32TO8_LITTLE(c + 44,x11);
+     1658:  202:    U32TO8_LITTLE(c + 48,x12);
+     1658:  203:    U32TO8_LITTLE(c + 52,x13);
+     1658:  204:    U32TO8_LITTLE(c + 56,x14);
+     1658:  205:    U32TO8_LITTLE(c + 60,x15);
         -:  206:
-     1499:  207:    if (bytes <= 64) {
-      863:  208:      if (bytes < 64) {
-      861:  209:        for (i = 0;i < bytes;++i) ctarget[i] = c[i];
+     1658:  207:    if (bytes <= 64) {
+      988:  208:      if (bytes < 64) {
+      986:  209:        for (i = 0;i < bytes;++i) ctarget[i] = c[i];
         -:  210:      }
-      863:  211:      x->input[12] = j12;
-      863:  212:      x->input[13] = j13;
-      863:  213:      return;
+      988:  211:      x->input[12] = j12;
+      988:  212:      x->input[13] = j13;
+      988:  213:      return;
         -:  214:    }
-      636:  215:    bytes -= 64;
-      636:  216:    c += 64;
-      636:  217:    m += 64;
-      636:  218:  }
+      670:  215:    bytes -= 64;
+      670:  216:    c += 64;
+      670:  217:    m += 64;
+      670:  218:  }
         -:  219:}

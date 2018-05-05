@@ -162,36 +162,36 @@
         -:  160: */
         -:  161:
         -:  162:int
-        6:  163:hostfile_read_key(char **cpp, u_int *bitsp, struct sshkey *ret)
+        8:  163:hostfile_read_key(char **cpp, u_int *bitsp, struct sshkey *ret)
         -:  164:{
         -:  165:	char *cp;
         -:  166:	int r;
         -:  167:
         -:  168:	/* Skip leading whitespace. */
-        6:  169:	for (cp = *cpp; *cp == ' ' || *cp == '\t'; cp++)
+        8:  169:	for (cp = *cpp; *cp == ' ' || *cp == '\t'; cp++)
         -:  170:		;
         -:  171:
-        6:  172:	if ((r = sshkey_read(ret, &cp)) != 0)
+        8:  172:	if ((r = sshkey_read(ret, &cp)) != 0)
     #####:  173:		return 0;
         -:  174:
         -:  175:	/* Skip trailing whitespace. */
-        6:  176:	for (; *cp == ' ' || *cp == '\t'; cp++)
+        8:  176:	for (; *cp == ' ' || *cp == '\t'; cp++)
         -:  177:		;
         -:  178:
         -:  179:	/* Return results. */
-        6:  180:	*cpp = cp;
-        6:  181:	if (bitsp != NULL)
-        6:  182:		*bitsp = sshkey_size(ret);
-        6:  183:	return 1;
+        8:  180:	*cpp = cp;
+        8:  181:	if (bitsp != NULL)
+        8:  182:		*bitsp = sshkey_size(ret);
+        8:  183:	return 1;
         -:  184:}
         -:  185:
         -:  186:static HostkeyMarker
-        6:  187:check_markers(char **cpp)
+        8:  187:check_markers(char **cpp)
         -:  188:{
-        6:  189:	char marker[32], *sp, *cp = *cpp;
-        6:  190:	int ret = MRK_NONE;
+        8:  189:	char marker[32], *sp, *cp = *cpp;
+        8:  190:	int ret = MRK_NONE;
         -:  191:
-       12:  192:	while (*cp == '@') {
+       16:  192:	while (*cp == '@') {
         -:  193:		/* Only one marker is allowed */
     #####:  194:		if (ret != MRK_NONE)
     #####:  195:			return MRK_ERROR;
@@ -216,17 +216,17 @@
     #####:  214:		for (; *cp == ' ' || *cp == '\t'; cp++)
         -:  215:			;
         -:  216:	}
-        6:  217:	*cpp = cp;
-        6:  218:	return ret;
+        8:  217:	*cpp = cp;
+        8:  218:	return ret;
         -:  219:}
         -:  220:
         -:  221:struct hostkeys *
-        6:  222:init_hostkeys(void)
+        8:  222:init_hostkeys(void)
         -:  223:{
-        6:  224:	struct hostkeys *ret = xcalloc(1, sizeof(*ret));
+        8:  224:	struct hostkeys *ret = xcalloc(1, sizeof(*ret));
         -:  225:
-        6:  226:	ret->entries = NULL;
-        6:  227:	return ret;
+        8:  226:	ret->entries = NULL;
+        8:  227:	return ret;
         -:  228:}
         -:  229:
         -:  230:struct load_callback_ctx {
@@ -236,85 +236,85 @@
         -:  234:};
         -:  235:
         -:  236:static int
-        6:  237:record_hostkey(struct hostkey_foreach_line *l, void *_ctx)
+        8:  237:record_hostkey(struct hostkey_foreach_line *l, void *_ctx)
         -:  238:{
-        6:  239:	struct load_callback_ctx *ctx = (struct load_callback_ctx *)_ctx;
-        6:  240:	struct hostkeys *hostkeys = ctx->hostkeys;
+        8:  239:	struct load_callback_ctx *ctx = (struct load_callback_ctx *)_ctx;
+        8:  240:	struct hostkeys *hostkeys = ctx->hostkeys;
         -:  241:	struct hostkey_entry *tmp;
         -:  242:
-        6:  243:	if (l->status == HKF_STATUS_INVALID) {
+        8:  243:	if (l->status == HKF_STATUS_INVALID) {
         -:  244:		/* XXX make this verbose() in the future */
     #####:  245:		debug("%s:%ld: parse error in hostkeys file",
         -:  246:		    l->path, l->linenum);
     #####:  247:		return 0;
         -:  248:	}
         -:  249:
-       18:  250:	debug3("%s: found %skey type %s in file %s:%lu", __func__,
-        6:  251:	    l->marker == MRK_NONE ? "" :
+       24:  250:	debug3("%s: found %skey type %s in file %s:%lu", __func__,
+        8:  251:	    l->marker == MRK_NONE ? "" :
     #####:  252:	    (l->marker == MRK_CA ? "ca " : "revoked "),
-        6:  253:	    sshkey_type(l->key), l->path, l->linenum);
-        6:  254:	if ((tmp = reallocarray(hostkeys->entries,
-        6:  255:	    hostkeys->num_entries + 1, sizeof(*hostkeys->entries))) == NULL)
+        8:  253:	    sshkey_type(l->key), l->path, l->linenum);
+        8:  254:	if ((tmp = reallocarray(hostkeys->entries,
+        8:  255:	    hostkeys->num_entries + 1, sizeof(*hostkeys->entries))) == NULL)
     #####:  256:		return SSH_ERR_ALLOC_FAIL;
-        6:  257:	hostkeys->entries = tmp;
-        6:  258:	hostkeys->entries[hostkeys->num_entries].host = xstrdup(ctx->host);
-        6:  259:	hostkeys->entries[hostkeys->num_entries].file = xstrdup(l->path);
-        6:  260:	hostkeys->entries[hostkeys->num_entries].line = l->linenum;
-        6:  261:	hostkeys->entries[hostkeys->num_entries].key = l->key;
-        6:  262:	l->key = NULL; /* steal it */
-        6:  263:	hostkeys->entries[hostkeys->num_entries].marker = l->marker;
-        6:  264:	hostkeys->num_entries++;
-        6:  265:	ctx->num_loaded++;
+        8:  257:	hostkeys->entries = tmp;
+        8:  258:	hostkeys->entries[hostkeys->num_entries].host = xstrdup(ctx->host);
+        8:  259:	hostkeys->entries[hostkeys->num_entries].file = xstrdup(l->path);
+        8:  260:	hostkeys->entries[hostkeys->num_entries].line = l->linenum;
+        8:  261:	hostkeys->entries[hostkeys->num_entries].key = l->key;
+        8:  262:	l->key = NULL; /* steal it */
+        8:  263:	hostkeys->entries[hostkeys->num_entries].marker = l->marker;
+        8:  264:	hostkeys->num_entries++;
+        8:  265:	ctx->num_loaded++;
         -:  266:
-        6:  267:	return 0;
+        8:  267:	return 0;
         -:  268:}
         -:  269:
         -:  270:void
-       24:  271:load_hostkeys(struct hostkeys *hostkeys, const char *host, const char *path)
+       32:  271:load_hostkeys(struct hostkeys *hostkeys, const char *host, const char *path)
         -:  272:{
         -:  273:	int r;
         -:  274:	struct load_callback_ctx ctx;
         -:  275:
-       24:  276:	ctx.host = host;
-       24:  277:	ctx.num_loaded = 0;
-       24:  278:	ctx.hostkeys = hostkeys;
+       32:  276:	ctx.host = host;
+       32:  277:	ctx.num_loaded = 0;
+       32:  278:	ctx.hostkeys = hostkeys;
         -:  279:
-       24:  280:	if ((r = hostkeys_foreach(path, record_hostkey, &ctx, host, NULL,
+       32:  280:	if ((r = hostkeys_foreach(path, record_hostkey, &ctx, host, NULL,
         -:  281:	    HKF_WANT_MATCH|HKF_WANT_PARSE_KEY)) != 0) {
-       18:  282:		if (r != SSH_ERR_SYSTEM_ERROR && errno != ENOENT)
+       24:  282:		if (r != SSH_ERR_SYSTEM_ERROR && errno != ENOENT)
     #####:  283:			debug("%s: hostkeys_foreach failed for %s: %s",
         -:  284:			    __func__, path, ssh_err(r));
         -:  285:	}
-       24:  286:	if (ctx.num_loaded != 0)
-        6:  287:		debug3("%s: loaded %lu keys from %s", __func__,
+       32:  286:	if (ctx.num_loaded != 0)
+        8:  287:		debug3("%s: loaded %lu keys from %s", __func__,
         -:  288:		    ctx.num_loaded, host);
-       24:  289:}
+       32:  289:}
         -:  290:
         -:  291:void
-        6:  292:free_hostkeys(struct hostkeys *hostkeys)
+        8:  292:free_hostkeys(struct hostkeys *hostkeys)
         -:  293:{
         -:  294:	u_int i;
         -:  295:
-       12:  296:	for (i = 0; i < hostkeys->num_entries; i++) {
-        6:  297:		free(hostkeys->entries[i].host);
-        6:  298:		free(hostkeys->entries[i].file);
-        6:  299:		sshkey_free(hostkeys->entries[i].key);
-        6:  300:		explicit_bzero(hostkeys->entries + i, sizeof(*hostkeys->entries));
+       16:  296:	for (i = 0; i < hostkeys->num_entries; i++) {
+        8:  297:		free(hostkeys->entries[i].host);
+        8:  298:		free(hostkeys->entries[i].file);
+        8:  299:		sshkey_free(hostkeys->entries[i].key);
+        8:  300:		explicit_bzero(hostkeys->entries + i, sizeof(*hostkeys->entries));
         -:  301:	}
-        6:  302:	free(hostkeys->entries);
-        6:  303:	explicit_bzero(hostkeys, sizeof(*hostkeys));
-        6:  304:	free(hostkeys);
-        6:  305:}
+        8:  302:	free(hostkeys->entries);
+        8:  303:	explicit_bzero(hostkeys, sizeof(*hostkeys));
+        8:  304:	free(hostkeys);
+        8:  305:}
         -:  306:
         -:  307:static int
-       39:  308:check_key_not_revoked(struct hostkeys *hostkeys, struct sshkey *k)
+       52:  308:check_key_not_revoked(struct hostkeys *hostkeys, struct sshkey *k)
         -:  309:{
-       39:  310:	int is_cert = sshkey_is_cert(k);
+       52:  310:	int is_cert = sshkey_is_cert(k);
         -:  311:	u_int i;
         -:  312:
-       78:  313:	for (i = 0; i < hostkeys->num_entries; i++) {
-       39:  314:		if (hostkeys->entries[i].marker != MRK_REVOKE)
-       39:  315:			continue;
+      104:  313:	for (i = 0; i < hostkeys->num_entries; i++) {
+       52:  314:		if (hostkeys->entries[i].marker != MRK_REVOKE)
+       52:  315:			continue;
     #####:  316:		if (sshkey_equal_public(k, hostkeys->entries[i].key))
     #####:  317:			return -1;
     #####:  318:		if (is_cert &&
@@ -322,7 +322,7 @@
     #####:  320:		    hostkeys->entries[i].key))
     #####:  321:			return -1;
         -:  322:	}
-       39:  323:	return 0;
+       52:  323:	return 0;
         -:  324:}
         -:  325:
         -:  326:/*
@@ -341,35 +341,35 @@
         -:  339: * Finally, check any found key is not revoked.
         -:  340: */
         -:  341:static HostStatus
-       39:  342:check_hostkeys_by_key_or_type(struct hostkeys *hostkeys,
+       52:  342:check_hostkeys_by_key_or_type(struct hostkeys *hostkeys,
         -:  343:    struct sshkey *k, int keytype, const struct hostkey_entry **found)
         -:  344:{
         -:  345:	u_int i;
-       39:  346:	HostStatus end_return = HOST_NEW;
-       39:  347:	int want_cert = sshkey_is_cert(k);
-       39:  348:	HostkeyMarker want_marker = want_cert ? MRK_CA : MRK_NONE;
-       39:  349:	int proto = (k ? k->type : keytype) == KEY_RSA1 ? 1 : 2;
+       52:  346:	HostStatus end_return = HOST_NEW;
+       52:  347:	int want_cert = sshkey_is_cert(k);
+       52:  348:	HostkeyMarker want_marker = want_cert ? MRK_CA : MRK_NONE;
+       52:  349:	int proto = (k ? k->type : keytype) == KEY_RSA1 ? 1 : 2;
         -:  350:
-       39:  351:	if (found != NULL)
-        3:  352:		*found = NULL;
+       52:  351:	if (found != NULL)
+        4:  352:		*found = NULL;
         -:  353:
-       57:  354:	for (i = 0; i < hostkeys->num_entries; i++) {
-       39:  355:		if (proto == 1 && hostkeys->entries[i].key->type != KEY_RSA1)
+       76:  354:	for (i = 0; i < hostkeys->num_entries; i++) {
+       52:  355:		if (proto == 1 && hostkeys->entries[i].key->type != KEY_RSA1)
     #####:  356:			continue;
-       39:  357:		if (proto == 2 && hostkeys->entries[i].key->type == KEY_RSA1)
+       52:  357:		if (proto == 2 && hostkeys->entries[i].key->type == KEY_RSA1)
     #####:  358:			continue;
-       39:  359:		if (hostkeys->entries[i].marker != want_marker)
+       52:  359:		if (hostkeys->entries[i].marker != want_marker)
     #####:  360:			continue;
-       39:  361:		if (k == NULL) {
-       36:  362:			if (hostkeys->entries[i].key->type != keytype)
-       18:  363:				continue;
-       18:  364:			end_return = HOST_FOUND;
-       18:  365:			if (found != NULL)
+       52:  361:		if (k == NULL) {
+       48:  362:			if (hostkeys->entries[i].key->type != keytype)
+       24:  363:				continue;
+       24:  364:			end_return = HOST_FOUND;
+       24:  365:			if (found != NULL)
     #####:  366:				*found = hostkeys->entries + i;
-       18:  367:			k = hostkeys->entries[i].key;
-       18:  368:			break;
+       24:  367:			k = hostkeys->entries[i].key;
+       24:  368:			break;
         -:  369:		}
-        3:  370:		if (want_cert) {
+        4:  370:		if (want_cert) {
     #####:  371:			if (sshkey_equal_public(k->cert->signature_key,
     #####:  372:			    hostkeys->entries[i].key)) {
         -:  373:				/* A matching CA exists */
@@ -379,11 +379,11 @@
     #####:  377:				break;
         -:  378:			}
         -:  379:		} else {
-        3:  380:			if (sshkey_equal(k, hostkeys->entries[i].key)) {
-        3:  381:				end_return = HOST_OK;
-        3:  382:				if (found != NULL)
-        3:  383:					*found = hostkeys->entries + i;
-        3:  384:				break;
+        4:  380:			if (sshkey_equal(k, hostkeys->entries[i].key)) {
+        4:  381:				end_return = HOST_OK;
+        4:  382:				if (found != NULL)
+        4:  383:					*found = hostkeys->entries + i;
+        4:  384:				break;
         -:  385:			}
         -:  386:			/* A non-maching key exists */
     #####:  387:			end_return = HOST_CHANGED;
@@ -391,29 +391,29 @@
     #####:  389:				*found = hostkeys->entries + i;
         -:  390:		}
         -:  391:	}
-       39:  392:	if (check_key_not_revoked(hostkeys, k) != 0) {
+       52:  392:	if (check_key_not_revoked(hostkeys, k) != 0) {
     #####:  393:		end_return = HOST_REVOKED;
     #####:  394:		if (found != NULL)
     #####:  395:			*found = NULL;
         -:  396:	}
-       39:  397:	return end_return;
+       52:  397:	return end_return;
         -:  398:}
         -:  399:
         -:  400:HostStatus
-        3:  401:check_key_in_hostkeys(struct hostkeys *hostkeys, struct sshkey *key,
+        4:  401:check_key_in_hostkeys(struct hostkeys *hostkeys, struct sshkey *key,
         -:  402:    const struct hostkey_entry **found)
         -:  403:{
-        3:  404:	if (key == NULL)
+        4:  404:	if (key == NULL)
     #####:  405:		fatal("no key to look up");
-        3:  406:	return check_hostkeys_by_key_or_type(hostkeys, key, 0, found);
+        4:  406:	return check_hostkeys_by_key_or_type(hostkeys, key, 0, found);
         -:  407:}
         -:  408:
         -:  409:int
-       36:  410:lookup_key_in_hostkeys_by_type(struct hostkeys *hostkeys, int keytype,
+       48:  410:lookup_key_in_hostkeys_by_type(struct hostkeys *hostkeys, int keytype,
         -:  411:    const struct hostkey_entry **found)
         -:  412:{
-       72:  413:	return (check_hostkeys_by_key_or_type(hostkeys, NULL, keytype,
-       36:  414:	    found) == HOST_FOUND);
+       96:  413:	return (check_hostkeys_by_key_or_type(hostkeys, NULL, keytype,
+       48:  414:	    found) == HOST_FOUND);
         -:  415:}
         -:  416:
         -:  417:static int
@@ -650,61 +650,61 @@
         -:  648:}
         -:  649:
         -:  650:static int
-        6:  651:match_maybe_hashed(const char *host, const char *names, int *was_hashed)
+        8:  651:match_maybe_hashed(const char *host, const char *names, int *was_hashed)
         -:  652:{
-        6:  653:	int hashed = *names == HASH_DELIM;
+        8:  653:	int hashed = *names == HASH_DELIM;
         -:  654:	const char *hashed_host;
-        6:  655:	size_t nlen = strlen(names);
+        8:  655:	size_t nlen = strlen(names);
         -:  656:
-        6:  657:	if (was_hashed != NULL)
-        6:  658:		*was_hashed = hashed;
-        6:  659:	if (hashed) {
+        8:  657:	if (was_hashed != NULL)
+        8:  658:		*was_hashed = hashed;
+        8:  659:	if (hashed) {
     #####:  660:		if ((hashed_host = host_hash(host, names, nlen)) == NULL)
     #####:  661:			return -1;
     #####:  662:		return nlen == strlen(hashed_host) &&
     #####:  663:		    strncmp(hashed_host, names, nlen) == 0;
         -:  664:	}
-        6:  665:	return match_hostname(host, names) == 1;
+        8:  665:	return match_hostname(host, names) == 1;
         -:  666:}
         -:  667:
         -:  668:int
-       24:  669:hostkeys_foreach(const char *path, hostkeys_foreach_fn *callback, void *ctx,
+       32:  669:hostkeys_foreach(const char *path, hostkeys_foreach_fn *callback, void *ctx,
         -:  670:    const char *host, const char *ip, u_int options)
         -:  671:{
         -:  672:	FILE *f;
         -:  673:	char line[8192], oline[8192], ktype[128];
-       24:  674:	u_long linenum = 0;
+       32:  674:	u_long linenum = 0;
         -:  675:	char *cp, *cp2;
         -:  676:	u_int kbits;
         -:  677:	int hashed;
-       24:  678:	int s, r = 0;
+       32:  678:	int s, r = 0;
         -:  679:	struct hostkey_foreach_line lineinfo;
         -:  680:	size_t l;
         -:  681:
-       24:  682:	memset(&lineinfo, 0, sizeof(lineinfo));
-       24:  683:	if (host == NULL && (options & HKF_WANT_MATCH) != 0)
+       32:  682:	memset(&lineinfo, 0, sizeof(lineinfo));
+       32:  683:	if (host == NULL && (options & HKF_WANT_MATCH) != 0)
     #####:  684:		return SSH_ERR_INVALID_ARGUMENT;
-       24:  685:	if ((f = fopen(path, "r")) == NULL)
-       18:  686:		return SSH_ERR_SYSTEM_ERROR;
+       32:  685:	if ((f = fopen(path, "r")) == NULL)
+       24:  686:		return SSH_ERR_SYSTEM_ERROR;
         -:  687:
-        6:  688:	debug3("%s: reading file \"%s\"", __func__, path);
-        6:  689:	while (read_keyfile_line(f, path, line, sizeof(line), &linenum) == 0) {
-        6:  690:		line[strcspn(line, "\n")] = '\0';
-        6:  691:		strlcpy(oline, line, sizeof(oline));
+        8:  688:	debug3("%s: reading file \"%s\"", __func__, path);
+        8:  689:	while (read_keyfile_line(f, path, line, sizeof(line), &linenum) == 0) {
+        8:  690:		line[strcspn(line, "\n")] = '\0';
+        8:  691:		strlcpy(oline, line, sizeof(oline));
         -:  692:
-        6:  693:		sshkey_free(lineinfo.key);
-        6:  694:		memset(&lineinfo, 0, sizeof(lineinfo));
-        6:  695:		lineinfo.path = path;
-        6:  696:		lineinfo.linenum = linenum;
-        6:  697:		lineinfo.line = oline;
-        6:  698:		lineinfo.marker = MRK_NONE;
-        6:  699:		lineinfo.status = HKF_STATUS_OK;
-        6:  700:		lineinfo.keytype = KEY_UNSPEC;
+        8:  693:		sshkey_free(lineinfo.key);
+        8:  694:		memset(&lineinfo, 0, sizeof(lineinfo));
+        8:  695:		lineinfo.path = path;
+        8:  696:		lineinfo.linenum = linenum;
+        8:  697:		lineinfo.line = oline;
+        8:  698:		lineinfo.marker = MRK_NONE;
+        8:  699:		lineinfo.status = HKF_STATUS_OK;
+        8:  700:		lineinfo.keytype = KEY_UNSPEC;
         -:  701:
         -:  702:		/* Skip any leading whitespace, comments and empty lines. */
-        6:  703:		for (cp = line; *cp == ' ' || *cp == '\t'; cp++)
+        8:  703:		for (cp = line; *cp == ' ' || *cp == '\t'; cp++)
         -:  704:			;
-        6:  705:		if (!*cp || *cp == '#' || *cp == '\n') {
+        8:  705:		if (!*cp || *cp == '#' || *cp == '\n') {
     #####:  706:			if ((options & HKF_WANT_MATCH) == 0) {
     #####:  707:				lineinfo.status = HKF_STATUS_COMMENT;
     #####:  708:				if ((r = callback(&lineinfo, ctx)) != 0)
@@ -713,7 +713,7 @@
     #####:  711:			continue;
         -:  712:		}
         -:  713:
-        6:  714:		if ((lineinfo.marker = check_markers(&cp)) == MRK_ERROR) {
+        8:  714:		if ((lineinfo.marker = check_markers(&cp)) == MRK_ERROR) {
     #####:  715:			verbose("%s: invalid marker at %s:%lu",
         -:  716:			    __func__, path, linenum);
     #####:  717:			if ((options & HKF_WANT_MATCH) == 0)
@@ -722,26 +722,26 @@
         -:  720:		}
         -:  721:
         -:  722:		/* Find the end of the host name portion. */
-        6:  723:		for (cp2 = cp; *cp2 && *cp2 != ' ' && *cp2 != '\t'; cp2++)
+        8:  723:		for (cp2 = cp; *cp2 && *cp2 != ' ' && *cp2 != '\t'; cp2++)
         -:  724:			;
-        6:  725:		lineinfo.hosts = cp;
-        6:  726:		*cp2++ = '\0';
+        8:  725:		lineinfo.hosts = cp;
+        8:  726:		*cp2++ = '\0';
         -:  727:
         -:  728:		/* Check if the host name matches. */
-        6:  729:		if (host != NULL) {
-        6:  730:			if ((s = match_maybe_hashed(host, lineinfo.hosts,
+        8:  729:		if (host != NULL) {
+        8:  730:			if ((s = match_maybe_hashed(host, lineinfo.hosts,
         -:  731:			    &hashed)) == -1) {
     #####:  732:				debug2("%s: %s:%ld: bad host hash \"%.32s\"",
         -:  733:				    __func__, path, linenum, lineinfo.hosts);
     #####:  734:				goto bad;
         -:  735:			}
-        6:  736:			if (s == 1) {
-        6:  737:				lineinfo.status = HKF_STATUS_MATCHED;
-       12:  738:				lineinfo.match |= HKF_MATCH_HOST |
-        6:  739:				    (hashed ? HKF_MATCH_HOST_HASHED : 0);
+        8:  736:			if (s == 1) {
+        8:  737:				lineinfo.status = HKF_STATUS_MATCHED;
+       16:  738:				lineinfo.match |= HKF_MATCH_HOST |
+        8:  739:				    (hashed ? HKF_MATCH_HOST_HASHED : 0);
         -:  740:			}
         -:  741:			/* Try matching IP address if supplied */
-        6:  742:			if (ip != NULL) {
+        8:  742:			if (ip != NULL) {
     #####:  743:				if ((s = match_maybe_hashed(ip, lineinfo.hosts,
         -:  744:				    &hashed)) == -1) {
     #####:  745:					debug2("%s: %s:%ld: bad ip hash "
@@ -759,33 +759,33 @@
         -:  757:			 * Skip this line if host matching requested and
         -:  758:			 * neither host nor address matched.
         -:  759:			 */
-       12:  760:			if ((options & HKF_WANT_MATCH) != 0 &&
-        6:  761:			    lineinfo.status != HKF_STATUS_MATCHED)
+       16:  760:			if ((options & HKF_WANT_MATCH) != 0 &&
+        8:  761:			    lineinfo.status != HKF_STATUS_MATCHED)
     #####:  762:				continue;
         -:  763:		}
         -:  764:
         -:  765:		/* Got a match.  Skip host name and any following whitespace */
-        6:  766:		for (; *cp2 == ' ' || *cp2 == '\t'; cp2++)
+        8:  766:		for (; *cp2 == ' ' || *cp2 == '\t'; cp2++)
         -:  767:			;
-        6:  768:		if (*cp2 == '\0' || *cp2 == '#') {
+        8:  768:		if (*cp2 == '\0' || *cp2 == '#') {
     #####:  769:			debug2("%s:%ld: truncated before key type",
         -:  770:			    path, linenum);
     #####:  771:			goto bad;
         -:  772:		}
-        6:  773:		lineinfo.rawkey = cp = cp2;
+        8:  773:		lineinfo.rawkey = cp = cp2;
         -:  774:
-        6:  775:		if ((options & HKF_WANT_PARSE_KEY) != 0) {
+        8:  775:		if ((options & HKF_WANT_PARSE_KEY) != 0) {
         -:  776:			/*
         -:  777:			 * Extract the key from the line.  This will skip
         -:  778:			 * any leading whitespace.  Ignore badly formatted
         -:  779:			 * lines.
         -:  780:			 */
-        6:  781:			if ((lineinfo.key = sshkey_new(KEY_UNSPEC)) == NULL) {
+        8:  781:			if ((lineinfo.key = sshkey_new(KEY_UNSPEC)) == NULL) {
     #####:  782:				error("%s: sshkey_new failed", __func__);
     #####:  783:				r = SSH_ERR_ALLOC_FAIL;
     #####:  784:				break;
         -:  785:			}
-        6:  786:			if (!hostfile_read_key(&cp, &kbits, lineinfo.key)) {
+        8:  786:			if (!hostfile_read_key(&cp, &kbits, lineinfo.key)) {
         -:  787:#ifdef WITH_SSH1
         -:  788:				sshkey_free(lineinfo.key);
         -:  789:				lineinfo.key = sshkey_new(KEY_RSA1);
@@ -801,8 +801,8 @@
     #####:  799:				goto bad;
         -:  800:#endif
         -:  801:			}
-        6:  802:			lineinfo.keytype = lineinfo.key->type;
-        6:  803:			lineinfo.comment = cp;
+        8:  802:			lineinfo.keytype = lineinfo.key->type;
+        8:  803:			lineinfo.comment = cp;
         -:  804:		} else {
         -:  805:			/* Extract and parse key type */
     #####:  806:			l = strcspn(lineinfo.rawkey, " \t");
@@ -844,10 +844,10 @@
     #####:  842:				continue;
         -:  843:			}
         -:  844:		}
-        6:  845:		if ((r = callback(&lineinfo, ctx)) != 0)
+        8:  845:		if ((r = callback(&lineinfo, ctx)) != 0)
     #####:  846:			break;
         -:  847:	}
-        6:  848:	sshkey_free(lineinfo.key);
-        6:  849:	fclose(f);
-        6:  850:	return r;
+        8:  848:	sshkey_free(lineinfo.key);
+        8:  849:	fclose(f);
+        8:  850:	return r;
         -:  851:}

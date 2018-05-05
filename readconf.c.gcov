@@ -421,47 +421,47 @@
         -:  419:}
         -:  420:
         -:  421:void
-       12:  422:add_identity_file(Options *options, const char *dir, const char *filename,
+       16:  422:add_identity_file(Options *options, const char *dir, const char *filename,
         -:  423:    int userprovided)
         -:  424:{
         -:  425:	char *path;
         -:  426:	int i;
         -:  427:
-       12:  428:	if (options->num_identity_files >= SSH_MAX_IDENTITY_FILES)
+       16:  428:	if (options->num_identity_files >= SSH_MAX_IDENTITY_FILES)
     #####:  429:		fatal("Too many identity files specified (max %d)",
         -:  430:		    SSH_MAX_IDENTITY_FILES);
         -:  431:
-       12:  432:	if (dir == NULL) /* no dir, filename is absolute */
+       16:  432:	if (dir == NULL) /* no dir, filename is absolute */
     #####:  433:		path = xstrdup(filename);
         -:  434:	else
-       12:  435:		(void)xasprintf(&path, "%.100s%.100s", dir, filename);
+       16:  435:		(void)xasprintf(&path, "%.100s%.100s", dir, filename);
         -:  436:
         -:  437:	/* Avoid registering duplicates */
-       30:  438:	for (i = 0; i < options->num_identity_files; i++) {
-       36:  439:		if (options->identity_file_userprovided[i] == userprovided &&
-       18:  440:		    strcmp(options->identity_files[i], path) == 0) {
+       40:  438:	for (i = 0; i < options->num_identity_files; i++) {
+       48:  439:		if (options->identity_file_userprovided[i] == userprovided &&
+       24:  440:		    strcmp(options->identity_files[i], path) == 0) {
     #####:  441:			debug2("%s: ignoring duplicate key %s", __func__, path);
     #####:  442:			free(path);
-       12:  443:			return;
+       16:  443:			return;
         -:  444:		}
         -:  445:	}
         -:  446:
-       12:  447:	options->identity_file_userprovided[options->num_identity_files] =
+       16:  447:	options->identity_file_userprovided[options->num_identity_files] =
         -:  448:	    userprovided;
-       12:  449:	options->identity_files[options->num_identity_files++] = path;
+       16:  449:	options->identity_files[options->num_identity_files++] = path;
         -:  450:}
         -:  451:
         -:  452:int
-        3:  453:default_ssh_port(void)
+        4:  453:default_ssh_port(void)
         -:  454:{
         -:  455:	static int port;
         -:  456:	struct servent *sp;
         -:  457:
-        3:  458:	if (port == 0) {
-        3:  459:		sp = getservbyname(SSH_SERVICE_NAME, "tcp");
-        3:  460:		port = sp ? ntohs(sp->s_port) : SSH_DEFAULT_PORT;
+        4:  458:	if (port == 0) {
+        4:  459:		sp = getservbyname(SSH_SERVICE_NAME, "tcp");
+        4:  460:		port = sp ? ntohs(sp->s_port) : SSH_DEFAULT_PORT;
         -:  461:	}
-        3:  462:	return port;
+        4:  462:	return port;
         -:  463:}
         -:  464:
         -:  465:/*
@@ -811,14 +811,14 @@
         -:  809:
         -:  810:#define WHITESPACE " \t\r\n"
         -:  811:static int
-      150:  812:process_config_line_depth(Options *options, struct passwd *pw, const char *host,
+      200:  812:process_config_line_depth(Options *options, struct passwd *pw, const char *host,
         -:  813:    const char *original_host, char *line, const char *filename,
         -:  814:    int linenum, int *activep, int flags, int depth)
         -:  815:{
         -:  816:	char *s, **charptr, *endofnumber, *keyword, *arg, *arg2;
         -:  817:	char **cpptr, fwdarg[256];
-      150:  818:	u_int i, *uintptr, max_entries = 0;
-      150:  819:	int r, oactive, negated, opcode, *intptr, value, value2, cmdline = 0;
+      200:  818:	u_int i, *uintptr, max_entries = 0;
+      200:  819:	int r, oactive, negated, opcode, *intptr, value, value2, cmdline = 0;
         -:  820:	LogLevel *log_level_ptr;
         -:  821:	long long val64;
         -:  822:	size_t len;
@@ -827,29 +827,29 @@
         -:  825:	struct allowed_cname *cname;
         -:  826:	glob_t gl;
         -:  827:
-      150:  828:	if (activep == NULL) { /* We are processing a command line directive */
+      200:  828:	if (activep == NULL) { /* We are processing a command line directive */
     #####:  829:		cmdline = 1;
     #####:  830:		activep = &cmdline;
         -:  831:	}
         -:  832:
         -:  833:	/* Strip trailing whitespace */
-      150:  834:	if ((len = strlen(line)) == 0)
+      200:  834:	if ((len = strlen(line)) == 0)
     #####:  835:		return 0;
-      288:  836:	for (len--; len > 0; len--) {
-      276:  837:		if (strchr(WHITESPACE, line[len]) == NULL)
-      138:  838:			break;
-      138:  839:		line[len] = '\0';
+      384:  836:	for (len--; len > 0; len--) {
+      368:  837:		if (strchr(WHITESPACE, line[len]) == NULL)
+      184:  838:			break;
+      184:  839:		line[len] = '\0';
         -:  840:	}
         -:  841:
-      150:  842:	s = line;
+      200:  842:	s = line;
         -:  843:	/* Get the keyword. (Each line is supposed to begin with a keyword). */
-      150:  844:	if ((keyword = strdelim(&s)) == NULL)
+      200:  844:	if ((keyword = strdelim(&s)) == NULL)
     #####:  845:		return 0;
         -:  846:	/* Ignore leading whitespace. */
-      150:  847:	if (*keyword == '\0')
-       12:  848:		keyword = strdelim(&s);
-      150:  849:	if (keyword == NULL || !*keyword || *keyword == '\n' || *keyword == '#')
-      150:  850:		return 0;
+      200:  847:	if (*keyword == '\0')
+       16:  848:		keyword = strdelim(&s);
+      200:  849:	if (keyword == NULL || !*keyword || *keyword == '\n' || *keyword == '#')
+      200:  850:		return 0;
         -:  851:	/* Match lowercase keyword */
     #####:  852:	lowercase(keyword);
         -:  853:
@@ -1686,33 +1686,33 @@
         -: 1684: * there is an error.  If the file does not exist, this returns 0.
         -: 1685: */
         -: 1686:int
-        6: 1687:read_config_file(const char *filename, struct passwd *pw, const char *host,
+        8: 1687:read_config_file(const char *filename, struct passwd *pw, const char *host,
         -: 1688:    const char *original_host, Options *options, int flags)
         -: 1689:{
-        6: 1690:	int active = 1;
+        8: 1690:	int active = 1;
         -: 1691:
-        6: 1692:	return read_config_file_depth(filename, pw, host, original_host,
+        8: 1692:	return read_config_file_depth(filename, pw, host, original_host,
         -: 1693:	    options, flags, &active, 0);
         -: 1694:}
         -: 1695:
         -: 1696:#define READCONF_MAX_DEPTH	16
         -: 1697:static int
-        6: 1698:read_config_file_depth(const char *filename, struct passwd *pw,
+        8: 1698:read_config_file_depth(const char *filename, struct passwd *pw,
         -: 1699:    const char *host, const char *original_host, Options *options,
         -: 1700:    int flags, int *activep, int depth)
         -: 1701:{
         -: 1702:	FILE *f;
         -: 1703:	char line[1024];
         -: 1704:	int linenum;
-        6: 1705:	int bad_options = 0;
+        8: 1705:	int bad_options = 0;
         -: 1706:
-        6: 1707:	if (depth < 0 || depth > READCONF_MAX_DEPTH)
+        8: 1707:	if (depth < 0 || depth > READCONF_MAX_DEPTH)
     #####: 1708:		fatal("Too many recursive configuration includes");
         -: 1709:
-        6: 1710:	if ((f = fopen(filename, "r")) == NULL)
-        3: 1711:		return 0;
+        8: 1710:	if ((f = fopen(filename, "r")) == NULL)
+        4: 1711:		return 0;
         -: 1712:
-        3: 1713:	if (flags & SSHCONF_CHECKPERM) {
+        4: 1713:	if (flags & SSHCONF_CHECKPERM) {
         -: 1714:		struct stat sb;
         -: 1715:
     #####: 1716:		if (fstat(fileno(f), &sb) == -1)
@@ -1722,32 +1722,32 @@
     #####: 1720:			fatal("Bad owner or permissions on %s", filename);
         -: 1721:	}
         -: 1722:
-        3: 1723:	debug("Reading configuration data %.200s", filename);
+        4: 1723:	debug("Reading configuration data %.200s", filename);
         -: 1724:
         -: 1725:	/*
         -: 1726:	 * Mark that we are now processing the options.  This flag is turned
         -: 1727:	 * on/off by Host specifications.
         -: 1728:	 */
-        3: 1729:	linenum = 0;
-      156: 1730:	while (fgets(line, sizeof(line), f)) {
+        4: 1729:	linenum = 0;
+      208: 1730:	while (fgets(line, sizeof(line), f)) {
         -: 1731:		/* Update line number counter. */
-      150: 1732:		linenum++;
-      150: 1733:		if (process_config_line_depth(options, pw, host, original_host,
+      200: 1732:		linenum++;
+      200: 1733:		if (process_config_line_depth(options, pw, host, original_host,
         -: 1734:		    line, filename, linenum, activep, flags, depth) != 0)
     #####: 1735:			bad_options++;
         -: 1736:	}
-        3: 1737:	fclose(f);
-        3: 1738:	if (bad_options > 0)
+        4: 1737:	fclose(f);
+        4: 1738:	if (bad_options > 0)
     #####: 1739:		fatal("%s: terminating, %d bad configuration options",
         -: 1740:		    filename, bad_options);
-        3: 1741:	return 1;
+        4: 1741:	return 1;
         -: 1742:}
         -: 1743:
         -: 1744:/* Returns 1 if a string option is unset or set to "none" or 0 otherwise. */
         -: 1745:int
-       18: 1746:option_clear_or_none(const char *o)
+       24: 1746:option_clear_or_none(const char *o)
         -: 1747:{
-       18: 1748:	return o == NULL || strcasecmp(o, "none") == 0;
+       24: 1748:	return o == NULL || strcasecmp(o, "none") == 0;
         -: 1749:}
         -: 1750:
         -: 1751:/*
@@ -1758,300 +1758,300 @@
         -: 1756: */
         -: 1757:
         -: 1758:void
-        6: 1759:initialize_options(Options * options)
+        7: 1759:initialize_options(Options * options)
         -: 1760:{
-        6: 1761:	memset(options, 'X', sizeof(*options));
-        6: 1762:	options->forward_agent = -1;
-        6: 1763:	options->forward_x11 = -1;
-        6: 1764:	options->forward_x11_trusted = -1;
-        6: 1765:	options->forward_x11_timeout = -1;
-        6: 1766:	options->stdio_forward_host = NULL;
-        6: 1767:	options->stdio_forward_port = 0;
-        6: 1768:	options->clear_forwardings = -1;
-        6: 1769:	options->exit_on_forward_failure = -1;
-        6: 1770:	options->xauth_location = NULL;
-        6: 1771:	options->fwd_opts.gateway_ports = -1;
-        6: 1772:	options->fwd_opts.streamlocal_bind_mask = (mode_t)-1;
-        6: 1773:	options->fwd_opts.streamlocal_bind_unlink = -1;
-        6: 1774:	options->use_privileged_port = -1;
-        6: 1775:	options->rsa_authentication = -1;
-        6: 1776:	options->pubkey_authentication = -1;
-        6: 1777:	options->challenge_response_authentication = -1;
-        6: 1778:	options->gss_authentication = -1;
-        6: 1779:	options->gss_deleg_creds = -1;
-        6: 1780:	options->password_authentication = -1;
-        6: 1781:	options->kbd_interactive_authentication = -1;
-        6: 1782:	options->kbd_interactive_devices = NULL;
-        6: 1783:	options->rhosts_rsa_authentication = -1;
-        6: 1784:	options->hostbased_authentication = -1;
-        6: 1785:	options->batch_mode = -1;
-        6: 1786:	options->check_host_ip = -1;
-        6: 1787:	options->strict_host_key_checking = -1;
-        6: 1788:	options->compression = -1;
-        6: 1789:	options->tcp_keep_alive = -1;
-        6: 1790:	options->compression_level = -1;
-        6: 1791:	options->port = -1;
-        6: 1792:	options->address_family = -1;
-        6: 1793:	options->connection_attempts = -1;
-        6: 1794:	options->connection_timeout = -1;
-        6: 1795:	options->number_of_password_prompts = -1;
-        6: 1796:	options->cipher = -1;
-        6: 1797:	options->ciphers = NULL;
-        6: 1798:	options->macs = NULL;
-        6: 1799:	options->kex_algorithms = NULL;
-        6: 1800:	options->hostkeyalgorithms = NULL;
-        6: 1801:	options->protocol = SSH_PROTO_UNKNOWN;
-        6: 1802:	options->num_identity_files = 0;
-        6: 1803:	options->num_certificate_files = 0;
-        6: 1804:	options->hostname = NULL;
-        6: 1805:	options->host_key_alias = NULL;
-        6: 1806:	options->proxy_command = NULL;
-        6: 1807:	options->jump_user = NULL;
-        6: 1808:	options->jump_host = NULL;
-        6: 1809:	options->jump_port = -1;
-        6: 1810:	options->jump_extra = NULL;
-        6: 1811:	options->user = NULL;
-        6: 1812:	options->escape_char = -1;
-        6: 1813:	options->num_system_hostfiles = 0;
-        6: 1814:	options->num_user_hostfiles = 0;
-        6: 1815:	options->local_forwards = NULL;
-        6: 1816:	options->num_local_forwards = 0;
-        6: 1817:	options->remote_forwards = NULL;
-        6: 1818:	options->num_remote_forwards = 0;
-        6: 1819:	options->log_level = SYSLOG_LEVEL_NOT_SET;
-        6: 1820:	options->preferred_authentications = NULL;
-        6: 1821:	options->bind_address = NULL;
-        6: 1822:	options->pkcs11_provider = NULL;
-        6: 1823:	options->enable_ssh_keysign = - 1;
-        6: 1824:	options->no_host_authentication_for_localhost = - 1;
-        6: 1825:	options->identities_only = - 1;
-        6: 1826:	options->rekey_limit = - 1;
-        6: 1827:	options->rekey_interval = -1;
-        6: 1828:	options->verify_host_key_dns = -1;
-        6: 1829:	options->server_alive_interval = -1;
-        6: 1830:	options->server_alive_count_max = -1;
-        6: 1831:	options->num_send_env = 0;
-        6: 1832:	options->control_path = NULL;
-        6: 1833:	options->control_master = -1;
-        6: 1834:	options->control_persist = -1;
-        6: 1835:	options->control_persist_timeout = 0;
-        6: 1836:	options->hash_known_hosts = -1;
-        6: 1837:	options->tun_open = -1;
-        6: 1838:	options->tun_local = -1;
-        6: 1839:	options->tun_remote = -1;
-        6: 1840:	options->local_command = NULL;
-        6: 1841:	options->permit_local_command = -1;
-        6: 1842:	options->add_keys_to_agent = -1;
-        6: 1843:	options->identity_agent = NULL;
-        6: 1844:	options->visual_host_key = -1;
-        6: 1845:	options->ip_qos_interactive = -1;
-        6: 1846:	options->ip_qos_bulk = -1;
-        6: 1847:	options->request_tty = -1;
-        6: 1848:	options->proxy_use_fdpass = -1;
-        6: 1849:	options->ignored_unknown = NULL;
-        6: 1850:	options->num_canonical_domains = 0;
-        6: 1851:	options->num_permitted_cnames = 0;
-        6: 1852:	options->canonicalize_max_dots = -1;
-        6: 1853:	options->canonicalize_fallback_local = -1;
-        6: 1854:	options->canonicalize_hostname = -1;
-        6: 1855:	options->revoked_host_keys = NULL;
-        6: 1856:	options->fingerprint_hash = -1;
-        6: 1857:	options->update_hostkeys = -1;
-        6: 1858:	options->hostbased_key_types = NULL;
-        6: 1859:	options->pubkey_key_types = NULL;
-        6: 1860:}
+        7: 1761:	memset(options, 'X', sizeof(*options));
+        7: 1762:	options->forward_agent = -1;
+        7: 1763:	options->forward_x11 = -1;
+        7: 1764:	options->forward_x11_trusted = -1;
+        7: 1765:	options->forward_x11_timeout = -1;
+        7: 1766:	options->stdio_forward_host = NULL;
+        7: 1767:	options->stdio_forward_port = 0;
+        7: 1768:	options->clear_forwardings = -1;
+        7: 1769:	options->exit_on_forward_failure = -1;
+        7: 1770:	options->xauth_location = NULL;
+        7: 1771:	options->fwd_opts.gateway_ports = -1;
+        7: 1772:	options->fwd_opts.streamlocal_bind_mask = (mode_t)-1;
+        7: 1773:	options->fwd_opts.streamlocal_bind_unlink = -1;
+        7: 1774:	options->use_privileged_port = -1;
+        7: 1775:	options->rsa_authentication = -1;
+        7: 1776:	options->pubkey_authentication = -1;
+        7: 1777:	options->challenge_response_authentication = -1;
+        7: 1778:	options->gss_authentication = -1;
+        7: 1779:	options->gss_deleg_creds = -1;
+        7: 1780:	options->password_authentication = -1;
+        7: 1781:	options->kbd_interactive_authentication = -1;
+        7: 1782:	options->kbd_interactive_devices = NULL;
+        7: 1783:	options->rhosts_rsa_authentication = -1;
+        7: 1784:	options->hostbased_authentication = -1;
+        7: 1785:	options->batch_mode = -1;
+        7: 1786:	options->check_host_ip = -1;
+        7: 1787:	options->strict_host_key_checking = -1;
+        7: 1788:	options->compression = -1;
+        7: 1789:	options->tcp_keep_alive = -1;
+        7: 1790:	options->compression_level = -1;
+        7: 1791:	options->port = -1;
+        7: 1792:	options->address_family = -1;
+        7: 1793:	options->connection_attempts = -1;
+        7: 1794:	options->connection_timeout = -1;
+        7: 1795:	options->number_of_password_prompts = -1;
+        7: 1796:	options->cipher = -1;
+        7: 1797:	options->ciphers = NULL;
+        7: 1798:	options->macs = NULL;
+        7: 1799:	options->kex_algorithms = NULL;
+        7: 1800:	options->hostkeyalgorithms = NULL;
+        7: 1801:	options->protocol = SSH_PROTO_UNKNOWN;
+        7: 1802:	options->num_identity_files = 0;
+        7: 1803:	options->num_certificate_files = 0;
+        7: 1804:	options->hostname = NULL;
+        7: 1805:	options->host_key_alias = NULL;
+        7: 1806:	options->proxy_command = NULL;
+        7: 1807:	options->jump_user = NULL;
+        7: 1808:	options->jump_host = NULL;
+        7: 1809:	options->jump_port = -1;
+        7: 1810:	options->jump_extra = NULL;
+        7: 1811:	options->user = NULL;
+        7: 1812:	options->escape_char = -1;
+        7: 1813:	options->num_system_hostfiles = 0;
+        7: 1814:	options->num_user_hostfiles = 0;
+        7: 1815:	options->local_forwards = NULL;
+        7: 1816:	options->num_local_forwards = 0;
+        7: 1817:	options->remote_forwards = NULL;
+        7: 1818:	options->num_remote_forwards = 0;
+        7: 1819:	options->log_level = SYSLOG_LEVEL_NOT_SET;
+        7: 1820:	options->preferred_authentications = NULL;
+        7: 1821:	options->bind_address = NULL;
+        7: 1822:	options->pkcs11_provider = NULL;
+        7: 1823:	options->enable_ssh_keysign = - 1;
+        7: 1824:	options->no_host_authentication_for_localhost = - 1;
+        7: 1825:	options->identities_only = - 1;
+        7: 1826:	options->rekey_limit = - 1;
+        7: 1827:	options->rekey_interval = -1;
+        7: 1828:	options->verify_host_key_dns = -1;
+        7: 1829:	options->server_alive_interval = -1;
+        7: 1830:	options->server_alive_count_max = -1;
+        7: 1831:	options->num_send_env = 0;
+        7: 1832:	options->control_path = NULL;
+        7: 1833:	options->control_master = -1;
+        7: 1834:	options->control_persist = -1;
+        7: 1835:	options->control_persist_timeout = 0;
+        7: 1836:	options->hash_known_hosts = -1;
+        7: 1837:	options->tun_open = -1;
+        7: 1838:	options->tun_local = -1;
+        7: 1839:	options->tun_remote = -1;
+        7: 1840:	options->local_command = NULL;
+        7: 1841:	options->permit_local_command = -1;
+        7: 1842:	options->add_keys_to_agent = -1;
+        7: 1843:	options->identity_agent = NULL;
+        7: 1844:	options->visual_host_key = -1;
+        7: 1845:	options->ip_qos_interactive = -1;
+        7: 1846:	options->ip_qos_bulk = -1;
+        7: 1847:	options->request_tty = -1;
+        7: 1848:	options->proxy_use_fdpass = -1;
+        7: 1849:	options->ignored_unknown = NULL;
+        7: 1850:	options->num_canonical_domains = 0;
+        7: 1851:	options->num_permitted_cnames = 0;
+        7: 1852:	options->canonicalize_max_dots = -1;
+        7: 1853:	options->canonicalize_fallback_local = -1;
+        7: 1854:	options->canonicalize_hostname = -1;
+        7: 1855:	options->revoked_host_keys = NULL;
+        7: 1856:	options->fingerprint_hash = -1;
+        7: 1857:	options->update_hostkeys = -1;
+        7: 1858:	options->hostbased_key_types = NULL;
+        7: 1859:	options->pubkey_key_types = NULL;
+        7: 1860:}
         -: 1861:
         -: 1862:/*
         -: 1863: * A petite version of fill_default_options() that just fills the options
         -: 1864: * needed for hostname canonicalization to proceed.
         -: 1865: */
         -: 1866:void
-        3: 1867:fill_default_options_for_canonicalization(Options *options)
+        4: 1867:fill_default_options_for_canonicalization(Options *options)
         -: 1868:{
-        3: 1869:	if (options->canonicalize_max_dots == -1)
-        3: 1870:		options->canonicalize_max_dots = 1;
-        3: 1871:	if (options->canonicalize_fallback_local == -1)
-        3: 1872:		options->canonicalize_fallback_local = 1;
-        3: 1873:	if (options->canonicalize_hostname == -1)
-        3: 1874:		options->canonicalize_hostname = SSH_CANONICALISE_NO;
-        3: 1875:}
+        4: 1869:	if (options->canonicalize_max_dots == -1)
+        4: 1870:		options->canonicalize_max_dots = 1;
+        4: 1871:	if (options->canonicalize_fallback_local == -1)
+        4: 1872:		options->canonicalize_fallback_local = 1;
+        4: 1873:	if (options->canonicalize_hostname == -1)
+        4: 1874:		options->canonicalize_hostname = SSH_CANONICALISE_NO;
+        4: 1875:}
         -: 1876:
         -: 1877:/*
         -: 1878: * Called after processing other sources of option data, this fills those
         -: 1879: * options for which no value has been specified with their default values.
         -: 1880: */
         -: 1881:void
-        3: 1882:fill_default_options(Options * options)
+        4: 1882:fill_default_options(Options * options)
         -: 1883:{
-        3: 1884:	if (options->forward_agent == -1)
-        3: 1885:		options->forward_agent = 0;
-        3: 1886:	if (options->forward_x11 == -1)
-        3: 1887:		options->forward_x11 = 0;
-        3: 1888:	if (options->forward_x11_trusted == -1)
-        3: 1889:		options->forward_x11_trusted = 0;
-        3: 1890:	if (options->forward_x11_timeout == -1)
-        3: 1891:		options->forward_x11_timeout = 1200;
+        4: 1884:	if (options->forward_agent == -1)
+        4: 1885:		options->forward_agent = 0;
+        4: 1886:	if (options->forward_x11 == -1)
+        4: 1887:		options->forward_x11 = 0;
+        4: 1888:	if (options->forward_x11_trusted == -1)
+        4: 1889:		options->forward_x11_trusted = 0;
+        4: 1890:	if (options->forward_x11_timeout == -1)
+        4: 1891:		options->forward_x11_timeout = 1200;
         -: 1892:	/*
         -: 1893:	 * stdio forwarding (-W) changes the default for these but we defer
         -: 1894:	 * setting the values so they can be overridden.
         -: 1895:	 */
-        3: 1896:	if (options->exit_on_forward_failure == -1)
-        3: 1897:		options->exit_on_forward_failure =
-        3: 1898:		    options->stdio_forward_host != NULL ? 1 : 0;
-        3: 1899:	if (options->clear_forwardings == -1)
-        3: 1900:		options->clear_forwardings =
-        3: 1901:		    options->stdio_forward_host != NULL ? 1 : 0;
-        3: 1902:	if (options->clear_forwardings == 1)
+        4: 1896:	if (options->exit_on_forward_failure == -1)
+        4: 1897:		options->exit_on_forward_failure =
+        4: 1898:		    options->stdio_forward_host != NULL ? 1 : 0;
+        4: 1899:	if (options->clear_forwardings == -1)
+        4: 1900:		options->clear_forwardings =
+        4: 1901:		    options->stdio_forward_host != NULL ? 1 : 0;
+        4: 1902:	if (options->clear_forwardings == 1)
     #####: 1903:		clear_forwardings(options);
         -: 1904:
-        3: 1905:	if (options->xauth_location == NULL)
-        3: 1906:		options->xauth_location = _PATH_XAUTH;
-        3: 1907:	if (options->fwd_opts.gateway_ports == -1)
-        3: 1908:		options->fwd_opts.gateway_ports = 0;
-        3: 1909:	if (options->fwd_opts.streamlocal_bind_mask == (mode_t)-1)
-        3: 1910:		options->fwd_opts.streamlocal_bind_mask = 0177;
-        3: 1911:	if (options->fwd_opts.streamlocal_bind_unlink == -1)
-        3: 1912:		options->fwd_opts.streamlocal_bind_unlink = 0;
-        3: 1913:	if (options->use_privileged_port == -1)
-        3: 1914:		options->use_privileged_port = 0;
-        3: 1915:	if (options->rsa_authentication == -1)
-        3: 1916:		options->rsa_authentication = 1;
-        3: 1917:	if (options->pubkey_authentication == -1)
-        3: 1918:		options->pubkey_authentication = 1;
-        3: 1919:	if (options->challenge_response_authentication == -1)
-        3: 1920:		options->challenge_response_authentication = 1;
-        3: 1921:	if (options->gss_authentication == -1)
-        3: 1922:		options->gss_authentication = 0;
-        3: 1923:	if (options->gss_deleg_creds == -1)
-        3: 1924:		options->gss_deleg_creds = 0;
-        3: 1925:	if (options->password_authentication == -1)
-        3: 1926:		options->password_authentication = 1;
-        3: 1927:	if (options->kbd_interactive_authentication == -1)
-        3: 1928:		options->kbd_interactive_authentication = 1;
-        3: 1929:	if (options->rhosts_rsa_authentication == -1)
-        3: 1930:		options->rhosts_rsa_authentication = 0;
-        3: 1931:	if (options->hostbased_authentication == -1)
-        3: 1932:		options->hostbased_authentication = 0;
-        3: 1933:	if (options->batch_mode == -1)
-        3: 1934:		options->batch_mode = 0;
-        3: 1935:	if (options->check_host_ip == -1)
-        3: 1936:		options->check_host_ip = 1;
-        3: 1937:	if (options->strict_host_key_checking == -1)
-        3: 1938:		options->strict_host_key_checking = 2;	/* 2 is default */
-        3: 1939:	if (options->compression == -1)
-        3: 1940:		options->compression = 0;
-        3: 1941:	if (options->tcp_keep_alive == -1)
-        3: 1942:		options->tcp_keep_alive = 1;
-        3: 1943:	if (options->compression_level == -1)
-        3: 1944:		options->compression_level = 6;
-        3: 1945:	if (options->port == -1)
-        3: 1946:		options->port = 0;	/* Filled in ssh_connect. */
-        3: 1947:	if (options->address_family == -1)
-        3: 1948:		options->address_family = AF_UNSPEC;
-        3: 1949:	if (options->connection_attempts == -1)
-        3: 1950:		options->connection_attempts = 1;
-        3: 1951:	if (options->number_of_password_prompts == -1)
-        3: 1952:		options->number_of_password_prompts = 3;
+        4: 1905:	if (options->xauth_location == NULL)
+        4: 1906:		options->xauth_location = _PATH_XAUTH;
+        4: 1907:	if (options->fwd_opts.gateway_ports == -1)
+        4: 1908:		options->fwd_opts.gateway_ports = 0;
+        4: 1909:	if (options->fwd_opts.streamlocal_bind_mask == (mode_t)-1)
+        4: 1910:		options->fwd_opts.streamlocal_bind_mask = 0177;
+        4: 1911:	if (options->fwd_opts.streamlocal_bind_unlink == -1)
+        4: 1912:		options->fwd_opts.streamlocal_bind_unlink = 0;
+        4: 1913:	if (options->use_privileged_port == -1)
+        4: 1914:		options->use_privileged_port = 0;
+        4: 1915:	if (options->rsa_authentication == -1)
+        4: 1916:		options->rsa_authentication = 1;
+        4: 1917:	if (options->pubkey_authentication == -1)
+        4: 1918:		options->pubkey_authentication = 1;
+        4: 1919:	if (options->challenge_response_authentication == -1)
+        4: 1920:		options->challenge_response_authentication = 1;
+        4: 1921:	if (options->gss_authentication == -1)
+        4: 1922:		options->gss_authentication = 0;
+        4: 1923:	if (options->gss_deleg_creds == -1)
+        4: 1924:		options->gss_deleg_creds = 0;
+        4: 1925:	if (options->password_authentication == -1)
+        4: 1926:		options->password_authentication = 1;
+        4: 1927:	if (options->kbd_interactive_authentication == -1)
+        4: 1928:		options->kbd_interactive_authentication = 1;
+        4: 1929:	if (options->rhosts_rsa_authentication == -1)
+        4: 1930:		options->rhosts_rsa_authentication = 0;
+        4: 1931:	if (options->hostbased_authentication == -1)
+        4: 1932:		options->hostbased_authentication = 0;
+        4: 1933:	if (options->batch_mode == -1)
+        4: 1934:		options->batch_mode = 0;
+        4: 1935:	if (options->check_host_ip == -1)
+        4: 1936:		options->check_host_ip = 1;
+        4: 1937:	if (options->strict_host_key_checking == -1)
+        4: 1938:		options->strict_host_key_checking = 2;	/* 2 is default */
+        4: 1939:	if (options->compression == -1)
+        4: 1940:		options->compression = 0;
+        4: 1941:	if (options->tcp_keep_alive == -1)
+        4: 1942:		options->tcp_keep_alive = 1;
+        4: 1943:	if (options->compression_level == -1)
+        4: 1944:		options->compression_level = 6;
+        4: 1945:	if (options->port == -1)
+        4: 1946:		options->port = 0;	/* Filled in ssh_connect. */
+        4: 1947:	if (options->address_family == -1)
+        4: 1948:		options->address_family = AF_UNSPEC;
+        4: 1949:	if (options->connection_attempts == -1)
+        4: 1950:		options->connection_attempts = 1;
+        4: 1951:	if (options->number_of_password_prompts == -1)
+        4: 1952:		options->number_of_password_prompts = 3;
         -: 1953:	/* Selected in ssh_login(). */
-        3: 1954:	if (options->cipher == -1)
-        3: 1955:		options->cipher = SSH_CIPHER_NOT_SET;
+        4: 1954:	if (options->cipher == -1)
+        4: 1955:		options->cipher = SSH_CIPHER_NOT_SET;
         -: 1956:	/* options->hostkeyalgorithms, default set in myproposals.h */
-        3: 1957:	if (options->protocol == SSH_PROTO_UNKNOWN)
-        3: 1958:		options->protocol = SSH_PROTO_2;
-        3: 1959:	if (options->add_keys_to_agent == -1)
-        3: 1960:		options->add_keys_to_agent = 0;
-        3: 1961:	if (options->num_identity_files == 0) {
-        3: 1962:		if (options->protocol & SSH_PROTO_1) {
+        4: 1957:	if (options->protocol == SSH_PROTO_UNKNOWN)
+        4: 1958:		options->protocol = SSH_PROTO_2;
+        4: 1959:	if (options->add_keys_to_agent == -1)
+        4: 1960:		options->add_keys_to_agent = 0;
+        4: 1961:	if (options->num_identity_files == 0) {
+        4: 1962:		if (options->protocol & SSH_PROTO_1) {
     #####: 1963:			add_identity_file(options, "~/",
         -: 1964:			    _PATH_SSH_CLIENT_IDENTITY, 0);
         -: 1965:		}
-        3: 1966:		if (options->protocol & SSH_PROTO_2) {
-        3: 1967:			add_identity_file(options, "~/",
+        4: 1966:		if (options->protocol & SSH_PROTO_2) {
+        4: 1967:			add_identity_file(options, "~/",
         -: 1968:			    _PATH_SSH_CLIENT_ID_RSA, 0);
-        3: 1969:			add_identity_file(options, "~/",
+        4: 1969:			add_identity_file(options, "~/",
         -: 1970:			    _PATH_SSH_CLIENT_ID_DSA, 0);
         -: 1971:#ifdef OPENSSL_HAS_ECC
-        3: 1972:			add_identity_file(options, "~/",
+        4: 1972:			add_identity_file(options, "~/",
         -: 1973:			    _PATH_SSH_CLIENT_ID_ECDSA, 0);
         -: 1974:#endif
-        3: 1975:			add_identity_file(options, "~/",
+        4: 1975:			add_identity_file(options, "~/",
         -: 1976:			    _PATH_SSH_CLIENT_ID_ED25519, 0);
         -: 1977:		}
         -: 1978:	}
-        3: 1979:	if (options->escape_char == -1)
-        3: 1980:		options->escape_char = '~';
-        3: 1981:	if (options->num_system_hostfiles == 0) {
-        6: 1982:		options->system_hostfiles[options->num_system_hostfiles++] =
-        3: 1983:		    xstrdup(_PATH_SSH_SYSTEM_HOSTFILE);
-        6: 1984:		options->system_hostfiles[options->num_system_hostfiles++] =
-        3: 1985:		    xstrdup(_PATH_SSH_SYSTEM_HOSTFILE2);
+        4: 1979:	if (options->escape_char == -1)
+        4: 1980:		options->escape_char = '~';
+        4: 1981:	if (options->num_system_hostfiles == 0) {
+        8: 1982:		options->system_hostfiles[options->num_system_hostfiles++] =
+        4: 1983:		    xstrdup(_PATH_SSH_SYSTEM_HOSTFILE);
+        8: 1984:		options->system_hostfiles[options->num_system_hostfiles++] =
+        4: 1985:		    xstrdup(_PATH_SSH_SYSTEM_HOSTFILE2);
         -: 1986:	}
-        3: 1987:	if (options->num_user_hostfiles == 0) {
-        6: 1988:		options->user_hostfiles[options->num_user_hostfiles++] =
-        3: 1989:		    xstrdup(_PATH_SSH_USER_HOSTFILE);
-        6: 1990:		options->user_hostfiles[options->num_user_hostfiles++] =
-        3: 1991:		    xstrdup(_PATH_SSH_USER_HOSTFILE2);
+        4: 1987:	if (options->num_user_hostfiles == 0) {
+        8: 1988:		options->user_hostfiles[options->num_user_hostfiles++] =
+        4: 1989:		    xstrdup(_PATH_SSH_USER_HOSTFILE);
+        8: 1990:		options->user_hostfiles[options->num_user_hostfiles++] =
+        4: 1991:		    xstrdup(_PATH_SSH_USER_HOSTFILE2);
         -: 1992:	}
-        3: 1993:	if (options->log_level == SYSLOG_LEVEL_NOT_SET)
-        2: 1994:		options->log_level = SYSLOG_LEVEL_INFO;
-        3: 1995:	if (options->no_host_authentication_for_localhost == - 1)
-        3: 1996:		options->no_host_authentication_for_localhost = 0;
-        3: 1997:	if (options->identities_only == -1)
-        3: 1998:		options->identities_only = 0;
-        3: 1999:	if (options->enable_ssh_keysign == -1)
-        3: 2000:		options->enable_ssh_keysign = 0;
-        3: 2001:	if (options->rekey_limit == -1)
-        3: 2002:		options->rekey_limit = 0;
-        3: 2003:	if (options->rekey_interval == -1)
-        3: 2004:		options->rekey_interval = 0;
-        3: 2005:	if (options->verify_host_key_dns == -1)
-        3: 2006:		options->verify_host_key_dns = 0;
-        3: 2007:	if (options->server_alive_interval == -1)
-        3: 2008:		options->server_alive_interval = 0;
-        3: 2009:	if (options->server_alive_count_max == -1)
-        3: 2010:		options->server_alive_count_max = 3;
-        3: 2011:	if (options->control_master == -1)
-        3: 2012:		options->control_master = 0;
-        3: 2013:	if (options->control_persist == -1) {
-        3: 2014:		options->control_persist = 0;
-        3: 2015:		options->control_persist_timeout = 0;
+        4: 1993:	if (options->log_level == SYSLOG_LEVEL_NOT_SET)
+        3: 1994:		options->log_level = SYSLOG_LEVEL_INFO;
+        4: 1995:	if (options->no_host_authentication_for_localhost == - 1)
+        4: 1996:		options->no_host_authentication_for_localhost = 0;
+        4: 1997:	if (options->identities_only == -1)
+        4: 1998:		options->identities_only = 0;
+        4: 1999:	if (options->enable_ssh_keysign == -1)
+        4: 2000:		options->enable_ssh_keysign = 0;
+        4: 2001:	if (options->rekey_limit == -1)
+        4: 2002:		options->rekey_limit = 0;
+        4: 2003:	if (options->rekey_interval == -1)
+        4: 2004:		options->rekey_interval = 0;
+        4: 2005:	if (options->verify_host_key_dns == -1)
+        4: 2006:		options->verify_host_key_dns = 0;
+        4: 2007:	if (options->server_alive_interval == -1)
+        4: 2008:		options->server_alive_interval = 0;
+        4: 2009:	if (options->server_alive_count_max == -1)
+        4: 2010:		options->server_alive_count_max = 3;
+        4: 2011:	if (options->control_master == -1)
+        4: 2012:		options->control_master = 0;
+        4: 2013:	if (options->control_persist == -1) {
+        4: 2014:		options->control_persist = 0;
+        4: 2015:		options->control_persist_timeout = 0;
         -: 2016:	}
-        3: 2017:	if (options->hash_known_hosts == -1)
-        3: 2018:		options->hash_known_hosts = 0;
-        3: 2019:	if (options->tun_open == -1)
-        3: 2020:		options->tun_open = SSH_TUNMODE_NO;
-        3: 2021:	if (options->tun_local == -1)
-        3: 2022:		options->tun_local = SSH_TUNID_ANY;
-        3: 2023:	if (options->tun_remote == -1)
-        3: 2024:		options->tun_remote = SSH_TUNID_ANY;
-        3: 2025:	if (options->permit_local_command == -1)
-        3: 2026:		options->permit_local_command = 0;
-        3: 2027:	if (options->visual_host_key == -1)
-        3: 2028:		options->visual_host_key = 0;
-        3: 2029:	if (options->ip_qos_interactive == -1)
-        3: 2030:		options->ip_qos_interactive = IPTOS_LOWDELAY;
-        3: 2031:	if (options->ip_qos_bulk == -1)
-        3: 2032:		options->ip_qos_bulk = IPTOS_THROUGHPUT;
-        3: 2033:	if (options->request_tty == -1)
-        3: 2034:		options->request_tty = REQUEST_TTY_AUTO;
-        3: 2035:	if (options->proxy_use_fdpass == -1)
-        3: 2036:		options->proxy_use_fdpass = 0;
-        3: 2037:	if (options->canonicalize_max_dots == -1)
+        4: 2017:	if (options->hash_known_hosts == -1)
+        4: 2018:		options->hash_known_hosts = 0;
+        4: 2019:	if (options->tun_open == -1)
+        4: 2020:		options->tun_open = SSH_TUNMODE_NO;
+        4: 2021:	if (options->tun_local == -1)
+        4: 2022:		options->tun_local = SSH_TUNID_ANY;
+        4: 2023:	if (options->tun_remote == -1)
+        4: 2024:		options->tun_remote = SSH_TUNID_ANY;
+        4: 2025:	if (options->permit_local_command == -1)
+        4: 2026:		options->permit_local_command = 0;
+        4: 2027:	if (options->visual_host_key == -1)
+        4: 2028:		options->visual_host_key = 0;
+        4: 2029:	if (options->ip_qos_interactive == -1)
+        4: 2030:		options->ip_qos_interactive = IPTOS_LOWDELAY;
+        4: 2031:	if (options->ip_qos_bulk == -1)
+        4: 2032:		options->ip_qos_bulk = IPTOS_THROUGHPUT;
+        4: 2033:	if (options->request_tty == -1)
+        4: 2034:		options->request_tty = REQUEST_TTY_AUTO;
+        4: 2035:	if (options->proxy_use_fdpass == -1)
+        4: 2036:		options->proxy_use_fdpass = 0;
+        4: 2037:	if (options->canonicalize_max_dots == -1)
     #####: 2038:		options->canonicalize_max_dots = 1;
-        3: 2039:	if (options->canonicalize_fallback_local == -1)
+        4: 2039:	if (options->canonicalize_fallback_local == -1)
     #####: 2040:		options->canonicalize_fallback_local = 1;
-        3: 2041:	if (options->canonicalize_hostname == -1)
+        4: 2041:	if (options->canonicalize_hostname == -1)
     #####: 2042:		options->canonicalize_hostname = SSH_CANONICALISE_NO;
-        3: 2043:	if (options->fingerprint_hash == -1)
-        3: 2044:		options->fingerprint_hash = SSH_FP_HASH_DEFAULT;
-        3: 2045:	if (options->update_hostkeys == -1)
-        3: 2046:		options->update_hostkeys = 0;
-        6: 2047:	if (kex_assemble_names(KEX_CLIENT_ENCRYPT, &options->ciphers) != 0 ||
-        6: 2048:	    kex_assemble_names(KEX_CLIENT_MAC, &options->macs) != 0 ||
-        6: 2049:	    kex_assemble_names(KEX_CLIENT_KEX, &options->kex_algorithms) != 0 ||
-        3: 2050:	    kex_assemble_names(KEX_DEFAULT_PK_ALG,
-        3: 2051:	    &options->hostbased_key_types) != 0 ||
-        3: 2052:	    kex_assemble_names(KEX_DEFAULT_PK_ALG,
+        4: 2043:	if (options->fingerprint_hash == -1)
+        4: 2044:		options->fingerprint_hash = SSH_FP_HASH_DEFAULT;
+        4: 2045:	if (options->update_hostkeys == -1)
+        4: 2046:		options->update_hostkeys = 0;
+        8: 2047:	if (kex_assemble_names(KEX_CLIENT_ENCRYPT, &options->ciphers) != 0 ||
+        8: 2048:	    kex_assemble_names(KEX_CLIENT_MAC, &options->macs) != 0 ||
+        8: 2049:	    kex_assemble_names(KEX_CLIENT_KEX, &options->kex_algorithms) != 0 ||
+        4: 2050:	    kex_assemble_names(KEX_DEFAULT_PK_ALG,
+        4: 2051:	    &options->hostbased_key_types) != 0 ||
+        4: 2052:	    kex_assemble_names(KEX_DEFAULT_PK_ALG,
         -: 2053:	    &options->pubkey_key_types) != 0)
     #####: 2054:		fatal("%s: kex_assemble_names failed", __func__);
         -: 2055:
@@ -2062,16 +2062,16 @@
         -: 2060:			v = NULL; \
         -: 2061:		} \
         -: 2062:	} while(0)
-        3: 2063:	CLEAR_ON_NONE(options->local_command);
-        3: 2064:	CLEAR_ON_NONE(options->proxy_command);
-        3: 2065:	CLEAR_ON_NONE(options->control_path);
-        3: 2066:	CLEAR_ON_NONE(options->revoked_host_keys);
+        4: 2063:	CLEAR_ON_NONE(options->local_command);
+        4: 2064:	CLEAR_ON_NONE(options->proxy_command);
+        4: 2065:	CLEAR_ON_NONE(options->control_path);
+        4: 2066:	CLEAR_ON_NONE(options->revoked_host_keys);
         -: 2067:	/* options->identity_agent distinguishes NULL from 'none' */
         -: 2068:	/* options->user will be set in the main program if appropriate */
         -: 2069:	/* options->hostname will be set in the main program if appropriate */
         -: 2070:	/* options->host_key_alias should not be set by default */
         -: 2071:	/* options->preferred_authentications will be set in ssh */
-        3: 2072:}
+        4: 2072:}
         -: 2073:
         -: 2074:struct fwdarg {
         -: 2075:	char *arg;

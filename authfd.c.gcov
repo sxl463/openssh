@@ -87,18 +87,18 @@
         -:   85:
         -:   86:/* Returns the number of the authentication fd, or -1 if there is none. */
         -:   87:int
-        3:   88:ssh_get_authentication_socket(int *fdp)
+        4:   88:ssh_get_authentication_socket(int *fdp)
         -:   89:{
         -:   90:	const char *authsocket;
         -:   91:	int sock, oerrno;
         -:   92:	struct sockaddr_un sunaddr;
         -:   93:
-        3:   94:	if (fdp != NULL)
-        3:   95:		*fdp = -1;
+        4:   94:	if (fdp != NULL)
+        4:   95:		*fdp = -1;
         -:   96:
-        3:   97:	authsocket = getenv(SSH_AUTHSOCKET_ENV_NAME);
-        3:   98:	if (!authsocket)
-        3:   99:		return SSH_ERR_AGENT_NOT_PRESENT;
+        4:   97:	authsocket = getenv(SSH_AUTHSOCKET_ENV_NAME);
+        4:   98:	if (!authsocket)
+        4:   99:		return SSH_ERR_AGENT_NOT_PRESENT;
         -:  100:
     #####:  101:	memset(&sunaddr, 0, sizeof(sunaddr));
     #####:  102:	sunaddr.sun_family = AF_UNIX;

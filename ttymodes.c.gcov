@@ -73,9 +73,9 @@
         -:   71: * constants for speed_t are not themselves portable.
         -:   72: */
         -:   73:static int
-        6:   74:speed_to_baud(speed_t speed)
+        8:   74:speed_to_baud(speed_t speed)
         -:   75:{
-        6:   76:	switch (speed) {
+        8:   76:	switch (speed) {
         -:   77:	case B0:
     #####:   78:		return 0;
         -:   79:	case B50:
@@ -117,7 +117,7 @@
         -:  115:
         -:  116:#ifdef B38400
         -:  117:	case B38400:
-        6:  118:		return 38400;
+        8:  118:		return 38400;
         -:  119:#else /* B38400 */
         -:  120:#ifdef EXTB
         -:  121:	case EXTB:
@@ -251,13 +251,13 @@
         -:  249: * Encode a special character into SSH line format.
         -:  250: */
         -:  251:static u_int
-       42:  252:special_char_encode(cc_t c)
+       56:  252:special_char_encode(cc_t c)
         -:  253:{
         -:  254:#ifdef _POSIX_VDISABLE
         -:  255:	if (c == _POSIX_VDISABLE)
         -:  256:		return 255;
         -:  257:#endif /* _POSIX_VDISABLE */
-       42:  258:	return c;
+       56:  258:	return c;
         -:  259:}
         -:  260:
         -:  261:/*
@@ -279,7 +279,7 @@
         -:  277: * being constructed.
         -:  278: */
         -:  279:void
-        3:  280:tty_make_modes(int fd, struct termios *tiop)
+        4:  280:tty_make_modes(int fd, struct termios *tiop)
         -:  281:{
         -:  282:	struct termios tio;
         -:  283:	int baud;
@@ -287,18 +287,18 @@
         -:  285:	int tty_op_ospeed, tty_op_ispeed;
         -:  286:	void (*put_arg)(Buffer *, u_int);
         -:  287:
-        3:  288:	buffer_init(&buf);
-        3:  289:	if (compat20) {
-        3:  290:		tty_op_ospeed = TTY_OP_OSPEED_PROTO2;
-        3:  291:		tty_op_ispeed = TTY_OP_ISPEED_PROTO2;
-        3:  292:		put_arg = buffer_put_int;
+        4:  288:	buffer_init(&buf);
+        4:  289:	if (compat20) {
+        4:  290:		tty_op_ospeed = TTY_OP_OSPEED_PROTO2;
+        4:  291:		tty_op_ispeed = TTY_OP_ISPEED_PROTO2;
+        4:  292:		put_arg = buffer_put_int;
         -:  293:	} else {
     #####:  294:		tty_op_ospeed = TTY_OP_OSPEED_PROTO1;
     #####:  295:		tty_op_ispeed = TTY_OP_ISPEED_PROTO1;
     #####:  296:		put_arg = (void (*)(Buffer *, u_int)) buffer_put_char;
         -:  297:	}
         -:  298:
-        3:  299:	if (tiop == NULL) {
+        4:  299:	if (tiop == NULL) {
     #####:  300:		if (fd == -1) {
     #####:  301:			debug("tty_make_modes: no fd or tio");
     #####:  302:			goto end;
@@ -308,15 +308,15 @@
     #####:  306:			goto end;
         -:  307:		}
         -:  308:	} else
-        3:  309:		tio = *tiop;
+        4:  309:		tio = *tiop;
         -:  310:
         -:  311:	/* Store input and output baud rates. */
-        3:  312:	baud = speed_to_baud(cfgetospeed(&tio));
-        3:  313:	buffer_put_char(&buf, tty_op_ospeed);
-        3:  314:	buffer_put_int(&buf, baud);
-        3:  315:	baud = speed_to_baud(cfgetispeed(&tio));
-        3:  316:	buffer_put_char(&buf, tty_op_ispeed);
-        3:  317:	buffer_put_int(&buf, baud);
+        4:  312:	baud = speed_to_baud(cfgetospeed(&tio));
+        4:  313:	buffer_put_char(&buf, tty_op_ospeed);
+        4:  314:	buffer_put_int(&buf, baud);
+        4:  315:	baud = speed_to_baud(cfgetispeed(&tio));
+        4:  316:	buffer_put_char(&buf, tty_op_ispeed);
+        4:  317:	buffer_put_int(&buf, baud);
         -:  318:
         -:  319:	/* Store values of mode flags. */
         -:  320:#define TTYCHAR(NAME, OP) \
@@ -334,13 +334,13 @@
         -:  332:
         -:  333:end:
         -:  334:	/* Mark end of mode data. */
-        3:  335:	buffer_put_char(&buf, TTY_OP_END);
-        3:  336:	if (compat20)
-        3:  337:		packet_put_string(buffer_ptr(&buf), buffer_len(&buf));
+        4:  335:	buffer_put_char(&buf, TTY_OP_END);
+        4:  336:	if (compat20)
+        4:  337:		packet_put_string(buffer_ptr(&buf), buffer_len(&buf));
         -:  338:	else
     #####:  339:		packet_put_raw(buffer_ptr(&buf), buffer_len(&buf));
-        3:  340:	buffer_free(&buf);
-        3:  341:}
+        4:  340:	buffer_free(&buf);
+        4:  341:}
         -:  342:
         -:  343:/*
         -:  344: * Decodes terminal modes for the terminal referenced by fd in a portable
