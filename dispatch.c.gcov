@@ -65,33 +65,33 @@
         -:   63:}
         -:   64:
         -:   65:void
-        4:   66:ssh_dispatch_init(struct ssh *ssh, dispatch_fn *dflt)
+        6:   66:ssh_dispatch_init(struct ssh *ssh, dispatch_fn *dflt)
         -:   67:{
         -:   68:	u_int i;
-     1024:   69:	for (i = 0; i < DISPATCH_MAX; i++)
-     1020:   70:		ssh->dispatch[i] = dflt;
-        4:   71:}
+     1536:   69:	for (i = 0; i < DISPATCH_MAX; i++)
+     1530:   70:		ssh->dispatch[i] = dflt;
+        6:   71:}
         -:   72:
         -:   73:void
-        8:   74:ssh_dispatch_range(struct ssh *ssh, u_int from, u_int to, dispatch_fn *fn)
+       12:   74:ssh_dispatch_range(struct ssh *ssh, u_int from, u_int to, dispatch_fn *fn)
         -:   75:{
         -:   76:	u_int i;
         -:   77:
-      304:   78:	for (i = from; i <= to; i++) {
-      296:   79:		if (i >= DISPATCH_MAX)
+      456:   78:	for (i = from; i <= to; i++) {
+      444:   79:		if (i >= DISPATCH_MAX)
     #####:   80:			break;
-      296:   81:		ssh->dispatch[i] = fn;
+      444:   81:		ssh->dispatch[i] = fn;
         -:   82:	}
-        8:   83:}
+       12:   83:}
         -:   84:
         -:   85:void
-       56:   86:ssh_dispatch_set(struct ssh *ssh, int type, dispatch_fn *fn)
+       84:   86:ssh_dispatch_set(struct ssh *ssh, int type, dispatch_fn *fn)
         -:   87:{
-       56:   88:	ssh->dispatch[type] = fn;
-       56:   89:}
+       84:   88:	ssh->dispatch[type] = fn;
+       84:   89:}
         -:   90:
         -:   91:int
-      440:   92:ssh_dispatch_run(struct ssh *ssh, int mode, volatile sig_atomic_t *done,
+      496:   92:ssh_dispatch_run(struct ssh *ssh, int mode, volatile sig_atomic_t *done,
         -:   93:    void *ctxt)
         -:   94:{
         -:   95:	int r;
@@ -99,27 +99,27 @@
         -:   97:	u_int32_t seqnr;
         -:   98:
         -:   99:	for (;;) {
-      440:  100:		if (mode == DISPATCH_BLOCK) {
-       14:  101:			r = ssh_packet_read_seqnr(ssh, &type, &seqnr);
-       14:  102:			if (r != 0)
+      496:  100:		if (mode == DISPATCH_BLOCK) {
+       21:  101:			r = ssh_packet_read_seqnr(ssh, &type, &seqnr);
+       21:  102:			if (r != 0)
     #####:  103:				return r;
         -:  104:		} else {
-      426:  105:			r = ssh_packet_read_poll_seqnr(ssh, &type, &seqnr);
-      426:  106:			if (r != 0)
+      475:  105:			r = ssh_packet_read_poll_seqnr(ssh, &type, &seqnr);
+      475:  106:			if (r != 0)
     #####:  107:				return r;
-      426:  108:			if (type == SSH_MSG_NONE)
-      314:  109:				return 0;
+      475:  108:			if (type == SSH_MSG_NONE)
+      347:  109:				return 0;
         -:  110:		}
-      252:  111:		if (type > 0 && type < DISPATCH_MAX &&
-      126:  112:		    ssh->dispatch[type] != NULL) {
-      126:  113:			if (ssh->dispatch_skip_packets) {
+      298:  111:		if (type > 0 && type < DISPATCH_MAX &&
+      149:  112:		    ssh->dispatch[type] != NULL) {
+      149:  113:			if (ssh->dispatch_skip_packets) {
     #####:  114:				debug2("skipped packet (type %u)", type);
     #####:  115:				ssh->dispatch_skip_packets--;
     #####:  116:				continue;
         -:  117:			}
         -:  118:			/* XXX 'ssh' will replace 'ctxt' later */
-      126:  119:			r = (*ssh->dispatch[type])(type, seqnr, ctxt);
-      252:  120:			if (r != 0)
+      149:  119:			r = (*ssh->dispatch[type])(type, seqnr, ctxt);
+      298:  120:			if (r != 0)
     #####:  121:				return r;
         -:  122:		} else {
     #####:  123:			r = sshpkt_disconnect(ssh,
@@ -128,17 +128,17 @@
     #####:  126:				return r;
     #####:  127:			return SSH_ERR_DISCONNECTED;
         -:  128:		}
-      126:  129:		if (done != NULL && *done)
-        4:  130:			return 0;
-      122:  131:	}
+      149:  129:		if (done != NULL && *done)
+        6:  130:			return 0;
+      143:  131:	}
         -:  132:}
         -:  133:
         -:  134:void
-      316:  135:ssh_dispatch_run_fatal(struct ssh *ssh, int mode, volatile sig_atomic_t *done,
+      350:  135:ssh_dispatch_run_fatal(struct ssh *ssh, int mode, volatile sig_atomic_t *done,
         -:  136:    void *ctxt)
         -:  137:{
         -:  138:	int r;
         -:  139:
-      316:  140:	if ((r = ssh_dispatch_run(ssh, mode, done, ctxt)) != 0)
+      350:  140:	if ((r = ssh_dispatch_run(ssh, mode, done, ctxt)) != 0)
     #####:  141:		sshpkt_fatal(ssh, __func__, r);
-      316:  142:}
+      350:  142:}

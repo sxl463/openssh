@@ -205,21 +205,21 @@
         -:  203: * called while temporarily_use_uid is effective.
         -:  204: */
         -:  205:void
-        2:  206:permanently_set_uid(struct passwd *pw)
+        3:  206:permanently_set_uid(struct passwd *pw)
         -:  207:{
         -:  208:#ifndef NO_UID_RESTORATION_TEST
-        2:  209:	uid_t old_uid = getuid();
-        2:  210:	gid_t old_gid = getgid();
+        3:  209:	uid_t old_uid = getuid();
+        3:  210:	gid_t old_gid = getgid();
         -:  211:#endif
         -:  212:
-        2:  213:	if (pw == NULL)
+        3:  213:	if (pw == NULL)
     #####:  214:		fatal("permanently_set_uid: no user given");
-        2:  215:	if (temporarily_use_uid_effective)
+        3:  215:	if (temporarily_use_uid_effective)
     #####:  216:		fatal("permanently_set_uid: temporarily_use_uid effective");
-        2:  217:	debug("permanently_set_uid: %u/%u", (u_int)pw->pw_uid,
+        3:  217:	debug("permanently_set_uid: %u/%u", (u_int)pw->pw_uid,
         -:  218:	    (u_int)pw->pw_gid);
         -:  219:
-        2:  220:	if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0)
+        3:  220:	if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0)
     #####:  221:		fatal("setresgid %u: %.100s", (u_int)pw->pw_gid, strerror(errno));
         -:  222:
         -:  223:#ifdef __APPLE__
@@ -232,18 +232,18 @@
         -:  230:		    pw->pw_name, (u_int)pw->pw_gid, strerror(errno));
         -:  231:#endif
         -:  232:
-        2:  233:	if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0)
+        3:  233:	if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0)
     #####:  234:		fatal("setresuid %u: %.100s", (u_int)pw->pw_uid, strerror(errno));
         -:  235:
         -:  236:#ifndef NO_UID_RESTORATION_TEST
         -:  237:	/* Try restoration of GID if changed (test clearing of saved gid) */
-        2:  238:	if (old_gid != pw->pw_gid && pw->pw_uid != 0 &&
+        3:  238:	if (old_gid != pw->pw_gid && pw->pw_uid != 0 &&
     #####:  239:	    (setgid(old_gid) != -1 || setegid(old_gid) != -1))
     #####:  240:		fatal("%s: was able to restore old [e]gid", __func__);
         -:  241:#endif
         -:  242:
         -:  243:	/* Verify GID drop was successful */
-        2:  244:	if (getgid() != pw->pw_gid || getegid() != pw->pw_gid) {
+        3:  244:	if (getgid() != pw->pw_gid || getegid() != pw->pw_gid) {
     #####:  245:		fatal("%s: egid incorrect gid:%u egid:%u (should be %u)",
         -:  246:		    __func__, (u_int)getgid(), (u_int)getegid(),
         -:  247:		    (u_int)pw->pw_gid);
@@ -251,15 +251,15 @@
         -:  249:
         -:  250:#ifndef NO_UID_RESTORATION_TEST
         -:  251:	/* Try restoration of UID if changed (test clearing of saved uid) */
-        2:  252:	if (old_uid != pw->pw_uid &&
+        3:  252:	if (old_uid != pw->pw_uid &&
     #####:  253:	    (setuid(old_uid) != -1 || seteuid(old_uid) != -1))
     #####:  254:		fatal("%s: was able to restore old [e]uid", __func__);
         -:  255:#endif
         -:  256:
         -:  257:	/* Verify UID drop was successful */
-        2:  258:	if (getuid() != pw->pw_uid || geteuid() != pw->pw_uid) {
+        3:  258:	if (getuid() != pw->pw_uid || geteuid() != pw->pw_uid) {
     #####:  259:		fatal("%s: euid incorrect uid:%u euid:%u (should be %u)",
         -:  260:		    __func__, (u_int)getuid(), (u_int)geteuid(),
         -:  261:		    (u_int)pw->pw_uid);
         -:  262:	}
-        2:  263:}
+        3:  263:}

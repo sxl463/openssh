@@ -196,20 +196,20 @@
         -:  194:/* -- channel core */
         -:  195:
         -:  196:Channel *
-      132:  197:channel_by_id(int id)
+      158:  197:channel_by_id(int id)
         -:  198:{
         -:  199:	Channel *c;
         -:  200:
-      132:  201:	if (id < 0 || (u_int)id >= channels_alloc) {
+      158:  201:	if (id < 0 || (u_int)id >= channels_alloc) {
     #####:  202:		logit("channel_by_id: %d: bad id", id);
     #####:  203:		return NULL;
         -:  204:	}
-      132:  205:	c = channels[id];
-      132:  206:	if (c == NULL) {
+      158:  205:	c = channels[id];
+      158:  206:	if (c == NULL) {
     #####:  207:		logit("channel_by_id: %d: bad id: channel free", id);
     #####:  208:		return NULL;
         -:  209:	}
-      132:  210:	return c;
+      158:  210:	return c;
         -:  211:}
         -:  212:
         -:  213:Channel *
@@ -231,14 +231,14 @@
         -:  229: * Private channels, like listening sockets, may not receive messages.
         -:  230: */
         -:  231:Channel *
-      128:  232:channel_lookup(int id)
+      152:  232:channel_lookup(int id)
         -:  233:{
         -:  234:	Channel *c;
         -:  235:
-      128:  236:	if ((c = channel_by_id(id)) == NULL)
+      152:  236:	if ((c = channel_by_id(id)) == NULL)
     #####:  237:		return (NULL);
         -:  238:
-      128:  239:	switch (c->type) {
+      152:  239:	switch (c->type) {
         -:  240:	case SSH_CHANNEL_X11_OPEN:
         -:  241:	case SSH_CHANNEL_LARVAL:
         -:  242:	case SSH_CHANNEL_CONNECTING:
@@ -249,7 +249,7 @@
         -:  247:	case SSH_CHANNEL_OUTPUT_DRAINING:
         -:  248:	case SSH_CHANNEL_ABANDONED:
         -:  249:	case SSH_CHANNEL_MUX_PROXY:
-      128:  250:		return (c);
+      152:  250:		return (c);
         -:  251:	}
     #####:  252:	logit("Non-public channel %d, type %d.", id, c->type);
     #####:  253:	return (NULL);
@@ -260,28 +260,28 @@
         -:  258: * when the channel consumer/producer is ready, e.g. shell exec'd
         -:  259: */
         -:  260:static void
-        2:  261:channel_register_fds(Channel *c, int rfd, int wfd, int efd,
+        3:  261:channel_register_fds(Channel *c, int rfd, int wfd, int efd,
         -:  262:    int extusage, int nonblock, int is_tty)
         -:  263:{
         -:  264:	/* Update the maximum file descriptor value. */
-        2:  265:	channel_max_fd = MAXIMUM(channel_max_fd, rfd);
-        2:  266:	channel_max_fd = MAXIMUM(channel_max_fd, wfd);
-        2:  267:	channel_max_fd = MAXIMUM(channel_max_fd, efd);
+        3:  265:	channel_max_fd = MAXIMUM(channel_max_fd, rfd);
+        3:  266:	channel_max_fd = MAXIMUM(channel_max_fd, wfd);
+        3:  267:	channel_max_fd = MAXIMUM(channel_max_fd, efd);
         -:  268:
-        2:  269:	if (rfd != -1)
-        2:  270:		fcntl(rfd, F_SETFD, FD_CLOEXEC);
-        2:  271:	if (wfd != -1 && wfd != rfd)
-        2:  272:		fcntl(wfd, F_SETFD, FD_CLOEXEC);
-        2:  273:	if (efd != -1 && efd != rfd && efd != wfd)
-        2:  274:		fcntl(efd, F_SETFD, FD_CLOEXEC);
+        3:  269:	if (rfd != -1)
+        3:  270:		fcntl(rfd, F_SETFD, FD_CLOEXEC);
+        3:  271:	if (wfd != -1 && wfd != rfd)
+        3:  272:		fcntl(wfd, F_SETFD, FD_CLOEXEC);
+        3:  273:	if (efd != -1 && efd != rfd && efd != wfd)
+        3:  274:		fcntl(efd, F_SETFD, FD_CLOEXEC);
         -:  275:
-        2:  276:	c->rfd = rfd;
-        2:  277:	c->wfd = wfd;
-        2:  278:	c->sock = (rfd == wfd) ? rfd : -1;
-        2:  279:	c->efd = efd;
-        2:  280:	c->extended_usage = extusage;
+        3:  276:	c->rfd = rfd;
+        3:  277:	c->wfd = wfd;
+        3:  278:	c->sock = (rfd == wfd) ? rfd : -1;
+        3:  279:	c->efd = efd;
+        3:  280:	c->extended_usage = extusage;
         -:  281:
-        2:  282:	if ((c->isatty = is_tty) != 0)
+        3:  282:	if ((c->isatty = is_tty) != 0)
     #####:  283:		debug2("channel %d: rfd %d isatty", c->self, c->rfd);
         -:  284:#ifdef _AIX
         -:  285:	/* XXX: Later AIX versions can't push as much data to tty */
@@ -289,7 +289,7 @@
         -:  287:#endif
         -:  288:
         -:  289:	/* enable nonblocking mode */
-        2:  290:	if (nonblock) {
+        3:  290:	if (nonblock) {
     #####:  291:		if (rfd != -1)
     #####:  292:			set_nonblock(rfd);
     #####:  293:		if (wfd != -1)
@@ -297,14 +297,14 @@
     #####:  295:		if (efd != -1)
     #####:  296:			set_nonblock(efd);
         -:  297:	}
-        2:  298:}
+        3:  298:}
         -:  299:
         -:  300:/*
         -:  301: * Allocate a new channel object and set its type and socket. This will cause
         -:  302: * remote_name to be freed.
         -:  303: */
         -:  304:Channel *
-        2:  305:channel_new(char *ctype, int type, int rfd, int wfd, int efd,
+        3:  305:channel_new(char *ctype, int type, int rfd, int wfd, int efd,
         -:  306:    u_int window, u_int maxpack, int extusage, char *remote_name, int nonblock)
         -:  307:{
         -:  308:	int found;
@@ -312,20 +312,20 @@
         -:  310:	Channel *c;
         -:  311:
         -:  312:	/* Do initial allocation if this is the first call. */
-        2:  313:	if (channels_alloc == 0) {
-        2:  314:		channels_alloc = 10;
-        2:  315:		channels = xcalloc(channels_alloc, sizeof(Channel *));
-       22:  316:		for (i = 0; i < channels_alloc; i++)
-       20:  317:			channels[i] = NULL;
+        3:  313:	if (channels_alloc == 0) {
+        3:  314:		channels_alloc = 10;
+        3:  315:		channels = xcalloc(channels_alloc, sizeof(Channel *));
+       33:  316:		for (i = 0; i < channels_alloc; i++)
+       30:  317:			channels[i] = NULL;
         -:  318:	}
         -:  319:	/* Try to find a free slot where to put the new channel. */
-        2:  320:	for (found = -1, i = 0; i < channels_alloc; i++)
-        2:  321:		if (channels[i] == NULL) {
+        3:  320:	for (found = -1, i = 0; i < channels_alloc; i++)
+        3:  321:		if (channels[i] == NULL) {
         -:  322:			/* Found a free slot. */
-        2:  323:			found = (int)i;
-        2:  324:			break;
+        3:  323:			found = (int)i;
+        3:  324:			break;
         -:  325:		}
-        2:  326:	if (found < 0) {
+        3:  326:	if (found < 0) {
         -:  327:		/* There are no free slots.  Take last+1 slot and expand the array.  */
     #####:  328:		found = channels_alloc;
     #####:  329:		if (channels_alloc > 10000)
@@ -339,106 +339,106 @@
     #####:  337:			channels[i] = NULL;
         -:  338:	}
         -:  339:	/* Initialize and return new channel. */
-        2:  340:	c = channels[found] = xcalloc(1, sizeof(Channel));
-        2:  341:	buffer_init(&c->input);
-        2:  342:	buffer_init(&c->output);
-        2:  343:	buffer_init(&c->extended);
-        2:  344:	c->path = NULL;
-        2:  345:	c->listening_addr = NULL;
-        2:  346:	c->listening_port = 0;
-        2:  347:	c->ostate = CHAN_OUTPUT_OPEN;
-        2:  348:	c->istate = CHAN_INPUT_OPEN;
-        2:  349:	c->flags = 0;
-        2:  350:	channel_register_fds(c, rfd, wfd, efd, extusage, nonblock, 0);
-        2:  351:	c->notbefore = 0;
-        2:  352:	c->self = found;
-        2:  353:	c->type = type;
-        2:  354:	c->ctype = ctype;
-        2:  355:	c->local_window = window;
-        2:  356:	c->local_window_max = window;
-        2:  357:	c->local_consumed = 0;
-        2:  358:	c->local_maxpacket = maxpack;
-        2:  359:	c->remote_id = -1;
-        2:  360:	c->remote_name = xstrdup(remote_name);
-        2:  361:	c->remote_window = 0;
-        2:  362:	c->remote_maxpacket = 0;
-        2:  363:	c->force_drain = 0;
-        2:  364:	c->single_connection = 0;
-        2:  365:	c->detach_user = NULL;
-        2:  366:	c->detach_close = 0;
-        2:  367:	c->open_confirm = NULL;
-        2:  368:	c->open_confirm_ctx = NULL;
-        2:  369:	c->input_filter = NULL;
-        2:  370:	c->output_filter = NULL;
-        2:  371:	c->filter_ctx = NULL;
-        2:  372:	c->filter_cleanup = NULL;
-        2:  373:	c->ctl_chan = -1;
-        2:  374:	c->mux_rcb = NULL;
-        2:  375:	c->mux_ctx = NULL;
-        2:  376:	c->mux_pause = 0;
-        2:  377:	c->delayed = 1;		/* prevent call to channel_post handler */
-        2:  378:	TAILQ_INIT(&c->status_confirms);
-        2:  379:	debug("channel %d: new [%s]", found, remote_name);
-        2:  380:	return c;
+        3:  340:	c = channels[found] = xcalloc(1, sizeof(Channel));
+        3:  341:	buffer_init(&c->input);
+        3:  342:	buffer_init(&c->output);
+        3:  343:	buffer_init(&c->extended);
+        3:  344:	c->path = NULL;
+        3:  345:	c->listening_addr = NULL;
+        3:  346:	c->listening_port = 0;
+        3:  347:	c->ostate = CHAN_OUTPUT_OPEN;
+        3:  348:	c->istate = CHAN_INPUT_OPEN;
+        3:  349:	c->flags = 0;
+        3:  350:	channel_register_fds(c, rfd, wfd, efd, extusage, nonblock, 0);
+        3:  351:	c->notbefore = 0;
+        3:  352:	c->self = found;
+        3:  353:	c->type = type;
+        3:  354:	c->ctype = ctype;
+        3:  355:	c->local_window = window;
+        3:  356:	c->local_window_max = window;
+        3:  357:	c->local_consumed = 0;
+        3:  358:	c->local_maxpacket = maxpack;
+        3:  359:	c->remote_id = -1;
+        3:  360:	c->remote_name = xstrdup(remote_name);
+        3:  361:	c->remote_window = 0;
+        3:  362:	c->remote_maxpacket = 0;
+        3:  363:	c->force_drain = 0;
+        3:  364:	c->single_connection = 0;
+        3:  365:	c->detach_user = NULL;
+        3:  366:	c->detach_close = 0;
+        3:  367:	c->open_confirm = NULL;
+        3:  368:	c->open_confirm_ctx = NULL;
+        3:  369:	c->input_filter = NULL;
+        3:  370:	c->output_filter = NULL;
+        3:  371:	c->filter_ctx = NULL;
+        3:  372:	c->filter_cleanup = NULL;
+        3:  373:	c->ctl_chan = -1;
+        3:  374:	c->mux_rcb = NULL;
+        3:  375:	c->mux_ctx = NULL;
+        3:  376:	c->mux_pause = 0;
+        3:  377:	c->delayed = 1;		/* prevent call to channel_post handler */
+        3:  378:	TAILQ_INIT(&c->status_confirms);
+        3:  379:	debug("channel %d: new [%s]", found, remote_name);
+        3:  380:	return c;
         -:  381:}
         -:  382:
         -:  383:static int
-        2:  384:channel_find_maxfd(void)
+        3:  384:channel_find_maxfd(void)
         -:  385:{
         -:  386:	u_int i;
-        2:  387:	int max = 0;
+        3:  387:	int max = 0;
         -:  388:	Channel *c;
         -:  389:
-       22:  390:	for (i = 0; i < channels_alloc; i++) {
-       20:  391:		c = channels[i];
-       20:  392:		if (c != NULL) {
-        2:  393:			max = MAXIMUM(max, c->rfd);
-        2:  394:			max = MAXIMUM(max, c->wfd);
-        2:  395:			max = MAXIMUM(max, c->efd);
+       33:  390:	for (i = 0; i < channels_alloc; i++) {
+       30:  391:		c = channels[i];
+       30:  392:		if (c != NULL) {
+        3:  393:			max = MAXIMUM(max, c->rfd);
+        3:  394:			max = MAXIMUM(max, c->wfd);
+        3:  395:			max = MAXIMUM(max, c->efd);
         -:  396:		}
         -:  397:	}
-        2:  398:	return max;
+        3:  398:	return max;
         -:  399:}
         -:  400:
         -:  401:int
-       12:  402:channel_close_fd(int *fdp)
+       18:  402:channel_close_fd(int *fdp)
         -:  403:{
-       12:  404:	int ret = 0, fd = *fdp;
+       18:  404:	int ret = 0, fd = *fdp;
         -:  405:
-       12:  406:	if (fd != -1) {
-        6:  407:		ret = close(fd);
-        6:  408:		*fdp = -1;
-        6:  409:		if (fd == channel_max_fd)
-        2:  410:			channel_max_fd = channel_find_maxfd();
+       18:  406:	if (fd != -1) {
+        9:  407:		ret = close(fd);
+        9:  408:		*fdp = -1;
+        9:  409:		if (fd == channel_max_fd)
+        3:  410:			channel_max_fd = channel_find_maxfd();
         -:  411:	}
-       12:  412:	return ret;
+       18:  412:	return ret;
         -:  413:}
         -:  414:
         -:  415:/* Close all channel fd/socket. */
         -:  416:static void
-        2:  417:channel_close_fds(Channel *c)
+        3:  417:channel_close_fds(Channel *c)
         -:  418:{
-        2:  419:	channel_close_fd(&c->sock);
-        2:  420:	channel_close_fd(&c->rfd);
-        2:  421:	channel_close_fd(&c->wfd);
-        2:  422:	channel_close_fd(&c->efd);
-        2:  423:}
+        3:  419:	channel_close_fd(&c->sock);
+        3:  420:	channel_close_fd(&c->rfd);
+        3:  421:	channel_close_fd(&c->wfd);
+        3:  422:	channel_close_fd(&c->efd);
+        3:  423:}
         -:  424:
         -:  425:/* Free the channel and close its fd/socket. */
         -:  426:void
-        2:  427:channel_free(Channel *c)
+        3:  427:channel_free(Channel *c)
         -:  428:{
         -:  429:	char *s;
         -:  430:	u_int i, n;
         -:  431:	Channel *other;
         -:  432:	struct channel_confirm *cc;
         -:  433:
-       22:  434:	for (n = 0, i = 0; i < channels_alloc; i++) {
-       20:  435:		if ((other = channels[i]) != NULL) {
-        2:  436:			n++;
+       33:  434:	for (n = 0, i = 0; i < channels_alloc; i++) {
+       30:  435:		if ((other = channels[i]) != NULL) {
+        3:  436:			n++;
         -:  437:
         -:  438:			/* detach from mux client and prepare for closing */
-        2:  439:			if (c->type == SSH_CHANNEL_MUX_CLIENT &&
+        3:  439:			if (c->type == SSH_CHANNEL_MUX_CLIENT &&
     #####:  440:			    other->type == SSH_CHANNEL_MUX_PROXY &&
     #####:  441:			    other->mux_ctx == c) {
     #####:  442:				other->mux_ctx = NULL;
@@ -448,11 +448,11 @@
         -:  446:			}
         -:  447:		}
         -:  448:	}
-        2:  449:	debug("channel %d: free: %s, nchannels %u", c->self,
-        2:  450:	    c->remote_name ? c->remote_name : "???", n);
+        3:  449:	debug("channel %d: free: %s, nchannels %u", c->self,
+        3:  450:	    c->remote_name ? c->remote_name : "???", n);
         -:  451:
         -:  452:	/* XXX more MUX cleanup: remove remote forwardings */
-        2:  453:	if (c->type == SSH_CHANNEL_MUX_CLIENT) {
+        3:  453:	if (c->type == SSH_CHANNEL_MUX_CLIENT) {
     #####:  454:		for (i = 0; i < (u_int)num_permitted_opens; i++) {
     #####:  455:			if (permitted_opens[i].downstream != c)
     #####:  456:				continue;
@@ -480,44 +480,44 @@
         -:  478:		}
         -:  479:	}
         -:  480:
-        2:  481:	s = channel_open_message();
-        2:  482:	debug3("channel %d: status: %s", c->self, s);
-        2:  483:	free(s);
+        3:  481:	s = channel_open_message();
+        3:  482:	debug3("channel %d: status: %s", c->self, s);
+        3:  483:	free(s);
         -:  484:
-        2:  485:	if (c->sock != -1)
+        3:  485:	if (c->sock != -1)
     #####:  486:		shutdown(c->sock, SHUT_RDWR);
-        2:  487:	channel_close_fds(c);
-        2:  488:	buffer_free(&c->input);
-        2:  489:	buffer_free(&c->output);
-        2:  490:	buffer_free(&c->extended);
-        2:  491:	free(c->remote_name);
-        2:  492:	c->remote_name = NULL;
-        2:  493:	free(c->path);
-        2:  494:	c->path = NULL;
-        2:  495:	free(c->listening_addr);
-        2:  496:	c->listening_addr = NULL;
-        4:  497:	while ((cc = TAILQ_FIRST(&c->status_confirms)) != NULL) {
+        3:  487:	channel_close_fds(c);
+        3:  488:	buffer_free(&c->input);
+        3:  489:	buffer_free(&c->output);
+        3:  490:	buffer_free(&c->extended);
+        3:  491:	free(c->remote_name);
+        3:  492:	c->remote_name = NULL;
+        3:  493:	free(c->path);
+        3:  494:	c->path = NULL;
+        3:  495:	free(c->listening_addr);
+        3:  496:	c->listening_addr = NULL;
+        6:  497:	while ((cc = TAILQ_FIRST(&c->status_confirms)) != NULL) {
     #####:  498:		if (cc->abandon_cb != NULL)
     #####:  499:			cc->abandon_cb(c, cc->ctx);
     #####:  500:		TAILQ_REMOVE(&c->status_confirms, cc, entry);
     #####:  501:		explicit_bzero(cc, sizeof(*cc));
     #####:  502:		free(cc);
         -:  503:	}
-        2:  504:	if (c->filter_cleanup != NULL && c->filter_ctx != NULL)
-        2:  505:		c->filter_cleanup(c->self, c->filter_ctx);
-        2:  506:	channels[c->self] = NULL;
-        2:  507:	free(c);
-        2:  508:}
+        3:  504:	if (c->filter_cleanup != NULL && c->filter_ctx != NULL)
+        3:  505:		c->filter_cleanup(c->self, c->filter_ctx);
+        3:  506:	channels[c->self] = NULL;
+        3:  507:	free(c);
+        3:  508:}
         -:  509:
         -:  510:void
-        2:  511:channel_free_all(void)
+        3:  511:channel_free_all(void)
         -:  512:{
         -:  513:	u_int i;
         -:  514:
-       22:  515:	for (i = 0; i < channels_alloc; i++)
-       20:  516:		if (channels[i] != NULL)
+       33:  515:	for (i = 0; i < channels_alloc; i++)
+       30:  516:		if (channels[i] != NULL)
     #####:  517:			channel_free(channels[i]);
-        2:  518:}
+        3:  518:}
         -:  519:
         -:  520:/*
         -:  521: * Closes the sockets/fds of all channels.  This is used to close extra file
@@ -594,15 +594,15 @@
         -:  592:
         -:  593:/* Returns true if any channel is still open. */
         -:  594:int
-        4:  595:channel_still_open(void)
+        6:  595:channel_still_open(void)
         -:  596:{
         -:  597:	u_int i;
         -:  598:	Channel *c;
         -:  599:
-       44:  600:	for (i = 0; i < channels_alloc; i++) {
-       40:  601:		c = channels[i];
-       40:  602:		if (c == NULL)
-       40:  603:			continue;
+       66:  600:	for (i = 0; i < channels_alloc; i++) {
+       60:  601:		c = channels[i];
+       60:  602:		if (c == NULL)
+       60:  603:			continue;
     #####:  604:		switch (c->type) {
         -:  605:		case SSH_CHANNEL_X11_LISTENER:
         -:  606:		case SSH_CHANNEL_PORT_LISTENER:
@@ -637,7 +637,7 @@
         -:  635:			/* NOTREACHED */
         -:  636:		}
         -:  637:	}
-        4:  638:	return 0;
+        6:  638:	return 0;
         -:  639:}
         -:  640:
         -:  641:/* Returns the id of an open channel suitable for keepaliving */
@@ -691,21 +691,21 @@
         -:  689: * newlines.
         -:  690: */
         -:  691:char *
-        2:  692:channel_open_message(void)
+        3:  692:channel_open_message(void)
         -:  693:{
         -:  694:	Buffer buffer;
         -:  695:	Channel *c;
         -:  696:	char buf[1024], *cp;
         -:  697:	u_int i;
         -:  698:
-        2:  699:	buffer_init(&buffer);
-        2:  700:	snprintf(buf, sizeof buf, "The following connections are open:\r\n");
-        2:  701:	buffer_append(&buffer, buf, strlen(buf));
-       22:  702:	for (i = 0; i < channels_alloc; i++) {
-       20:  703:		c = channels[i];
-       20:  704:		if (c == NULL)
-       18:  705:			continue;
-        2:  706:		switch (c->type) {
+        3:  699:	buffer_init(&buffer);
+        3:  700:	snprintf(buf, sizeof buf, "The following connections are open:\r\n");
+        3:  701:	buffer_append(&buffer, buf, strlen(buf));
+       33:  702:	for (i = 0; i < channels_alloc; i++) {
+       30:  703:		c = channels[i];
+       30:  704:		if (c == NULL)
+       27:  705:			continue;
+        3:  706:		switch (c->type) {
         -:  707:		case SSH_CHANNEL_X11_LISTENER:
         -:  708:		case SSH_CHANNEL_PORT_LISTENER:
         -:  709:		case SSH_CHANNEL_RPORT_LISTENER:
@@ -727,130 +727,130 @@
         -:  725:		case SSH_CHANNEL_OUTPUT_DRAINING:
         -:  726:		case SSH_CHANNEL_MUX_PROXY:
         -:  727:		case SSH_CHANNEL_MUX_CLIENT:
-        6:  728:			snprintf(buf, sizeof buf,
+        9:  728:			snprintf(buf, sizeof buf,
         -:  729:			    "  #%d %.300s (t%d r%d i%u/%d o%u/%d fd %d/%d cc %d)\r\n",
         -:  730:			    c->self, c->remote_name,
         -:  731:			    c->type, c->remote_id,
-        2:  732:			    c->istate, buffer_len(&c->input),
-        2:  733:			    c->ostate, buffer_len(&c->output),
+        3:  732:			    c->istate, buffer_len(&c->input),
+        3:  733:			    c->ostate, buffer_len(&c->output),
         -:  734:			    c->rfd, c->wfd, c->ctl_chan);
-        2:  735:			buffer_append(&buffer, buf, strlen(buf));
-        2:  736:			continue;
+        3:  735:			buffer_append(&buffer, buf, strlen(buf));
+        3:  736:			continue;
         -:  737:		default:
     #####:  738:			fatal("channel_open_message: bad channel type %d", c->type);
         -:  739:			/* NOTREACHED */
         -:  740:		}
         -:  741:	}
-        2:  742:	buffer_append(&buffer, "\0", 1);
-        2:  743:	cp = xstrdup((char *)buffer_ptr(&buffer));
-        2:  744:	buffer_free(&buffer);
-        2:  745:	return cp;
+        3:  742:	buffer_append(&buffer, "\0", 1);
+        3:  743:	cp = xstrdup((char *)buffer_ptr(&buffer));
+        3:  744:	buffer_free(&buffer);
+        3:  745:	return cp;
         -:  746:}
         -:  747:
         -:  748:void
-        2:  749:channel_send_open(int id)
+        3:  749:channel_send_open(int id)
         -:  750:{
-        2:  751:	Channel *c = channel_lookup(id);
+        3:  751:	Channel *c = channel_lookup(id);
         -:  752:
-        2:  753:	if (c == NULL) {
+        3:  753:	if (c == NULL) {
     #####:  754:		logit("channel_send_open: %d: bad id", id);
-        2:  755:		return;
+        3:  755:		return;
         -:  756:	}
-        2:  757:	debug2("channel %d: send open", id);
-        2:  758:	packet_start(SSH2_MSG_CHANNEL_OPEN);
-        2:  759:	packet_put_cstring(c->ctype);
-        2:  760:	packet_put_int(c->self);
-        2:  761:	packet_put_int(c->local_window);
-        2:  762:	packet_put_int(c->local_maxpacket);
-        2:  763:	packet_send();
+        3:  757:	debug2("channel %d: send open", id);
+        3:  758:	packet_start(SSH2_MSG_CHANNEL_OPEN);
+        3:  759:	packet_put_cstring(c->ctype);
+        3:  760:	packet_put_int(c->self);
+        3:  761:	packet_put_int(c->local_window);
+        3:  762:	packet_put_int(c->local_maxpacket);
+        3:  763:	packet_send();
         -:  764:}
         -:  765:
         -:  766:void
-        4:  767:channel_request_start(int id, char *service, int wantconfirm)
+        6:  767:channel_request_start(int id, char *service, int wantconfirm)
         -:  768:{
-        4:  769:	Channel *c = channel_lookup(id);
+        6:  769:	Channel *c = channel_lookup(id);
         -:  770:
-        4:  771:	if (c == NULL) {
+        6:  771:	if (c == NULL) {
     #####:  772:		logit("channel_request_start: %d: unknown channel id", id);
-        4:  773:		return;
+        6:  773:		return;
         -:  774:	}
-        4:  775:	debug2("channel %d: request %s confirm %d", id, service, wantconfirm);
-        4:  776:	packet_start(SSH2_MSG_CHANNEL_REQUEST);
-        4:  777:	packet_put_int(c->remote_id);
-        4:  778:	packet_put_cstring(service);
-        4:  779:	packet_put_char(wantconfirm);
+        6:  775:	debug2("channel %d: request %s confirm %d", id, service, wantconfirm);
+        6:  776:	packet_start(SSH2_MSG_CHANNEL_REQUEST);
+        6:  777:	packet_put_int(c->remote_id);
+        6:  778:	packet_put_cstring(service);
+        6:  779:	packet_put_char(wantconfirm);
         -:  780:}
         -:  781:
         -:  782:void
-        4:  783:channel_register_status_confirm(int id, channel_confirm_cb *cb,
+        6:  783:channel_register_status_confirm(int id, channel_confirm_cb *cb,
         -:  784:    channel_confirm_abandon_cb *abandon_cb, void *ctx)
         -:  785:{
         -:  786:	struct channel_confirm *cc;
         -:  787:	Channel *c;
         -:  788:
-        4:  789:	if ((c = channel_lookup(id)) == NULL)
+        6:  789:	if ((c = channel_lookup(id)) == NULL)
     #####:  790:		fatal("channel_register_expect: %d: bad id", id);
         -:  791:
-        4:  792:	cc = xcalloc(1, sizeof(*cc));
-        4:  793:	cc->cb = cb;
-        4:  794:	cc->abandon_cb = abandon_cb;
-        4:  795:	cc->ctx = ctx;
-        4:  796:	TAILQ_INSERT_TAIL(&c->status_confirms, cc, entry);
-        4:  797:}
+        6:  792:	cc = xcalloc(1, sizeof(*cc));
+        6:  793:	cc->cb = cb;
+        6:  794:	cc->abandon_cb = abandon_cb;
+        6:  795:	cc->ctx = ctx;
+        6:  796:	TAILQ_INSERT_TAIL(&c->status_confirms, cc, entry);
+        6:  797:}
         -:  798:
         -:  799:void
-        2:  800:channel_register_open_confirm(int id, channel_open_fn *fn, void *ctx)
+        3:  800:channel_register_open_confirm(int id, channel_open_fn *fn, void *ctx)
         -:  801:{
-        2:  802:	Channel *c = channel_lookup(id);
+        3:  802:	Channel *c = channel_lookup(id);
         -:  803:
-        2:  804:	if (c == NULL) {
+        3:  804:	if (c == NULL) {
     #####:  805:		logit("channel_register_open_confirm: %d: bad id", id);
-        2:  806:		return;
+        3:  806:		return;
         -:  807:	}
-        2:  808:	c->open_confirm = fn;
-        2:  809:	c->open_confirm_ctx = ctx;
+        3:  808:	c->open_confirm = fn;
+        3:  809:	c->open_confirm_ctx = ctx;
         -:  810:}
         -:  811:
         -:  812:void
-        2:  813:channel_register_cleanup(int id, channel_callback_fn *fn, int do_close)
+        3:  813:channel_register_cleanup(int id, channel_callback_fn *fn, int do_close)
         -:  814:{
-        2:  815:	Channel *c = channel_by_id(id);
+        3:  815:	Channel *c = channel_by_id(id);
         -:  816:
-        2:  817:	if (c == NULL) {
+        3:  817:	if (c == NULL) {
     #####:  818:		logit("channel_register_cleanup: %d: bad id", id);
-        2:  819:		return;
+        3:  819:		return;
         -:  820:	}
-        2:  821:	c->detach_user = fn;
-        2:  822:	c->detach_close = do_close;
+        3:  821:	c->detach_user = fn;
+        3:  822:	c->detach_close = do_close;
         -:  823:}
         -:  824:
         -:  825:void
-        2:  826:channel_cancel_cleanup(int id)
+        3:  826:channel_cancel_cleanup(int id)
         -:  827:{
-        2:  828:	Channel *c = channel_by_id(id);
+        3:  828:	Channel *c = channel_by_id(id);
         -:  829:
-        2:  830:	if (c == NULL) {
+        3:  830:	if (c == NULL) {
     #####:  831:		logit("channel_cancel_cleanup: %d: bad id", id);
-        2:  832:		return;
+        3:  832:		return;
         -:  833:	}
-        2:  834:	c->detach_user = NULL;
-        2:  835:	c->detach_close = 0;
+        3:  834:	c->detach_user = NULL;
+        3:  835:	c->detach_close = 0;
         -:  836:}
         -:  837:
         -:  838:void
-        2:  839:channel_register_filter(int id, channel_infilter_fn *ifn,
+        3:  839:channel_register_filter(int id, channel_infilter_fn *ifn,
         -:  840:    channel_outfilter_fn *ofn, channel_filter_cleanup_fn *cfn, void *ctx)
         -:  841:{
-        2:  842:	Channel *c = channel_lookup(id);
+        3:  842:	Channel *c = channel_lookup(id);
         -:  843:
-        2:  844:	if (c == NULL) {
+        3:  844:	if (c == NULL) {
     #####:  845:		logit("channel_register_filter: %d: bad id", id);
-        2:  846:		return;
+        3:  846:		return;
         -:  847:	}
-        2:  848:	c->input_filter = ifn;
-        2:  849:	c->output_filter = ofn;
-        2:  850:	c->filter_ctx = ctx;
-        2:  851:	c->filter_cleanup = cfn;
+        3:  848:	c->input_filter = ifn;
+        3:  849:	c->output_filter = ofn;
+        3:  850:	c->filter_ctx = ctx;
+        3:  851:	c->filter_cleanup = cfn;
         -:  852:}
         -:  853:
         -:  854:void
@@ -907,20 +907,20 @@
     #####:  905:}
         -:  906:
         -:  907:static void
-      308:  908:channel_pre_open(Channel *c, fd_set *readset, fd_set *writeset)
+      338:  908:channel_pre_open(Channel *c, fd_set *readset, fd_set *writeset)
         -:  909:{
-      308:  910:	u_int limit = compat20 ? c->remote_window : packet_get_maxsize();
+      338:  910:	u_int limit = compat20 ? c->remote_window : packet_get_maxsize();
         -:  911:
-      308:  912:	if (c->istate == CHAN_INPUT_OPEN &&
-      302:  913:	    limit > 0 &&
-      604:  914:	    buffer_len(&c->input) < limit &&
-      302:  915:	    buffer_check_alloc(&c->input, CHAN_RBUF))
-      302:  916:		FD_SET(c->rfd, readset);
-      310:  917:	if (c->ostate == CHAN_OUTPUT_OPEN ||
-        2:  918:	    c->ostate == CHAN_OUTPUT_WAIT_DRAIN) {
-      306:  919:		if (buffer_len(&c->output) > 0) {
-       86:  920:			FD_SET(c->wfd, writeset);
-      220:  921:		} else if (c->ostate == CHAN_OUTPUT_WAIT_DRAIN) {
+      338:  912:	if (c->istate == CHAN_INPUT_OPEN &&
+      329:  913:	    limit > 0 &&
+      658:  914:	    buffer_len(&c->input) < limit &&
+      329:  915:	    buffer_check_alloc(&c->input, CHAN_RBUF))
+      329:  916:		FD_SET(c->rfd, readset);
+      341:  917:	if (c->ostate == CHAN_OUTPUT_OPEN ||
+        3:  918:	    c->ostate == CHAN_OUTPUT_WAIT_DRAIN) {
+      335:  919:		if (buffer_len(&c->output) > 0) {
+       94:  920:			FD_SET(c->wfd, writeset);
+      241:  921:		} else if (c->ostate == CHAN_OUTPUT_WAIT_DRAIN) {
     #####:  922:			if (CHANNEL_EFD_OUTPUT_ACTIVE(c))
     #####:  923:				debug2("channel %d: obuf_empty delayed efd %d/(%d)",
     #####:  924:				    c->self, c->efd, buffer_len(&c->extended));
@@ -929,19 +929,19 @@
         -:  927:		}
         -:  928:	}
         -:  929:	/** XXX check close conditions, too */
-      616:  930:	if (compat20 && c->efd != -1 && 
-      310:  931:	    !(c->istate == CHAN_INPUT_CLOSED && c->ostate == CHAN_OUTPUT_CLOSED)) {
-      612:  932:		if (c->extended_usage == CHAN_EXTENDED_WRITE &&
-      306:  933:		    buffer_len(&c->extended) > 0)
+      676:  930:	if (compat20 && c->efd != -1 && 
+      341:  931:	    !(c->istate == CHAN_INPUT_CLOSED && c->ostate == CHAN_OUTPUT_CLOSED)) {
+      670:  932:		if (c->extended_usage == CHAN_EXTENDED_WRITE &&
+      335:  933:		    buffer_len(&c->extended) > 0)
     #####:  934:			FD_SET(c->efd, writeset);
-      612:  935:		else if (c->efd != -1 && !(c->flags & CHAN_EOF_SENT) &&
-      612:  936:		    (c->extended_usage == CHAN_EXTENDED_READ ||
-      306:  937:		    c->extended_usage == CHAN_EXTENDED_IGNORE) &&
+      670:  935:		else if (c->efd != -1 && !(c->flags & CHAN_EOF_SENT) &&
+      670:  936:		    (c->extended_usage == CHAN_EXTENDED_READ ||
+      335:  937:		    c->extended_usage == CHAN_EXTENDED_IGNORE) &&
     #####:  938:		    buffer_len(&c->extended) < c->remote_window)
     #####:  939:			FD_SET(c->efd, readset);
         -:  940:	}
         -:  941:	/* XXX: What about efd? races? */
-      308:  942:}
+      338:  942:}
         -:  943:
         -:  944:/* ARGSUSED */
         -:  945:static void
@@ -1727,20 +1727,20 @@
         -: 1725:
         -: 1726:/* ARGSUSED */
         -: 1727:static int
-      306: 1728:channel_handle_rfd(Channel *c, fd_set *readset, fd_set *writeset)
+      335: 1728:channel_handle_rfd(Channel *c, fd_set *readset, fd_set *writeset)
         -: 1729:{
         -: 1730:	char buf[CHAN_RBUF];
         -: 1731:	int len, force;
         -: 1732:
-      306: 1733:	force = c->isatty && c->detach_close && c->istate != CHAN_INPUT_CLOSED;
-      306: 1734:	if (c->rfd != -1 && (force || FD_ISSET(c->rfd, readset))) {
-       66: 1735:		errno = 0;
-       66: 1736:		len = read(c->rfd, buf, sizeof(buf));
-       66: 1737:		if (len < 0 && (errno == EINTR ||
+      335: 1733:	force = c->isatty && c->detach_close && c->istate != CHAN_INPUT_CLOSED;
+      335: 1734:	if (c->rfd != -1 && (force || FD_ISSET(c->rfd, readset))) {
+       71: 1735:		errno = 0;
+       71: 1736:		len = read(c->rfd, buf, sizeof(buf));
+       71: 1737:		if (len < 0 && (errno == EINTR ||
     #####: 1738:		    ((errno == EAGAIN || errno == EWOULDBLOCK) && !force)))
     #####: 1739:			return 1;
         -: 1740:#ifndef PTY_ZEROREAD
-       66: 1741:		if (len <= 0) {
+       71: 1741:		if (len <= 0) {
         -: 1742:#else
         -: 1743:		if ((!c->isatty && len <= 0) ||
         -: 1744:		    (c->isatty && (len < 0 || (len == 0 && errno != 0)))) {
@@ -1760,8 +1760,8 @@
         -: 1758:			}
     #####: 1759:			return -1;
         -: 1760:		}
-       66: 1761:		if (c->input_filter != NULL) {
-       66: 1762:			if (c->input_filter(c, buf, len) == -1) {
+       71: 1761:		if (c->input_filter != NULL) {
+       71: 1762:			if (c->input_filter(c, buf, len) == -1) {
     #####: 1763:				debug2("channel %d: filter stops", c->self);
     #####: 1764:				chan_read_failed(c);
         -: 1765:			}
@@ -1771,24 +1771,24 @@
     #####: 1769:			buffer_append(&c->input, buf, len);
         -: 1770:		}
         -: 1771:	}
-      306: 1772:	return 1;
+      335: 1772:	return 1;
         -: 1773:}
         -: 1774:
         -: 1775:/* ARGSUSED */
         -: 1776:static int
-      306: 1777:channel_handle_wfd(Channel *c, fd_set *readset, fd_set *writeset)
+      335: 1777:channel_handle_wfd(Channel *c, fd_set *readset, fd_set *writeset)
         -: 1778:{
         -: 1779:	struct termios tio;
-      306: 1780:	u_char *data = NULL, *buf;
-      306: 1781:	u_int dlen, olen = 0;
+      335: 1780:	u_char *data = NULL, *buf;
+      335: 1781:	u_int dlen, olen = 0;
         -: 1782:	int len;
         -: 1783:
         -: 1784:	/* Send buffered output data to the socket. */
-      612: 1785:	if (c->wfd != -1 &&
-      389: 1786:	    FD_ISSET(c->wfd, writeset) &&
-       83: 1787:	    buffer_len(&c->output) > 0) {
-       83: 1788:		olen = buffer_len(&c->output);
-       83: 1789:		if (c->output_filter != NULL) {
+      670: 1785:	if (c->wfd != -1 &&
+      426: 1786:	    FD_ISSET(c->wfd, writeset) &&
+       91: 1787:	    buffer_len(&c->output) > 0) {
+       91: 1788:		olen = buffer_len(&c->output);
+       91: 1789:		if (c->output_filter != NULL) {
     #####: 1790:			if ((buf = c->output_filter(c, &data, &dlen)) == NULL) {
     #####: 1791:				debug2("channel %d: filter stops", c->self);
     #####: 1792:				if (c->type != SSH_CHANNEL_OPEN)
@@ -1797,14 +1797,14 @@
     #####: 1795:					chan_write_failed(c);
     #####: 1796:				return -1;
         -: 1797:			}
-       83: 1798:		} else if (c->datagram) {
+       91: 1798:		} else if (c->datagram) {
     #####: 1799:			buf = data = buffer_get_string(&c->output, &dlen);
         -: 1800:		} else {
-       83: 1801:			buf = data = buffer_ptr(&c->output);
-       83: 1802:			dlen = buffer_len(&c->output);
+       91: 1801:			buf = data = buffer_ptr(&c->output);
+       91: 1802:			dlen = buffer_len(&c->output);
         -: 1803:		}
         -: 1804:
-       83: 1805:		if (c->datagram) {
+       91: 1805:		if (c->datagram) {
         -: 1806:			/* ignore truncated writes, datagrams might get lost */
     #####: 1807:			len = write(c->wfd, buf, dlen);
     #####: 1808:			free(data);
@@ -1826,11 +1826,11 @@
         -: 1824:			dlen = MIN(dlen, 8*1024);
         -: 1825:#endif
         -: 1826:
-       83: 1827:		len = write(c->wfd, buf, dlen);
-       83: 1828:		if (len < 0 &&
+       91: 1827:		len = write(c->wfd, buf, dlen);
+       91: 1828:		if (len < 0 &&
     #####: 1829:		    (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
     #####: 1830:			return 1;
-       83: 1831:		if (len <= 0) {
+       91: 1831:		if (len <= 0) {
     #####: 1832:			if (c->type != SSH_CHANNEL_OPEN) {
     #####: 1833:				debug2("channel %d: not open", c->self);
     #####: 1834:				chan_mark_dead(c);
@@ -1845,7 +1845,7 @@
     #####: 1843:			return -1;
         -: 1844:		}
         -: 1845:#ifndef BROKEN_TCGETATTR_ICANON
-       83: 1846:		if (compat20 && c->isatty && dlen >= 1 && buf[0] != '\r') {
+       91: 1846:		if (compat20 && c->isatty && dlen >= 1 && buf[0] != '\r') {
     #####: 1847:			if (tcgetattr(c->wfd, &tio) == 0 &&
     #####: 1848:			    !(tio.c_lflag & ECHO) && (tio.c_lflag & ICANON)) {
         -: 1849:				/*
@@ -1859,24 +1859,24 @@
         -: 1857:			}
         -: 1858:		}
         -: 1859:#endif
-       83: 1860:		buffer_consume(&c->output, len);
+       91: 1860:		buffer_consume(&c->output, len);
         -: 1861:	}
         -: 1862: out:
-      306: 1863:	if (compat20 && olen > 0)
-       83: 1864:		c->local_consumed += olen - buffer_len(&c->output);
-      306: 1865:	return 1;
+      335: 1863:	if (compat20 && olen > 0)
+       91: 1864:		c->local_consumed += olen - buffer_len(&c->output);
+      335: 1865:	return 1;
         -: 1866:}
         -: 1867:
         -: 1868:static int
-      306: 1869:channel_handle_efd(Channel *c, fd_set *readset, fd_set *writeset)
+      335: 1869:channel_handle_efd(Channel *c, fd_set *readset, fd_set *writeset)
         -: 1870:{
         -: 1871:	char buf[CHAN_RBUF];
         -: 1872:	int len;
         -: 1873:
         -: 1874:/** XXX handle drain efd, too */
-      306: 1875:	if (c->efd != -1) {
-      612: 1876:		if (c->extended_usage == CHAN_EXTENDED_WRITE &&
-      306: 1877:		    FD_ISSET(c->efd, writeset) &&
+      335: 1875:	if (c->efd != -1) {
+      670: 1876:		if (c->extended_usage == CHAN_EXTENDED_WRITE &&
+      335: 1877:		    FD_ISSET(c->efd, writeset) &&
     #####: 1878:		    buffer_len(&c->extended) > 0) {
     #####: 1879:			len = write(c->efd, buffer_ptr(&c->extended),
     #####: 1880:			    buffer_len(&c->extended));
@@ -1893,9 +1893,9 @@
     #####: 1891:				buffer_consume(&c->extended, len);
     #####: 1892:				c->local_consumed += len;
         -: 1893:			}
-      612: 1894:		} else if (c->efd != -1 &&
-      612: 1895:		    (c->extended_usage == CHAN_EXTENDED_READ ||
-      306: 1896:		    c->extended_usage == CHAN_EXTENDED_IGNORE) &&
+      670: 1894:		} else if (c->efd != -1 &&
+      670: 1895:		    (c->extended_usage == CHAN_EXTENDED_READ ||
+      335: 1896:		    c->extended_usage == CHAN_EXTENDED_IGNORE) &&
     #####: 1897:		    (c->detach_close || FD_ISSET(c->efd, readset))) {
     #####: 1898:			len = read(c->efd, buf, sizeof(buf));
     #####: 1899:			debug2("channel %d: read %d from efd %d",
@@ -1916,17 +1916,17 @@
         -: 1914:			}
         -: 1915:		}
         -: 1916:	}
-      306: 1917:	return 1;
+      335: 1917:	return 1;
         -: 1918:}
         -: 1919:
         -: 1920:static int
-      306: 1921:channel_check_window(Channel *c)
+      335: 1921:channel_check_window(Channel *c)
         -: 1922:{
-      612: 1923:	if (c->type == SSH_CHANNEL_OPEN &&
-      612: 1924:	    !(c->flags & (CHAN_CLOSE_SENT|CHAN_CLOSE_RCVD)) &&
-      306: 1925:	    ((c->local_window_max - c->local_window >
-      612: 1926:	    c->local_maxpacket*3) ||
-      306: 1927:	    c->local_window < c->local_window_max/2) &&
+      670: 1923:	if (c->type == SSH_CHANNEL_OPEN &&
+      670: 1924:	    !(c->flags & (CHAN_CLOSE_SENT|CHAN_CLOSE_RCVD)) &&
+      335: 1925:	    ((c->local_window_max - c->local_window >
+      670: 1926:	    c->local_maxpacket*3) ||
+      335: 1927:	    c->local_window < c->local_window_max/2) &&
     #####: 1928:	    c->local_consumed > 0) {
     #####: 1929:		packet_start(SSH2_MSG_CHANNEL_WINDOW_ADJUST);
     #####: 1930:		packet_put_int(c->remote_id);
@@ -1938,18 +1938,18 @@
     #####: 1936:		c->local_window += c->local_consumed;
     #####: 1937:		c->local_consumed = 0;
         -: 1938:	}
-      306: 1939:	return 1;
+      335: 1939:	return 1;
         -: 1940:}
         -: 1941:
         -: 1942:static void
-      306: 1943:channel_post_open(Channel *c, fd_set *readset, fd_set *writeset)
+      335: 1943:channel_post_open(Channel *c, fd_set *readset, fd_set *writeset)
         -: 1944:{
-      306: 1945:	channel_handle_rfd(c, readset, writeset);
-      306: 1946:	channel_handle_wfd(c, readset, writeset);
-      306: 1947:	if (!compat20)
-      306: 1948:		return;
-      306: 1949:	channel_handle_efd(c, readset, writeset);
-      306: 1950:	channel_check_window(c);
+      335: 1945:	channel_handle_rfd(c, readset, writeset);
+      335: 1946:	channel_handle_wfd(c, readset, writeset);
+      335: 1947:	if (!compat20)
+      335: 1948:		return;
+      335: 1949:	channel_handle_efd(c, readset, writeset);
+      335: 1950:	channel_check_window(c);
         -: 1951:}
         -: 1952:
         -: 1953:static u_int
@@ -2094,33 +2094,33 @@
     #####: 2092:}
         -: 2093:
         -: 2094:static void
-        2: 2095:channel_handler_init_20(void)
+        3: 2095:channel_handler_init_20(void)
         -: 2096:{
-        2: 2097:	channel_pre[SSH_CHANNEL_OPEN] =			&channel_pre_open;
-        2: 2098:	channel_pre[SSH_CHANNEL_X11_OPEN] =		&channel_pre_x11_open;
-        2: 2099:	channel_pre[SSH_CHANNEL_PORT_LISTENER] =	&channel_pre_listener;
-        2: 2100:	channel_pre[SSH_CHANNEL_RPORT_LISTENER] =	&channel_pre_listener;
-        2: 2101:	channel_pre[SSH_CHANNEL_UNIX_LISTENER] =	&channel_pre_listener;
-        2: 2102:	channel_pre[SSH_CHANNEL_RUNIX_LISTENER] =	&channel_pre_listener;
-        2: 2103:	channel_pre[SSH_CHANNEL_X11_LISTENER] =		&channel_pre_listener;
-        2: 2104:	channel_pre[SSH_CHANNEL_AUTH_SOCKET] =		&channel_pre_listener;
-        2: 2105:	channel_pre[SSH_CHANNEL_CONNECTING] =		&channel_pre_connecting;
-        2: 2106:	channel_pre[SSH_CHANNEL_DYNAMIC] =		&channel_pre_dynamic;
-        2: 2107:	channel_pre[SSH_CHANNEL_MUX_LISTENER] =		&channel_pre_listener;
-        2: 2108:	channel_pre[SSH_CHANNEL_MUX_CLIENT] =		&channel_pre_mux_client;
+        3: 2097:	channel_pre[SSH_CHANNEL_OPEN] =			&channel_pre_open;
+        3: 2098:	channel_pre[SSH_CHANNEL_X11_OPEN] =		&channel_pre_x11_open;
+        3: 2099:	channel_pre[SSH_CHANNEL_PORT_LISTENER] =	&channel_pre_listener;
+        3: 2100:	channel_pre[SSH_CHANNEL_RPORT_LISTENER] =	&channel_pre_listener;
+        3: 2101:	channel_pre[SSH_CHANNEL_UNIX_LISTENER] =	&channel_pre_listener;
+        3: 2102:	channel_pre[SSH_CHANNEL_RUNIX_LISTENER] =	&channel_pre_listener;
+        3: 2103:	channel_pre[SSH_CHANNEL_X11_LISTENER] =		&channel_pre_listener;
+        3: 2104:	channel_pre[SSH_CHANNEL_AUTH_SOCKET] =		&channel_pre_listener;
+        3: 2105:	channel_pre[SSH_CHANNEL_CONNECTING] =		&channel_pre_connecting;
+        3: 2106:	channel_pre[SSH_CHANNEL_DYNAMIC] =		&channel_pre_dynamic;
+        3: 2107:	channel_pre[SSH_CHANNEL_MUX_LISTENER] =		&channel_pre_listener;
+        3: 2108:	channel_pre[SSH_CHANNEL_MUX_CLIENT] =		&channel_pre_mux_client;
         -: 2109:
-        2: 2110:	channel_post[SSH_CHANNEL_OPEN] =		&channel_post_open;
-        2: 2111:	channel_post[SSH_CHANNEL_PORT_LISTENER] =	&channel_post_port_listener;
-        2: 2112:	channel_post[SSH_CHANNEL_RPORT_LISTENER] =	&channel_post_port_listener;
-        2: 2113:	channel_post[SSH_CHANNEL_UNIX_LISTENER] =	&channel_post_port_listener;
-        2: 2114:	channel_post[SSH_CHANNEL_RUNIX_LISTENER] =	&channel_post_port_listener;
-        2: 2115:	channel_post[SSH_CHANNEL_X11_LISTENER] =	&channel_post_x11_listener;
-        2: 2116:	channel_post[SSH_CHANNEL_AUTH_SOCKET] =		&channel_post_auth_listener;
-        2: 2117:	channel_post[SSH_CHANNEL_CONNECTING] =		&channel_post_connecting;
-        2: 2118:	channel_post[SSH_CHANNEL_DYNAMIC] =		&channel_post_open;
-        2: 2119:	channel_post[SSH_CHANNEL_MUX_LISTENER] =	&channel_post_mux_listener;
-        2: 2120:	channel_post[SSH_CHANNEL_MUX_CLIENT] =		&channel_post_mux_client;
-        2: 2121:}
+        3: 2110:	channel_post[SSH_CHANNEL_OPEN] =		&channel_post_open;
+        3: 2111:	channel_post[SSH_CHANNEL_PORT_LISTENER] =	&channel_post_port_listener;
+        3: 2112:	channel_post[SSH_CHANNEL_RPORT_LISTENER] =	&channel_post_port_listener;
+        3: 2113:	channel_post[SSH_CHANNEL_UNIX_LISTENER] =	&channel_post_port_listener;
+        3: 2114:	channel_post[SSH_CHANNEL_RUNIX_LISTENER] =	&channel_post_port_listener;
+        3: 2115:	channel_post[SSH_CHANNEL_X11_LISTENER] =	&channel_post_x11_listener;
+        3: 2116:	channel_post[SSH_CHANNEL_AUTH_SOCKET] =		&channel_post_auth_listener;
+        3: 2117:	channel_post[SSH_CHANNEL_CONNECTING] =		&channel_post_connecting;
+        3: 2118:	channel_post[SSH_CHANNEL_DYNAMIC] =		&channel_post_open;
+        3: 2119:	channel_post[SSH_CHANNEL_MUX_LISTENER] =	&channel_post_mux_listener;
+        3: 2120:	channel_post[SSH_CHANNEL_MUX_CLIENT] =		&channel_post_mux_client;
+        3: 2121:}
         -: 2122:
         -: 2123:static void
     #####: 2124:channel_handler_init_13(void)
@@ -2164,46 +2164,46 @@
     #####: 2162:}
         -: 2163:
         -: 2164:static void
-        2: 2165:channel_handler_init(void)
+        3: 2165:channel_handler_init(void)
         -: 2166:{
         -: 2167:	int i;
         -: 2168:
-       44: 2169:	for (i = 0; i < SSH_CHANNEL_MAX_TYPE; i++) {
-       42: 2170:		channel_pre[i] = NULL;
-       42: 2171:		channel_post[i] = NULL;
+       66: 2169:	for (i = 0; i < SSH_CHANNEL_MAX_TYPE; i++) {
+       63: 2170:		channel_pre[i] = NULL;
+       63: 2171:		channel_post[i] = NULL;
         -: 2172:	}
-        2: 2173:	if (compat20)
-        2: 2174:		channel_handler_init_20();
+        3: 2173:	if (compat20)
+        3: 2174:		channel_handler_init_20();
     #####: 2175:	else if (compat13)
     #####: 2176:		channel_handler_init_13();
         -: 2177:	else
     #####: 2178:		channel_handler_init_15();
-        2: 2179:}
+        3: 2179:}
         -: 2180:
         -: 2181:/* gc dead channels */
         -: 2182:static void
-      622: 2183:channel_garbage_collect(Channel *c)
+      685: 2183:channel_garbage_collect(Channel *c)
         -: 2184:{
-      622: 2185:	if (c == NULL)
+      685: 2185:	if (c == NULL)
     #####: 2186:		return;
-      622: 2187:	if (c->detach_user != NULL) {
-      622: 2188:		if (!chan_is_dead(c, c->detach_close))
-      620: 2189:			return;
-        2: 2190:		debug2("channel %d: gc: notify user", c->self);
-        2: 2191:		c->detach_user(c->self, NULL);
+      685: 2187:	if (c->detach_user != NULL) {
+      685: 2188:		if (!chan_is_dead(c, c->detach_close))
+      682: 2189:			return;
+        3: 2190:		debug2("channel %d: gc: notify user", c->self);
+        3: 2191:		c->detach_user(c->self, NULL);
         -: 2192:		/* if we still have a callback */
-        2: 2193:		if (c->detach_user != NULL)
+        3: 2193:		if (c->detach_user != NULL)
     #####: 2194:			return;
-        2: 2195:		debug2("channel %d: gc: user detached", c->self);
+        3: 2195:		debug2("channel %d: gc: user detached", c->self);
         -: 2196:	}
-        2: 2197:	if (!chan_is_dead(c, 1))
+        3: 2197:	if (!chan_is_dead(c, 1))
     #####: 2198:		return;
-        2: 2199:	debug2("channel %d: garbage collecting", c->self);
-        2: 2200:	channel_free(c);
+        3: 2199:	debug2("channel %d: garbage collecting", c->self);
+        3: 2200:	channel_free(c);
         -: 2201:}
         -: 2202:
         -: 2203:static void
-      624: 2204:channel_handler(chan_fn *ftab[], fd_set *readset, fd_set *writeset,
+      688: 2204:channel_handler(chan_fn *ftab[], fd_set *readset, fd_set *writeset,
         -: 2205:    time_t *unpause_secs)
         -: 2206:{
         -: 2207:	static int did_init = 0;
@@ -2211,29 +2211,29 @@
         -: 2209:	Channel *c;
         -: 2210:	time_t now;
         -: 2211:
-      624: 2212:	if (!did_init) {
-        2: 2213:		channel_handler_init();
-        2: 2214:		did_init = 1;
+      688: 2212:	if (!did_init) {
+        3: 2213:		channel_handler_init();
+        3: 2214:		did_init = 1;
         -: 2215:	}
-      624: 2216:	now = monotime();
-      624: 2217:	if (unpause_secs != NULL)
-      312: 2218:		*unpause_secs = 0;
-     6864: 2219:	for (i = 0, oalloc = channels_alloc; i < oalloc; i++) {
-     6240: 2220:		c = channels[i];
-     6240: 2221:		if (c == NULL)
-     5618: 2222:			continue;
-      622: 2223:		if (c->delayed) {
-        2: 2224:			if (ftab == channel_pre)
-        2: 2225:				c->delayed = 0;
+      688: 2216:	now = monotime();
+      688: 2217:	if (unpause_secs != NULL)
+      344: 2218:		*unpause_secs = 0;
+     7568: 2219:	for (i = 0, oalloc = channels_alloc; i < oalloc; i++) {
+     6880: 2220:		c = channels[i];
+     6880: 2221:		if (c == NULL)
+     6195: 2222:			continue;
+      685: 2223:		if (c->delayed) {
+        3: 2224:			if (ftab == channel_pre)
+        3: 2225:				c->delayed = 0;
         -: 2226:			else
     #####: 2227:				continue;
         -: 2228:		}
-      622: 2229:		if (ftab[c->type] != NULL) {
+      685: 2229:		if (ftab[c->type] != NULL) {
         -: 2230:			/*
         -: 2231:			 * Run handlers that are not paused.
         -: 2232:			 */
-      614: 2233:			if (c->notbefore <= now)
-      614: 2234:				(*ftab[c->type])(c, readset, writeset);
+      673: 2233:			if (c->notbefore <= now)
+      673: 2234:				(*ftab[c->type])(c, readset, writeset);
     #####: 2235:			else if (unpause_secs != NULL) {
         -: 2236:				/*
         -: 2237:				 * Collect the time that the earliest
@@ -2247,93 +2247,93 @@
     #####: 2245:					*unpause_secs = c->notbefore - now;
         -: 2246:			}
         -: 2247:		}
-      622: 2248:		channel_garbage_collect(c);
+      685: 2248:		channel_garbage_collect(c);
         -: 2249:	}
-      624: 2250:	if (unpause_secs != NULL && *unpause_secs != 0)
+      688: 2250:	if (unpause_secs != NULL && *unpause_secs != 0)
     #####: 2251:		debug3("%s: first channel unpauses in %d seconds",
         -: 2252:		    __func__, (int)*unpause_secs);
-      624: 2253:}
+      688: 2253:}
         -: 2254:
         -: 2255:/*
         -: 2256: * Allocate/update select bitmasks and add any bits relevant to channels in
         -: 2257: * select bitmasks.
         -: 2258: */
         -: 2259:void
-      312: 2260:channel_prepare_select(fd_set **readsetp, fd_set **writesetp, int *maxfdp,
+      344: 2260:channel_prepare_select(fd_set **readsetp, fd_set **writesetp, int *maxfdp,
         -: 2261:    u_int *nallocp, time_t *minwait_secs, int rekeying)
         -: 2262:{
         -: 2263:	u_int n, sz, nfdset;
         -: 2264:
-      312: 2265:	n = MAXIMUM(*maxfdp, channel_max_fd);
+      344: 2265:	n = MAXIMUM(*maxfdp, channel_max_fd);
         -: 2266:
-      312: 2267:	nfdset = howmany(n+1, NFDBITS);
+      344: 2267:	nfdset = howmany(n+1, NFDBITS);
         -: 2268:	/* Explicitly test here, because xrealloc isn't always called */
-      312: 2269:	if (nfdset && SIZE_MAX / nfdset < sizeof(fd_mask))
+      344: 2269:	if (nfdset && SIZE_MAX / nfdset < sizeof(fd_mask))
     #####: 2270:		fatal("channel_prepare_select: max_fd (%d) is too large", n);
-      312: 2271:	sz = nfdset * sizeof(fd_mask);
+      344: 2271:	sz = nfdset * sizeof(fd_mask);
         -: 2272:
         -: 2273:	/* perhaps check sz < nalloc/2 and shrink? */
-      312: 2274:	if (*readsetp == NULL || sz > *nallocp) {
-        2: 2275:		*readsetp = xreallocarray(*readsetp, nfdset, sizeof(fd_mask));
-        2: 2276:		*writesetp = xreallocarray(*writesetp, nfdset, sizeof(fd_mask));
-        2: 2277:		*nallocp = sz;
+      344: 2274:	if (*readsetp == NULL || sz > *nallocp) {
+        3: 2275:		*readsetp = xreallocarray(*readsetp, nfdset, sizeof(fd_mask));
+        3: 2276:		*writesetp = xreallocarray(*writesetp, nfdset, sizeof(fd_mask));
+        3: 2277:		*nallocp = sz;
         -: 2278:	}
-      312: 2279:	*maxfdp = n;
-      312: 2280:	memset(*readsetp, 0, sz);
-      312: 2281:	memset(*writesetp, 0, sz);
+      344: 2279:	*maxfdp = n;
+      344: 2280:	memset(*readsetp, 0, sz);
+      344: 2281:	memset(*writesetp, 0, sz);
         -: 2282:
-      312: 2283:	if (!rekeying)
-      312: 2284:		channel_handler(channel_pre, *readsetp, *writesetp,
+      344: 2283:	if (!rekeying)
+      344: 2284:		channel_handler(channel_pre, *readsetp, *writesetp,
         -: 2285:		    minwait_secs);
-      312: 2286:}
+      344: 2286:}
         -: 2287:
         -: 2288:/*
         -: 2289: * After select, perform any appropriate operations for channels which have
         -: 2290: * events pending.
         -: 2291: */
         -: 2292:void
-      312: 2293:channel_after_select(fd_set *readset, fd_set *writeset)
+      344: 2293:channel_after_select(fd_set *readset, fd_set *writeset)
         -: 2294:{
-      312: 2295:	channel_handler(channel_post, readset, writeset, NULL);
-      312: 2296:}
+      344: 2295:	channel_handler(channel_post, readset, writeset, NULL);
+      344: 2296:}
         -: 2297:
         -: 2298:
         -: 2299:/* If there is data to send to the connection, enqueue some of it now. */
         -: 2300:void
-      312: 2301:channel_output_poll(void)
+      344: 2301:channel_output_poll(void)
         -: 2302:{
         -: 2303:	Channel *c;
         -: 2304:	u_int i, len;
         -: 2305:
-     3432: 2306:	for (i = 0; i < channels_alloc; i++) {
-     3120: 2307:		c = channels[i];
-     3120: 2308:		if (c == NULL)
-     2808: 2309:			continue;
+     3784: 2306:	for (i = 0; i < channels_alloc; i++) {
+     3440: 2307:		c = channels[i];
+     3440: 2308:		if (c == NULL)
+     3096: 2309:			continue;
         -: 2310:
         -: 2311:		/*
         -: 2312:		 * We are only interested in channels that can have buffered
         -: 2313:		 * incoming data.
         -: 2314:		 */
-      312: 2315:		if (compat13) {
+      344: 2315:		if (compat13) {
     #####: 2316:			if (c->type != SSH_CHANNEL_OPEN &&
     #####: 2317:			    c->type != SSH_CHANNEL_INPUT_DRAINING)
     #####: 2318:				continue;
         -: 2319:		} else {
-      312: 2320:			if (c->type != SSH_CHANNEL_OPEN)
-        4: 2321:				continue;
+      344: 2320:			if (c->type != SSH_CHANNEL_OPEN)
+        6: 2321:				continue;
         -: 2322:		}
-      616: 2323:		if (compat20 &&
-      308: 2324:		    (c->flags & (CHAN_CLOSE_SENT|CHAN_CLOSE_RCVD))) {
+      676: 2323:		if (compat20 &&
+      338: 2324:		    (c->flags & (CHAN_CLOSE_SENT|CHAN_CLOSE_RCVD))) {
         -: 2325:			/* XXX is this true? */
-        2: 2326:			debug3("channel %d: will not send data after close", c->self);
-        2: 2327:			continue;
+        3: 2326:			debug3("channel %d: will not send data after close", c->self);
+        3: 2327:			continue;
         -: 2328:		}
         -: 2329:
         -: 2330:		/* Get the amount of buffered data for this channel. */
-      306: 2331:		if ((c->istate == CHAN_INPUT_OPEN ||
-      306: 2332:		    c->istate == CHAN_INPUT_WAIT_DRAIN) &&
-      306: 2333:		    (len = buffer_len(&c->input)) > 0) {
-       66: 2334:			if (c->datagram) {
+      335: 2331:		if ((c->istate == CHAN_INPUT_OPEN ||
+      335: 2332:		    c->istate == CHAN_INPUT_WAIT_DRAIN) &&
+      335: 2333:		    (len = buffer_len(&c->input)) > 0) {
+       71: 2334:			if (c->datagram) {
     #####: 2335:				if (len > 0) {
         -: 2336:					u_char *data;
         -: 2337:					u_int dlen;
@@ -2361,10 +2361,10 @@
         -: 2359:			 * Send some data for the other side over the secure
         -: 2360:			 * connection.
         -: 2361:			 */
-       66: 2362:			if (compat20) {
-       66: 2363:				if (len > c->remote_window)
+       71: 2362:			if (compat20) {
+       71: 2363:				if (len > c->remote_window)
     #####: 2364:					len = c->remote_window;
-       66: 2365:				if (len > c->remote_maxpacket)
+       71: 2365:				if (len > c->remote_maxpacket)
     #####: 2366:					len = c->remote_maxpacket;
         -: 2367:			} else {
     #####: 2368:				if (packet_is_interactive()) {
@@ -2376,16 +2376,16 @@
     #####: 2374:						len = packet_get_maxsize()/2;
         -: 2375:				}
         -: 2376:			}
-      132: 2377:			if (len > 0) {
-       66: 2378:				packet_start(compat20 ?
+      142: 2377:			if (len > 0) {
+       71: 2378:				packet_start(compat20 ?
         -: 2379:				    SSH2_MSG_CHANNEL_DATA : SSH_MSG_CHANNEL_DATA);
-       66: 2380:				packet_put_int(c->remote_id);
-       66: 2381:				packet_put_string(buffer_ptr(&c->input), len);
-       66: 2382:				packet_send();
-       66: 2383:				buffer_consume(&c->input, len);
-       66: 2384:				c->remote_window -= len;
+       71: 2380:				packet_put_int(c->remote_id);
+       71: 2381:				packet_put_string(buffer_ptr(&c->input), len);
+       71: 2382:				packet_send();
+       71: 2383:				buffer_consume(&c->input, len);
+       71: 2384:				c->remote_window -= len;
         -: 2385:			}
-      240: 2386:		} else if (c->istate == CHAN_INPUT_WAIT_DRAIN) {
+      264: 2386:		} else if (c->istate == CHAN_INPUT_WAIT_DRAIN) {
     #####: 2387:			if (compat13)
     #####: 2388:				fatal("cannot happen: istate == INPUT_WAIT_DRAIN for proto 1.3");
         -: 2389:			/*
@@ -2400,10 +2400,10 @@
     #####: 2398:				chan_ibuf_empty(c);
         -: 2399:		}
         -: 2400:		/* Send extended data, i.e. stderr */
-      612: 2401:		if (compat20 &&
-      612: 2402:		    !(c->flags & CHAN_EOF_SENT) &&
-      608: 2403:		    c->remote_window > 0 &&
-      302: 2404:		    (len = buffer_len(&c->extended)) > 0 &&
+      670: 2401:		if (compat20 &&
+      670: 2402:		    !(c->flags & CHAN_EOF_SENT) &&
+      664: 2403:		    c->remote_window > 0 &&
+      329: 2404:		    (len = buffer_len(&c->extended)) > 0 &&
     #####: 2405:		    c->extended_usage == CHAN_EXTENDED_READ) {
     #####: 2406:			debug2("channel %d: rwin %u elen %u euse %d",
     #####: 2407:			    c->self, c->remote_window, buffer_len(&c->extended),
@@ -2422,7 +2422,7 @@
     #####: 2420:			debug2("channel %d: sent ext data %d", c->self, len);
         -: 2421:		}
         -: 2422:	}
-      312: 2423:}
+      344: 2423:}
         -: 2424:
         -: 2425:/* -- mux proxy support  */
         -: 2426:
@@ -2625,12 +2625,12 @@
         -: 2623: * replaces local (proxy) channel ID with downstream channel ID.
         -: 2624: */
         -: 2625:int
-      112: 2626:channel_proxy_upstream(Channel *c, int type, u_int32_t seq, void *ctxt)
+      128: 2626:channel_proxy_upstream(Channel *c, int type, u_int32_t seq, void *ctxt)
         -: 2627:{
-      112: 2628:	struct ssh *ssh = active_state;
-      112: 2629:	struct sshbuf *b = NULL;
+      128: 2628:	struct ssh *ssh = active_state;
+      128: 2629:	struct sshbuf *b = NULL;
         -: 2630:	Channel *downstream;
-      112: 2631:	const u_char *cp = NULL;
+      128: 2631:	const u_char *cp = NULL;
         -: 2632:	size_t len;
         -: 2633:	int r;
         -: 2634:
@@ -2640,8 +2640,8 @@
         -: 2638:	 * restore the orignal channel id and keep track of CLOSE messages,
         -: 2639:	 * so we can cleanup the channel.
         -: 2640:	 */
-      112: 2641:	if (c == NULL || c->type != SSH_CHANNEL_MUX_PROXY)
-      112: 2642:		return 0;
+      128: 2641:	if (c == NULL || c->type != SSH_CHANNEL_MUX_PROXY)
+      128: 2642:		return 0;
     #####: 2643:	if ((downstream = c->mux_ctx) == NULL)
     #####: 2644:		return 0;
     #####: 2645:	switch (type) {
@@ -2707,7 +2707,7 @@
         -: 2705:
         -: 2706:/* ARGSUSED */
         -: 2707:int
-       96: 2708:channel_input_data(int type, u_int32_t seq, void *ctxt)
+      104: 2708:channel_input_data(int type, u_int32_t seq, void *ctxt)
         -: 2709:{
         -: 2710:	int id;
         -: 2711:	const u_char *data;
@@ -2715,22 +2715,22 @@
         -: 2713:	Channel *c;
         -: 2714:
         -: 2715:	/* Get the channel number and verify it. */
-       96: 2716:	id = packet_get_int();
-       96: 2717:	c = channel_lookup(id);
-       96: 2718:	if (c == NULL)
+      104: 2716:	id = packet_get_int();
+      104: 2717:	c = channel_lookup(id);
+      104: 2718:	if (c == NULL)
     #####: 2719:		packet_disconnect("Received data for nonexistent channel %d.", id);
-       96: 2720:	if (channel_proxy_upstream(c, type, seq, ctxt))
+      104: 2720:	if (channel_proxy_upstream(c, type, seq, ctxt))
     #####: 2721:		return 0;
         -: 2722:
         -: 2723:	/* Ignore any data for non-open channels (might happen on close) */
-       96: 2724:	if (c->type != SSH_CHANNEL_OPEN &&
+      104: 2724:	if (c->type != SSH_CHANNEL_OPEN &&
     #####: 2725:	    c->type != SSH_CHANNEL_X11_OPEN)
     #####: 2726:		return 0;
         -: 2727:
         -: 2728:	/* Get the data. */
-       96: 2729:	data = packet_get_string_ptr(&data_len);
-       96: 2730:	win_len = data_len;
-       96: 2731:	if (c->datagram)
+      104: 2729:	data = packet_get_string_ptr(&data_len);
+      104: 2730:	win_len = data_len;
+      104: 2731:	if (c->datagram)
     #####: 2732:		win_len += 4;  /* string length header */
         -: 2733:
         -: 2734:	/*
@@ -2740,7 +2740,7 @@
         -: 2738:	 * that window updates are sent back.  Otherwise the connection might
         -: 2739:	 * deadlock.
         -: 2740:	 */
-       96: 2741:	if (!compat13 && c->ostate != CHAN_OUTPUT_OPEN) {
+      104: 2741:	if (!compat13 && c->ostate != CHAN_OUTPUT_OPEN) {
     #####: 2742:		if (compat20) {
     #####: 2743:			c->local_window -= win_len;
     #####: 2744:			c->local_consumed += win_len;
@@ -2748,24 +2748,24 @@
     #####: 2746:		return 0;
         -: 2747:	}
         -: 2748:
-       96: 2749:	if (compat20) {
-       96: 2750:		if (win_len > c->local_maxpacket) {
+      104: 2749:	if (compat20) {
+      104: 2750:		if (win_len > c->local_maxpacket) {
     #####: 2751:			logit("channel %d: rcvd big packet %d, maxpack %d",
         -: 2752:			    c->self, win_len, c->local_maxpacket);
         -: 2753:		}
-       96: 2754:		if (win_len > c->local_window) {
+      104: 2754:		if (win_len > c->local_window) {
     #####: 2755:			logit("channel %d: rcvd too much data %d, win %d",
         -: 2756:			    c->self, win_len, c->local_window);
     #####: 2757:			return 0;
         -: 2758:		}
-       96: 2759:		c->local_window -= win_len;
+      104: 2759:		c->local_window -= win_len;
         -: 2760:	}
-       96: 2761:	if (c->datagram)
+      104: 2761:	if (c->datagram)
     #####: 2762:		buffer_put_string(&c->output, data, data_len);
         -: 2763:	else
-       96: 2764:		buffer_append(&c->output, data, data_len);
-       96: 2765:	packet_check_eom();
-       96: 2766:	return 0;
+      104: 2764:		buffer_append(&c->output, data, data_len);
+      104: 2765:	packet_check_eom();
+      104: 2766:	return 0;
         -: 2767:}
         -: 2768:
         -: 2769:/* ARGSUSED */
@@ -2820,28 +2820,28 @@
         -: 2818:
         -: 2819:/* ARGSUSED */
         -: 2820:int
-        2: 2821:channel_input_ieof(int type, u_int32_t seq, void *ctxt)
+        3: 2821:channel_input_ieof(int type, u_int32_t seq, void *ctxt)
         -: 2822:{
         -: 2823:	int id;
         -: 2824:	Channel *c;
         -: 2825:
-        2: 2826:	id = packet_get_int();
-        2: 2827:	packet_check_eom();
-        2: 2828:	c = channel_lookup(id);
-        2: 2829:	if (c == NULL)
+        3: 2826:	id = packet_get_int();
+        3: 2827:	packet_check_eom();
+        3: 2828:	c = channel_lookup(id);
+        3: 2829:	if (c == NULL)
     #####: 2830:		packet_disconnect("Received ieof for nonexistent channel %d.", id);
-        2: 2831:	if (channel_proxy_upstream(c, type, seq, ctxt))
+        3: 2831:	if (channel_proxy_upstream(c, type, seq, ctxt))
     #####: 2832:		return 0;
-        2: 2833:	chan_rcvd_ieof(c);
+        3: 2833:	chan_rcvd_ieof(c);
         -: 2834:
         -: 2835:	/* XXX force input close */
-        2: 2836:	if (c->force_drain && c->istate == CHAN_INPUT_OPEN) {
+        3: 2836:	if (c->force_drain && c->istate == CHAN_INPUT_OPEN) {
     #####: 2837:		debug("channel %d: FORCE input drain", c->self);
     #####: 2838:		c->istate = CHAN_INPUT_WAIT_DRAIN;
     #####: 2839:		if (buffer_len(&c->input) == 0)
     #####: 2840:			chan_ibuf_empty(c);
         -: 2841:	}
-        2: 2842:	return 0;
+        3: 2842:	return 0;
         -: 2843:}
         -: 2844:
         -: 2845:/* ARGSUSED */
@@ -2887,18 +2887,18 @@
         -: 2885:/* proto version 1.5 overloads CLOSE_CONFIRMATION with OCLOSE */
         -: 2886:/* ARGSUSED */
         -: 2887:int
-        2: 2888:channel_input_oclose(int type, u_int32_t seq, void *ctxt)
+        3: 2888:channel_input_oclose(int type, u_int32_t seq, void *ctxt)
         -: 2889:{
-        2: 2890:	int id = packet_get_int();
-        2: 2891:	Channel *c = channel_lookup(id);
+        3: 2890:	int id = packet_get_int();
+        3: 2891:	Channel *c = channel_lookup(id);
         -: 2892:
-        2: 2893:	if (c == NULL)
+        3: 2893:	if (c == NULL)
     #####: 2894:		packet_disconnect("Received oclose for nonexistent channel %d.", id);
-        2: 2895:	if (channel_proxy_upstream(c, type, seq, ctxt))
+        3: 2895:	if (channel_proxy_upstream(c, type, seq, ctxt))
     #####: 2896:		return 0;
-        2: 2897:	packet_check_eom();
-        2: 2898:	chan_rcvd_oclose(c);
-        2: 2899:	return 0;
+        3: 2897:	packet_check_eom();
+        3: 2898:	chan_rcvd_oclose(c);
+        3: 2899:	return 0;
         -: 2900:}
         -: 2901:
         -: 2902:/* ARGSUSED */
@@ -2923,40 +2923,40 @@
         -: 2921:
         -: 2922:/* ARGSUSED */
         -: 2923:int
-        2: 2924:channel_input_open_confirmation(int type, u_int32_t seq, void *ctxt)
+        3: 2924:channel_input_open_confirmation(int type, u_int32_t seq, void *ctxt)
         -: 2925:{
         -: 2926:	int id, remote_id;
         -: 2927:	Channel *c;
         -: 2928:
-        2: 2929:	id = packet_get_int();
-        2: 2930:	c = channel_lookup(id);
+        3: 2929:	id = packet_get_int();
+        3: 2930:	c = channel_lookup(id);
         -: 2931:
-        2: 2932:	if (c==NULL)
+        3: 2932:	if (c==NULL)
     #####: 2933:		packet_disconnect("Received open confirmation for "
         -: 2934:		    "unknown channel %d.", id);
-        2: 2935:	if (channel_proxy_upstream(c, type, seq, ctxt))
+        3: 2935:	if (channel_proxy_upstream(c, type, seq, ctxt))
     #####: 2936:		return 0;
-        2: 2937:	if (c->type != SSH_CHANNEL_OPENING)
+        3: 2937:	if (c->type != SSH_CHANNEL_OPENING)
     #####: 2938:		packet_disconnect("Received open confirmation for "
         -: 2939:		    "non-opening channel %d.", id);
-        2: 2940:	remote_id = packet_get_int();
+        3: 2940:	remote_id = packet_get_int();
         -: 2941:	/* Record the remote channel number and mark that the channel is now open. */
-        2: 2942:	c->remote_id = remote_id;
-        2: 2943:	c->type = SSH_CHANNEL_OPEN;
+        3: 2942:	c->remote_id = remote_id;
+        3: 2943:	c->type = SSH_CHANNEL_OPEN;
         -: 2944:
-        2: 2945:	if (compat20) {
-        2: 2946:		c->remote_window = packet_get_int();
-        2: 2947:		c->remote_maxpacket = packet_get_int();
-        2: 2948:		if (c->open_confirm) {
-        2: 2949:			debug2("callback start");
-        2: 2950:			c->open_confirm(c->self, 1, c->open_confirm_ctx);
-        2: 2951:			debug2("callback done");
+        3: 2945:	if (compat20) {
+        3: 2946:		c->remote_window = packet_get_int();
+        3: 2947:		c->remote_maxpacket = packet_get_int();
+        3: 2948:		if (c->open_confirm) {
+        3: 2949:			debug2("callback start");
+        3: 2950:			c->open_confirm(c->self, 1, c->open_confirm_ctx);
+        3: 2951:			debug2("callback done");
         -: 2952:		}
-        2: 2953:		debug2("channel %d: open confirm rwindow %u rmax %u", c->self,
+        3: 2953:		debug2("channel %d: open confirm rwindow %u rmax %u", c->self,
         -: 2954:		    c->remote_window, c->remote_maxpacket);
         -: 2955:	}
-        2: 2956:	packet_check_eom();
-        2: 2957:	return 0;
+        3: 2956:	packet_check_eom();
+        3: 2957:	return 0;
         -: 2958:}
         -: 2959:
         -: 2960:static char *
@@ -3018,33 +3018,33 @@
         -: 3016:
         -: 3017:/* ARGSUSED */
         -: 3018:int
-        2: 3019:channel_input_window_adjust(int type, u_int32_t seq, void *ctxt)
+        3: 3019:channel_input_window_adjust(int type, u_int32_t seq, void *ctxt)
         -: 3020:{
         -: 3021:	Channel *c;
         -: 3022:	int id;
         -: 3023:	u_int adjust, tmp;
         -: 3024:
-        2: 3025:	if (!compat20)
+        3: 3025:	if (!compat20)
     #####: 3026:		return 0;
         -: 3027:
         -: 3028:	/* Get the channel number and verify it. */
-        2: 3029:	id = packet_get_int();
-        2: 3030:	c = channel_lookup(id);
+        3: 3029:	id = packet_get_int();
+        3: 3030:	c = channel_lookup(id);
         -: 3031:
-        2: 3032:	if (c == NULL) {
+        3: 3032:	if (c == NULL) {
     #####: 3033:		logit("Received window adjust for non-open channel %d.", id);
     #####: 3034:		return 0;
         -: 3035:	}
-        2: 3036:	if (channel_proxy_upstream(c, type, seq, ctxt))
+        3: 3036:	if (channel_proxy_upstream(c, type, seq, ctxt))
     #####: 3037:		return 0;
-        2: 3038:	adjust = packet_get_int();
-        2: 3039:	packet_check_eom();
-        2: 3040:	debug2("channel %d: rcvd adjust %u", id, adjust);
-        2: 3041:	if ((tmp = c->remote_window + adjust) < c->remote_window)
+        3: 3038:	adjust = packet_get_int();
+        3: 3039:	packet_check_eom();
+        3: 3040:	debug2("channel %d: rcvd adjust %u", id, adjust);
+        3: 3041:	if ((tmp = c->remote_window + adjust) < c->remote_window)
     #####: 3042:		fatal("channel %d: adjust %u overflows remote window %u",
         -: 3043:		    id, adjust, c->remote_window);
-        2: 3044:	c->remote_window = tmp;
-        2: 3045:	return 0;
+        3: 3044:	c->remote_window = tmp;
+        3: 3045:	return 0;
         -: 3046:}
         -: 3047:
         -: 3048:/* ARGSUSED */
@@ -3081,41 +3081,41 @@
         -: 3079:
         -: 3080:/* ARGSUSED */
         -: 3081:int
-        4: 3082:channel_input_status_confirm(int type, u_int32_t seq, void *ctxt)
+        6: 3082:channel_input_status_confirm(int type, u_int32_t seq, void *ctxt)
         -: 3083:{
         -: 3084:	Channel *c;
         -: 3085:	struct channel_confirm *cc;
         -: 3086:	int id;
         -: 3087:
         -: 3088:	/* Reset keepalive timeout */
-        4: 3089:	packet_set_alive_timeouts(0);
+        6: 3089:	packet_set_alive_timeouts(0);
         -: 3090:
-        4: 3091:	id = packet_get_int();
-        4: 3092:	debug2("channel_input_status_confirm: type %d id %d", type, id);
+        6: 3091:	id = packet_get_int();
+        6: 3092:	debug2("channel_input_status_confirm: type %d id %d", type, id);
         -: 3093:
-        4: 3094:	if ((c = channel_lookup(id)) == NULL) {
+        6: 3094:	if ((c = channel_lookup(id)) == NULL) {
     #####: 3095:		logit("channel_input_status_confirm: %d: unknown", id);
     #####: 3096:		return 0;
         -: 3097:	}	
-        4: 3098:	if (channel_proxy_upstream(c, type, seq, ctxt))
+        6: 3098:	if (channel_proxy_upstream(c, type, seq, ctxt))
     #####: 3099:		return 0;
-        4: 3100:	packet_check_eom();
-        4: 3101:	if ((cc = TAILQ_FIRST(&c->status_confirms)) == NULL)
+        6: 3100:	packet_check_eom();
+        6: 3101:	if ((cc = TAILQ_FIRST(&c->status_confirms)) == NULL)
     #####: 3102:		return 0;
-        4: 3103:	cc->cb(type, c, cc->ctx);
-        4: 3104:	TAILQ_REMOVE(&c->status_confirms, cc, entry);
-        4: 3105:	explicit_bzero(cc, sizeof(*cc));
-        4: 3106:	free(cc);
-        4: 3107:	return 0;
+        6: 3103:	cc->cb(type, c, cc->ctx);
+        6: 3104:	TAILQ_REMOVE(&c->status_confirms, cc, entry);
+        6: 3105:	explicit_bzero(cc, sizeof(*cc));
+        6: 3106:	free(cc);
+        6: 3107:	return 0;
         -: 3108:}
         -: 3109:
         -: 3110:/* -- tcp forwarding */
         -: 3111:
         -: 3112:void
-        2: 3113:channel_set_af(int af)
+        3: 3113:channel_set_af(int af)
         -: 3114:{
-        2: 3115:	IPv4or6 = af;
-        2: 3116:}
+        3: 3115:	IPv4or6 = af;
+        3: 3116:}
         -: 3117:
         -: 3118:
         -: 3119:/*

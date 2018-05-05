@@ -192,73 +192,73 @@
         -:  190:/* Log this message (information that usually should go to the log). */
         -:  191:
         -:  192:void
-        1:  193:logit(const char *fmt,...)
+        2:  193:logit(const char *fmt,...)
         -:  194:{
         -:  195:	va_list args;
         -:  196:
-        1:  197:	va_start(args, fmt);
-        1:  198:	do_log(SYSLOG_LEVEL_INFO, fmt, args);
-        1:  199:	va_end(args);
-        1:  200:}
+        2:  197:	va_start(args, fmt);
+        2:  198:	do_log(SYSLOG_LEVEL_INFO, fmt, args);
+        2:  199:	va_end(args);
+        2:  200:}
         -:  201:
         -:  202:/* More detailed messages (information that does not need to go to the log). */
         -:  203:
         -:  204:void
-        6:  205:verbose(const char *fmt,...)
+        9:  205:verbose(const char *fmt,...)
         -:  206:{
         -:  207:	va_list args;
         -:  208:
-        6:  209:	va_start(args, fmt);
-        6:  210:	do_log(SYSLOG_LEVEL_VERBOSE, fmt, args);
-        6:  211:	va_end(args);
-        6:  212:}
+        9:  209:	va_start(args, fmt);
+        9:  210:	do_log(SYSLOG_LEVEL_VERBOSE, fmt, args);
+        9:  211:	va_end(args);
+        9:  212:}
         -:  213:
         -:  214:/* Debugging messages that should not be logged during normal operation. */
         -:  215:
         -:  216:void
-      108:  217:debug(const char *fmt,...)
+      162:  217:debug(const char *fmt,...)
         -:  218:{
         -:  219:	va_list args;
         -:  220:
-      108:  221:	va_start(args, fmt);
-      108:  222:	do_log(SYSLOG_LEVEL_DEBUG1, fmt, args);
-      108:  223:	va_end(args);
-      108:  224:}
+      162:  221:	va_start(args, fmt);
+      162:  222:	do_log(SYSLOG_LEVEL_DEBUG1, fmt, args);
+      162:  223:	va_end(args);
+      162:  224:}
         -:  225:
         -:  226:void
-      132:  227:debug2(const char *fmt,...)
+      198:  227:debug2(const char *fmt,...)
         -:  228:{
         -:  229:	va_list args;
         -:  230:
-      132:  231:	va_start(args, fmt);
-      132:  232:	do_log(SYSLOG_LEVEL_DEBUG2, fmt, args);
-      132:  233:	va_end(args);
-      132:  234:}
+      198:  231:	va_start(args, fmt);
+      198:  232:	do_log(SYSLOG_LEVEL_DEBUG2, fmt, args);
+      198:  233:	va_end(args);
+      198:  234:}
         -:  235:
         -:  236:void
-       90:  237:debug3(const char *fmt,...)
+      135:  237:debug3(const char *fmt,...)
         -:  238:{
         -:  239:	va_list args;
         -:  240:
-       90:  241:	va_start(args, fmt);
-       90:  242:	do_log(SYSLOG_LEVEL_DEBUG3, fmt, args);
-       90:  243:	va_end(args);
-       90:  244:}
+      135:  241:	va_start(args, fmt);
+      135:  242:	do_log(SYSLOG_LEVEL_DEBUG3, fmt, args);
+      135:  243:	va_end(args);
+      135:  244:}
         -:  245:
         -:  246:/*
         -:  247: * Initialize the log.
         -:  248: */
         -:  249:
         -:  250:void
-        4:  251:log_init(char *av0, LogLevel level, SyslogFacility facility, int on_stderr)
+        6:  251:log_init(char *av0, LogLevel level, SyslogFacility facility, int on_stderr)
         -:  252:{
         -:  253:#if defined(HAVE_OPENLOG_R) && defined(SYSLOG_DATA_INIT)
         -:  254:	struct syslog_data sdata = SYSLOG_DATA_INIT;
         -:  255:#endif
         -:  256:
-        4:  257:	argv0 = av0;
+        6:  257:	argv0 = av0;
         -:  258:
-        4:  259:	switch (level) {
+        6:  259:	switch (level) {
         -:  260:	case SYSLOG_LEVEL_QUIET:
         -:  261:	case SYSLOG_LEVEL_FATAL:
         -:  262:	case SYSLOG_LEVEL_ERROR:
@@ -267,20 +267,20 @@
         -:  265:	case SYSLOG_LEVEL_DEBUG1:
         -:  266:	case SYSLOG_LEVEL_DEBUG2:
         -:  267:	case SYSLOG_LEVEL_DEBUG3:
-        4:  268:		log_level = level;
-        4:  269:		break;
+        6:  268:		log_level = level;
+        6:  269:		break;
         -:  270:	default:
     #####:  271:		fprintf(stderr, "Unrecognized internal syslog level code %d\n",
         -:  272:		    (int) level);
     #####:  273:		exit(1);
         -:  274:	}
         -:  275:
-        4:  276:	log_handler = NULL;
-        4:  277:	log_handler_ctx = NULL;
+        6:  276:	log_handler = NULL;
+        6:  277:	log_handler_ctx = NULL;
         -:  278:
-        4:  279:	log_on_stderr = on_stderr;
-        4:  280:	if (on_stderr)
-        8:  281:		return;
+        6:  279:	log_on_stderr = on_stderr;
+        6:  280:	if (on_stderr)
+       12:  281:		return;
         -:  282:
     #####:  283:	switch (facility) {
         -:  284:	case SYSLOG_FACILITY_DAEMON:
@@ -391,22 +391,22 @@
     #####:  389:}
         -:  390:
         -:  391:void
-      337:  392:do_log(LogLevel level, const char *fmt, va_list args)
+      506:  392:do_log(LogLevel level, const char *fmt, va_list args)
         -:  393:{
         -:  394:#if defined(HAVE_OPENLOG_R) && defined(SYSLOG_DATA_INIT)
         -:  395:	struct syslog_data sdata = SYSLOG_DATA_INIT;
         -:  396:#endif
         -:  397:	char msgbuf[MSGBUFSIZ];
         -:  398:	char fmtbuf[MSGBUFSIZ];
-      337:  399:	char *txt = NULL;
-      337:  400:	int pri = LOG_INFO;
-      337:  401:	int saved_errno = errno;
+      506:  399:	char *txt = NULL;
+      506:  400:	int pri = LOG_INFO;
+      506:  401:	int saved_errno = errno;
         -:  402:	log_handler_fn *tmp_handler;
         -:  403:
-      337:  404:	if (level > log_level)
-      616:  405:		return;
+      506:  404:	if (level > log_level)
+      953:  405:		return;
         -:  406:
-       58:  407:	switch (level) {
+       59:  407:	switch (level) {
         -:  408:	case SYSLOG_LEVEL_FATAL:
     #####:  409:		if (!log_on_stderr)
     #####:  410:			txt = "fatal";
@@ -418,8 +418,8 @@
     #####:  416:		pri = LOG_ERR;
     #####:  417:		break;
         -:  418:	case SYSLOG_LEVEL_INFO:
-        1:  419:		pri = LOG_INFO;
-        1:  420:		break;
+        2:  419:		pri = LOG_INFO;
+        2:  420:		break;
         -:  421:	case SYSLOG_LEVEL_VERBOSE:
         3:  422:		pri = LOG_INFO;
         3:  423:		break;
@@ -440,23 +440,23 @@
     #####:  438:		pri = LOG_ERR;
     #####:  439:		break;
         -:  440:	}
-       58:  441:	if (txt != NULL && log_handler == NULL) {
+       59:  441:	if (txt != NULL && log_handler == NULL) {
        54:  442:		snprintf(fmtbuf, sizeof(fmtbuf), "%s: %s", txt, fmt);
        54:  443:		vsnprintf(msgbuf, sizeof(msgbuf), fmtbuf, args);
         -:  444:	} else {
-        4:  445:		vsnprintf(msgbuf, sizeof(msgbuf), fmt, args);
+        5:  445:		vsnprintf(msgbuf, sizeof(msgbuf), fmt, args);
         -:  446:	}
-       58:  447:	strnvis(fmtbuf, msgbuf, sizeof(fmtbuf),
-       58:  448:	    log_on_stderr ? LOG_STDERR_VIS : LOG_SYSLOG_VIS);
-       58:  449:	if (log_handler != NULL) {
+       59:  447:	strnvis(fmtbuf, msgbuf, sizeof(fmtbuf),
+       59:  448:	    log_on_stderr ? LOG_STDERR_VIS : LOG_SYSLOG_VIS);
+       59:  449:	if (log_handler != NULL) {
         -:  450:		/* Avoid recursion */
     #####:  451:		tmp_handler = log_handler;
     #####:  452:		log_handler = NULL;
     #####:  453:		tmp_handler(level, fmtbuf, log_handler_ctx);
     #####:  454:		log_handler = tmp_handler;
-       58:  455:	} else if (log_on_stderr) {
-       58:  456:		snprintf(msgbuf, sizeof msgbuf, "%s\r\n", fmtbuf);
-       58:  457:		(void)write(log_stderr_fd, msgbuf, strlen(msgbuf));
+       59:  455:	} else if (log_on_stderr) {
+       59:  456:		snprintf(msgbuf, sizeof msgbuf, "%s\r\n", fmtbuf);
+       59:  457:		(void)write(log_stderr_fd, msgbuf, strlen(msgbuf));
         -:  458:	} else {
         -:  459:#if defined(HAVE_OPENLOG_R) && defined(SYSLOG_DATA_INIT)
         -:  460:		openlog_r(argv0 ? argv0 : __progname, LOG_PID, log_facility, &sdata);
@@ -468,5 +468,5 @@
     #####:  466:		closelog();
         -:  467:#endif
         -:  468:	}
-       58:  469:	errno = saved_errno;
+       59:  469:	errno = saved_errno;
         -:  470:}

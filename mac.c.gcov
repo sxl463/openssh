@@ -237,19 +237,19 @@
         -:  235:}
         -:  236:
         -:  237:void
-        4:  238:mac_clear(struct sshmac *mac)
+        6:  238:mac_clear(struct sshmac *mac)
         -:  239:{
-        4:  240:	if (mac->type == SSH_UMAC) {
+        6:  240:	if (mac->type == SSH_UMAC) {
     #####:  241:		if (mac->umac_ctx != NULL)
     #####:  242:			umac_delete(mac->umac_ctx);
-        4:  243:	} else if (mac->type == SSH_UMAC128) {
+        6:  243:	} else if (mac->type == SSH_UMAC128) {
     #####:  244:		if (mac->umac_ctx != NULL)
     #####:  245:			umac128_delete(mac->umac_ctx);
-        4:  246:	} else if (mac->hmac_ctx != NULL)
+        6:  246:	} else if (mac->hmac_ctx != NULL)
     #####:  247:		ssh_hmac_free(mac->hmac_ctx);
-        4:  248:	mac->hmac_ctx = NULL;
-        4:  249:	mac->umac_ctx = NULL;
-        4:  250:}
+        6:  248:	mac->hmac_ctx = NULL;
+        6:  249:	mac->umac_ctx = NULL;
+        6:  250:}
         -:  251:
         -:  252:/* XXX copied from ciphers_valid */
         -:  253:#define	MAC_SEP	","

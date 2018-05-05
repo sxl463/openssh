@@ -67,15 +67,15 @@
         -:   65:};
         -:   66:
         -:   67:static const struct ssh_digest *
-      104:   68:ssh_digest_by_alg(int alg)
+      156:   68:ssh_digest_by_alg(int alg)
         -:   69:{
-      104:   70:	if (alg < 0 || alg >= SSH_DIGEST_MAX)
+      156:   70:	if (alg < 0 || alg >= SSH_DIGEST_MAX)
     #####:   71:		return NULL;
-      104:   72:	if (digests[alg].id != alg) /* sanity */
+      156:   72:	if (digests[alg].id != alg) /* sanity */
     #####:   73:		return NULL;
-      104:   74:	if (digests[alg].mdfunc == NULL)
+      156:   74:	if (digests[alg].mdfunc == NULL)
     #####:   75:		return NULL;
-      104:   76:	return &(digests[alg]);
+      156:   76:	return &(digests[alg]);
         -:   77:}
         -:   78:
         -:   79:int
@@ -91,19 +91,19 @@
         -:   89:}
         -:   90:
         -:   91:const char *
-        6:   92:ssh_digest_alg_name(int alg)
+        9:   92:ssh_digest_alg_name(int alg)
         -:   93:{
-        6:   94:	const struct ssh_digest *digest = ssh_digest_by_alg(alg);
+        9:   94:	const struct ssh_digest *digest = ssh_digest_by_alg(alg);
         -:   95:
-        6:   96:	return digest == NULL ? NULL : digest->name;
+        9:   96:	return digest == NULL ? NULL : digest->name;
         -:   97:}
         -:   98:
         -:   99:size_t
-       34:  100:ssh_digest_bytes(int alg)
+       51:  100:ssh_digest_bytes(int alg)
         -:  101:{
-       34:  102:	const struct ssh_digest *digest = ssh_digest_by_alg(alg);
+       51:  102:	const struct ssh_digest *digest = ssh_digest_by_alg(alg);
         -:  103:
-       34:  104:	return digest == NULL ? 0 : digest->digest_len;
+       51:  104:	return digest == NULL ? 0 : digest->digest_len;
         -:  105:}
         -:  106:
         -:  107:size_t
@@ -113,20 +113,20 @@
         -:  111:}
         -:  112:
         -:  113:struct ssh_digest_ctx *
-       26:  114:ssh_digest_start(int alg)
+       39:  114:ssh_digest_start(int alg)
         -:  115:{
-       26:  116:	const struct ssh_digest *digest = ssh_digest_by_alg(alg);
+       39:  116:	const struct ssh_digest *digest = ssh_digest_by_alg(alg);
         -:  117:	struct ssh_digest_ctx *ret;
         -:  118:
-       26:  119:	if (digest == NULL || ((ret = calloc(1, sizeof(*ret))) == NULL))
+       39:  119:	if (digest == NULL || ((ret = calloc(1, sizeof(*ret))) == NULL))
     #####:  120:		return NULL;
-       26:  121:	ret->alg = alg;
-       26:  122:	EVP_MD_CTX_init(&ret->mdctx);
-       26:  123:	if (EVP_DigestInit_ex(&ret->mdctx, digest->mdfunc(), NULL) != 1) {
+       39:  121:	ret->alg = alg;
+       39:  122:	EVP_MD_CTX_init(&ret->mdctx);
+       39:  123:	if (EVP_DigestInit_ex(&ret->mdctx, digest->mdfunc(), NULL) != 1) {
     #####:  124:		free(ret);
     #####:  125:		return NULL;
         -:  126:	}
-       26:  127:	return ret;
+       39:  127:	return ret;
         -:  128:}
         -:  129:
         -:  130:int
@@ -141,67 +141,67 @@
         -:  139:}
         -:  140:
         -:  141:int
-       92:  142:ssh_digest_update(struct ssh_digest_ctx *ctx, const void *m, size_t mlen)
+      138:  142:ssh_digest_update(struct ssh_digest_ctx *ctx, const void *m, size_t mlen)
         -:  143:{
-       92:  144:	if (EVP_DigestUpdate(&ctx->mdctx, m, mlen) != 1)
+      138:  144:	if (EVP_DigestUpdate(&ctx->mdctx, m, mlen) != 1)
     #####:  145:		return SSH_ERR_LIBCRYPTO_ERROR;
-       92:  146:	return 0;
+      138:  146:	return 0;
         -:  147:}
         -:  148:
         -:  149:int
-       24:  150:ssh_digest_update_buffer(struct ssh_digest_ctx *ctx, const struct sshbuf *b)
+       36:  150:ssh_digest_update_buffer(struct ssh_digest_ctx *ctx, const struct sshbuf *b)
         -:  151:{
-       24:  152:	return ssh_digest_update(ctx, sshbuf_ptr(b), sshbuf_len(b));
+       36:  152:	return ssh_digest_update(ctx, sshbuf_ptr(b), sshbuf_len(b));
         -:  153:}
         -:  154:
         -:  155:int
-       26:  156:ssh_digest_final(struct ssh_digest_ctx *ctx, u_char *d, size_t dlen)
+       39:  156:ssh_digest_final(struct ssh_digest_ctx *ctx, u_char *d, size_t dlen)
         -:  157:{
-       26:  158:	const struct ssh_digest *digest = ssh_digest_by_alg(ctx->alg);
-       26:  159:	u_int l = dlen;
+       39:  158:	const struct ssh_digest *digest = ssh_digest_by_alg(ctx->alg);
+       39:  159:	u_int l = dlen;
         -:  160:
         -:  161:	if (dlen > UINT_MAX)
         -:  162:		return SSH_ERR_INVALID_ARGUMENT;
-       26:  163:	if (dlen < digest->digest_len) /* No truncation allowed */
+       39:  163:	if (dlen < digest->digest_len) /* No truncation allowed */
     #####:  164:		return SSH_ERR_INVALID_ARGUMENT;
-       26:  165:	if (EVP_DigestFinal_ex(&ctx->mdctx, d, &l) != 1)
+       39:  165:	if (EVP_DigestFinal_ex(&ctx->mdctx, d, &l) != 1)
     #####:  166:		return SSH_ERR_LIBCRYPTO_ERROR;
-       26:  167:	if (l != digest->digest_len) /* sanity */
+       39:  167:	if (l != digest->digest_len) /* sanity */
     #####:  168:		return SSH_ERR_INTERNAL_ERROR;
-       26:  169:	return 0;
+       39:  169:	return 0;
         -:  170:}
         -:  171:
         -:  172:void
-       38:  173:ssh_digest_free(struct ssh_digest_ctx *ctx)
+       57:  173:ssh_digest_free(struct ssh_digest_ctx *ctx)
         -:  174:{
-       38:  175:	if (ctx != NULL) {
-       26:  176:		EVP_MD_CTX_cleanup(&ctx->mdctx);
-       26:  177:		explicit_bzero(ctx, sizeof(*ctx));
-       26:  178:		free(ctx);
+       57:  175:	if (ctx != NULL) {
+       39:  176:		EVP_MD_CTX_cleanup(&ctx->mdctx);
+       39:  177:		explicit_bzero(ctx, sizeof(*ctx));
+       39:  178:		free(ctx);
         -:  179:	}
-       38:  180:}
+       57:  180:}
         -:  181:
         -:  182:int
-       12:  183:ssh_digest_memory(int alg, const void *m, size_t mlen, u_char *d, size_t dlen)
+       18:  183:ssh_digest_memory(int alg, const void *m, size_t mlen, u_char *d, size_t dlen)
         -:  184:{
-       12:  185:	const struct ssh_digest *digest = ssh_digest_by_alg(alg);
+       18:  185:	const struct ssh_digest *digest = ssh_digest_by_alg(alg);
         -:  186:	u_int mdlen;
         -:  187:
-       12:  188:	if (digest == NULL)
+       18:  188:	if (digest == NULL)
     #####:  189:		return SSH_ERR_INVALID_ARGUMENT;
         -:  190:	if (dlen > UINT_MAX)
         -:  191:		return SSH_ERR_INVALID_ARGUMENT;
-       12:  192:	if (dlen < digest->digest_len)
+       18:  192:	if (dlen < digest->digest_len)
     #####:  193:		return SSH_ERR_INVALID_ARGUMENT;
-       12:  194:	mdlen = dlen;
-       12:  195:	if (!EVP_Digest(m, mlen, d, &mdlen, digest->mdfunc(), NULL))
+       18:  194:	mdlen = dlen;
+       18:  195:	if (!EVP_Digest(m, mlen, d, &mdlen, digest->mdfunc(), NULL))
     #####:  196:		return SSH_ERR_LIBCRYPTO_ERROR;
-       12:  197:	return 0;
+       18:  197:	return 0;
         -:  198:}
         -:  199:
         -:  200:int
-        2:  201:ssh_digest_buffer(int alg, const struct sshbuf *b, u_char *d, size_t dlen)
+        3:  201:ssh_digest_buffer(int alg, const struct sshbuf *b, u_char *d, size_t dlen)
         -:  202:{
-        2:  203:	return ssh_digest_memory(alg, sshbuf_ptr(b), sshbuf_len(b), d, dlen);
+        3:  203:	return ssh_digest_memory(alg, sshbuf_ptr(b), sshbuf_len(b), d, dlen);
         -:  204:}
         -:  205:#endif /* WITH_OPENSSL */

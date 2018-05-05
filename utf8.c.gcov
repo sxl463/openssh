@@ -302,9 +302,9 @@
         -:  300: *      what's out there first.
         -:  301: */
         -:  302:void
-        2:  303:msetlocale(void)
+        6:  303:msetlocale(void)
         -:  304:{
-        2:  305:	const char *vars[] = { "LC_ALL", "LC_CTYPE", "LANG", NULL };
+        6:  305:	const char *vars[] = { "LC_ALL", "LC_CTYPE", "LANG", NULL };
         -:  306:	char *cp;
         -:  307:	int i;
         -:  308:
@@ -312,11 +312,11 @@
         -:  310:	 * We can't yet cope with dotless/dotted I in Turkish locales,
         -:  311:	 * so fall back to the C locale for these.
         -:  312:	 */
-       12:  313:	for (i = 0; vars[i] != NULL; i++) {
-        6:  314:		if ((cp = getenv(vars[i])) == NULL)
-        4:  315:			continue;
-        2:  316:		if (strncasecmp(cp, "TR", 2) != 0)
-        2:  317:			break;
+       36:  313:	for (i = 0; vars[i] != NULL; i++) {
+       18:  314:		if ((cp = getenv(vars[i])) == NULL)
+       12:  315:			continue;
+        6:  316:		if (strncasecmp(cp, "TR", 2) != 0)
+        6:  317:			break;
         -:  318:		/*
         -:  319:		 * If we're in a UTF-8 locale then prefer to use
         -:  320:		 * the C.UTF-8 locale (or equivalent) if it exists.
@@ -330,5 +330,5 @@
     #####:  328:		return;
         -:  329:	}
         -:  330:	/* We can handle this locale */
-        2:  331:	setlocale(LC_CTYPE, "");
+        6:  331:	setlocale(LC_CTYPE, "");
         -:  332:}

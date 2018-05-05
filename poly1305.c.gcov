@@ -33,7 +33,7 @@
         -:   31:	} while (0)
         -:   32:
         -:   33:void
-      206:   34:poly1305_auth(unsigned char out[POLY1305_TAGLEN], const unsigned char *m, size_t inlen, const unsigned char key[POLY1305_KEYLEN]) {
+      241:   34:poly1305_auth(unsigned char out[POLY1305_TAGLEN], const unsigned char *m, size_t inlen, const unsigned char key[POLY1305_KEYLEN]) {
         -:   35:	uint32_t t0,t1,t2,t3;
         -:   36:	uint32_t h0,h1,h2,h3,h4;
         -:   37:	uint32_t r0,r1,r2,r3,r4;
@@ -47,116 +47,116 @@
         -:   45:	unsigned char mp[16];
         -:   46:
         -:   47:	/* clamp key */
-      206:   48:	t0 = U8TO32_LE(key+0);
-      206:   49:	t1 = U8TO32_LE(key+4);
-      206:   50:	t2 = U8TO32_LE(key+8);
-      206:   51:	t3 = U8TO32_LE(key+12);
+      241:   48:	t0 = U8TO32_LE(key+0);
+      241:   49:	t1 = U8TO32_LE(key+4);
+      241:   50:	t2 = U8TO32_LE(key+8);
+      241:   51:	t3 = U8TO32_LE(key+12);
         -:   52:
         -:   53:	/* precompute multipliers */
-      206:   54:	r0 = t0 & 0x3ffffff; t0 >>= 26; t0 |= t1 << 6;
-      206:   55:	r1 = t0 & 0x3ffff03; t1 >>= 20; t1 |= t2 << 12;
-      206:   56:	r2 = t1 & 0x3ffc0ff; t2 >>= 14; t2 |= t3 << 18;
-      206:   57:	r3 = t2 & 0x3f03fff; t3 >>= 8;
-      206:   58:	r4 = t3 & 0x00fffff;
+      241:   54:	r0 = t0 & 0x3ffffff; t0 >>= 26; t0 |= t1 << 6;
+      241:   55:	r1 = t0 & 0x3ffff03; t1 >>= 20; t1 |= t2 << 12;
+      241:   56:	r2 = t1 & 0x3ffc0ff; t2 >>= 14; t2 |= t3 << 18;
+      241:   57:	r3 = t2 & 0x3f03fff; t3 >>= 8;
+      241:   58:	r4 = t3 & 0x00fffff;
         -:   59:
-      206:   60:	s1 = r1 * 5;
-      206:   61:	s2 = r2 * 5;
-      206:   62:	s3 = r3 * 5;
-      206:   63:	s4 = r4 * 5;
+      241:   60:	s1 = r1 * 5;
+      241:   61:	s2 = r2 * 5;
+      241:   62:	s3 = r3 * 5;
+      241:   63:	s4 = r4 * 5;
         -:   64:
         -:   65:	/* init state */
-      206:   66:	h0 = 0;
-      206:   67:	h1 = 0;
-      206:   68:	h2 = 0;
-      206:   69:	h3 = 0;
-      206:   70:	h4 = 0;
+      241:   66:	h0 = 0;
+      241:   67:	h1 = 0;
+      241:   68:	h2 = 0;
+      241:   69:	h3 = 0;
+      241:   70:	h4 = 0;
         -:   71:
         -:   72:	/* full blocks */
-      206:   73:	if (inlen < 16) goto poly1305_donna_atmost15bytes;
+      241:   73:	if (inlen < 16) goto poly1305_donna_atmost15bytes;
         -:   74:poly1305_donna_16bytes:
-     2659:   75:	m += 16;
-     2659:   76:	inlen -= 16;
+     2837:   75:	m += 16;
+     2837:   76:	inlen -= 16;
         -:   77:
-     2659:   78:	t0 = U8TO32_LE(m-16);
-     2659:   79:	t1 = U8TO32_LE(m-12);
-     2659:   80:	t2 = U8TO32_LE(m-8);
-     2659:   81:	t3 = U8TO32_LE(m-4);
+     2837:   78:	t0 = U8TO32_LE(m-16);
+     2837:   79:	t1 = U8TO32_LE(m-12);
+     2837:   80:	t2 = U8TO32_LE(m-8);
+     2837:   81:	t3 = U8TO32_LE(m-4);
         -:   82:
-     2659:   83:	h0 += t0 & 0x3ffffff;
-     2659:   84:	h1 += ((((uint64_t)t1 << 32) | t0) >> 26) & 0x3ffffff;
-     2659:   85:	h2 += ((((uint64_t)t2 << 32) | t1) >> 20) & 0x3ffffff;
-     2659:   86:	h3 += ((((uint64_t)t3 << 32) | t2) >> 14) & 0x3ffffff;
-     2659:   87:	h4 += (t3 >> 8) | (1 << 24);
+     2837:   83:	h0 += t0 & 0x3ffffff;
+     2837:   84:	h1 += ((((uint64_t)t1 << 32) | t0) >> 26) & 0x3ffffff;
+     2837:   85:	h2 += ((((uint64_t)t2 << 32) | t1) >> 20) & 0x3ffffff;
+     2837:   86:	h3 += ((((uint64_t)t3 << 32) | t2) >> 14) & 0x3ffffff;
+     2837:   87:	h4 += (t3 >> 8) | (1 << 24);
         -:   88:
         -:   89:
         -:   90:poly1305_donna_mul:
-     2865:   91:	t[0]  = mul32x32_64(h0,r0) + mul32x32_64(h1,s4) + mul32x32_64(h2,s3) + mul32x32_64(h3,s2) + mul32x32_64(h4,s1);
-     2865:   92:	t[1]  = mul32x32_64(h0,r1) + mul32x32_64(h1,r0) + mul32x32_64(h2,s4) + mul32x32_64(h3,s3) + mul32x32_64(h4,s2);
-     2865:   93:	t[2]  = mul32x32_64(h0,r2) + mul32x32_64(h1,r1) + mul32x32_64(h2,r0) + mul32x32_64(h3,s4) + mul32x32_64(h4,s3);
-     2865:   94:	t[3]  = mul32x32_64(h0,r3) + mul32x32_64(h1,r2) + mul32x32_64(h2,r1) + mul32x32_64(h3,r0) + mul32x32_64(h4,s4);
-     2865:   95:	t[4]  = mul32x32_64(h0,r4) + mul32x32_64(h1,r3) + mul32x32_64(h2,r2) + mul32x32_64(h3,r1) + mul32x32_64(h4,r0);
+     3078:   91:	t[0]  = mul32x32_64(h0,r0) + mul32x32_64(h1,s4) + mul32x32_64(h2,s3) + mul32x32_64(h3,s2) + mul32x32_64(h4,s1);
+     3078:   92:	t[1]  = mul32x32_64(h0,r1) + mul32x32_64(h1,r0) + mul32x32_64(h2,s4) + mul32x32_64(h3,s3) + mul32x32_64(h4,s2);
+     3078:   93:	t[2]  = mul32x32_64(h0,r2) + mul32x32_64(h1,r1) + mul32x32_64(h2,r0) + mul32x32_64(h3,s4) + mul32x32_64(h4,s3);
+     3078:   94:	t[3]  = mul32x32_64(h0,r3) + mul32x32_64(h1,r2) + mul32x32_64(h2,r1) + mul32x32_64(h3,r0) + mul32x32_64(h4,s4);
+     3078:   95:	t[4]  = mul32x32_64(h0,r4) + mul32x32_64(h1,r3) + mul32x32_64(h2,r2) + mul32x32_64(h3,r1) + mul32x32_64(h4,r0);
         -:   96:
-     2865:   97:	                h0 = (uint32_t)t[0] & 0x3ffffff; c =           (t[0] >> 26);
-     2865:   98:	t[1] += c;      h1 = (uint32_t)t[1] & 0x3ffffff; b = (uint32_t)(t[1] >> 26);
-     2865:   99:	t[2] += b;      h2 = (uint32_t)t[2] & 0x3ffffff; b = (uint32_t)(t[2] >> 26);
-     2865:  100:	t[3] += b;      h3 = (uint32_t)t[3] & 0x3ffffff; b = (uint32_t)(t[3] >> 26);
-     2865:  101:	t[4] += b;      h4 = (uint32_t)t[4] & 0x3ffffff; b = (uint32_t)(t[4] >> 26);
-     2865:  102:	h0 += b * 5;
+     3078:   97:	                h0 = (uint32_t)t[0] & 0x3ffffff; c =           (t[0] >> 26);
+     3078:   98:	t[1] += c;      h1 = (uint32_t)t[1] & 0x3ffffff; b = (uint32_t)(t[1] >> 26);
+     3078:   99:	t[2] += b;      h2 = (uint32_t)t[2] & 0x3ffffff; b = (uint32_t)(t[2] >> 26);
+     3078:  100:	t[3] += b;      h3 = (uint32_t)t[3] & 0x3ffffff; b = (uint32_t)(t[3] >> 26);
+     3078:  101:	t[4] += b;      h4 = (uint32_t)t[4] & 0x3ffffff; b = (uint32_t)(t[4] >> 26);
+     3078:  102:	h0 += b * 5;
         -:  103:
-     2865:  104:	if (inlen >= 16) goto poly1305_donna_16bytes;
+     3078:  104:	if (inlen >= 16) goto poly1305_donna_16bytes;
         -:  105:
         -:  106:	/* final bytes */
         -:  107:poly1305_donna_atmost15bytes:
-      412:  108:	if (!inlen) goto poly1305_donna_finish;
+      482:  108:	if (!inlen) goto poly1305_donna_finish;
         -:  109:
-      206:  110:	for (j = 0; j < inlen; j++) mp[j] = m[j];
-      206:  111:	mp[j++] = 1;
-      206:  112:	for (; j < 16; j++)	mp[j] = 0;
-      206:  113:	inlen = 0;
+      241:  110:	for (j = 0; j < inlen; j++) mp[j] = m[j];
+      241:  111:	mp[j++] = 1;
+      241:  112:	for (; j < 16; j++)	mp[j] = 0;
+      241:  113:	inlen = 0;
         -:  114:
-      206:  115:	t0 = U8TO32_LE(mp+0);
-      206:  116:	t1 = U8TO32_LE(mp+4);
-      206:  117:	t2 = U8TO32_LE(mp+8);
-      206:  118:	t3 = U8TO32_LE(mp+12);
+      241:  115:	t0 = U8TO32_LE(mp+0);
+      241:  116:	t1 = U8TO32_LE(mp+4);
+      241:  117:	t2 = U8TO32_LE(mp+8);
+      241:  118:	t3 = U8TO32_LE(mp+12);
         -:  119:
-      206:  120:	h0 += t0 & 0x3ffffff;
-      206:  121:	h1 += ((((uint64_t)t1 << 32) | t0) >> 26) & 0x3ffffff;
-      206:  122:	h2 += ((((uint64_t)t2 << 32) | t1) >> 20) & 0x3ffffff;
-      206:  123:	h3 += ((((uint64_t)t3 << 32) | t2) >> 14) & 0x3ffffff;
-      206:  124:	h4 += (t3 >> 8);
+      241:  120:	h0 += t0 & 0x3ffffff;
+      241:  121:	h1 += ((((uint64_t)t1 << 32) | t0) >> 26) & 0x3ffffff;
+      241:  122:	h2 += ((((uint64_t)t2 << 32) | t1) >> 20) & 0x3ffffff;
+      241:  123:	h3 += ((((uint64_t)t3 << 32) | t2) >> 14) & 0x3ffffff;
+      241:  124:	h4 += (t3 >> 8);
         -:  125:
-      206:  126:	goto poly1305_donna_mul;
+      241:  126:	goto poly1305_donna_mul;
         -:  127:
         -:  128:poly1305_donna_finish:
-      206:  129:	             b = h0 >> 26; h0 = h0 & 0x3ffffff;
-      206:  130:	h1 +=     b; b = h1 >> 26; h1 = h1 & 0x3ffffff;
-      206:  131:	h2 +=     b; b = h2 >> 26; h2 = h2 & 0x3ffffff;
-      206:  132:	h3 +=     b; b = h3 >> 26; h3 = h3 & 0x3ffffff;
-      206:  133:	h4 +=     b; b = h4 >> 26; h4 = h4 & 0x3ffffff;
-      206:  134:	h0 += b * 5; b = h0 >> 26; h0 = h0 & 0x3ffffff;
-      206:  135:	h1 +=     b;
+      241:  129:	             b = h0 >> 26; h0 = h0 & 0x3ffffff;
+      241:  130:	h1 +=     b; b = h1 >> 26; h1 = h1 & 0x3ffffff;
+      241:  131:	h2 +=     b; b = h2 >> 26; h2 = h2 & 0x3ffffff;
+      241:  132:	h3 +=     b; b = h3 >> 26; h3 = h3 & 0x3ffffff;
+      241:  133:	h4 +=     b; b = h4 >> 26; h4 = h4 & 0x3ffffff;
+      241:  134:	h0 += b * 5; b = h0 >> 26; h0 = h0 & 0x3ffffff;
+      241:  135:	h1 +=     b;
         -:  136:
-      206:  137:	g0 = h0 + 5; b = g0 >> 26; g0 &= 0x3ffffff;
-      206:  138:	g1 = h1 + b; b = g1 >> 26; g1 &= 0x3ffffff;
-      206:  139:	g2 = h2 + b; b = g2 >> 26; g2 &= 0x3ffffff;
-      206:  140:	g3 = h3 + b; b = g3 >> 26; g3 &= 0x3ffffff;
-      206:  141:	g4 = h4 + b - (1 << 26);
+      241:  137:	g0 = h0 + 5; b = g0 >> 26; g0 &= 0x3ffffff;
+      241:  138:	g1 = h1 + b; b = g1 >> 26; g1 &= 0x3ffffff;
+      241:  139:	g2 = h2 + b; b = g2 >> 26; g2 &= 0x3ffffff;
+      241:  140:	g3 = h3 + b; b = g3 >> 26; g3 &= 0x3ffffff;
+      241:  141:	g4 = h4 + b - (1 << 26);
         -:  142:
-      206:  143:	b = (g4 >> 31) - 1;
-      206:  144:	nb = ~b;
-      206:  145:	h0 = (h0 & nb) | (g0 & b);
-      206:  146:	h1 = (h1 & nb) | (g1 & b);
-      206:  147:	h2 = (h2 & nb) | (g2 & b);
-      206:  148:	h3 = (h3 & nb) | (g3 & b);
-      206:  149:	h4 = (h4 & nb) | (g4 & b);
+      241:  143:	b = (g4 >> 31) - 1;
+      241:  144:	nb = ~b;
+      241:  145:	h0 = (h0 & nb) | (g0 & b);
+      241:  146:	h1 = (h1 & nb) | (g1 & b);
+      241:  147:	h2 = (h2 & nb) | (g2 & b);
+      241:  148:	h3 = (h3 & nb) | (g3 & b);
+      241:  149:	h4 = (h4 & nb) | (g4 & b);
         -:  150:
-      206:  151:	f0 = ((h0      ) | (h1 << 26)) + (uint64_t)U8TO32_LE(&key[16]);
-      206:  152:	f1 = ((h1 >>  6) | (h2 << 20)) + (uint64_t)U8TO32_LE(&key[20]);
-      206:  153:	f2 = ((h2 >> 12) | (h3 << 14)) + (uint64_t)U8TO32_LE(&key[24]);
-      206:  154:	f3 = ((h3 >> 18) | (h4 <<  8)) + (uint64_t)U8TO32_LE(&key[28]);
+      241:  151:	f0 = ((h0      ) | (h1 << 26)) + (uint64_t)U8TO32_LE(&key[16]);
+      241:  152:	f1 = ((h1 >>  6) | (h2 << 20)) + (uint64_t)U8TO32_LE(&key[20]);
+      241:  153:	f2 = ((h2 >> 12) | (h3 << 14)) + (uint64_t)U8TO32_LE(&key[24]);
+      241:  154:	f3 = ((h3 >> 18) | (h4 <<  8)) + (uint64_t)U8TO32_LE(&key[28]);
         -:  155:
-      206:  156:	U32TO8_LE(&out[ 0], f0); f1 += (f0 >> 32);
-      206:  157:	U32TO8_LE(&out[ 4], f1); f2 += (f1 >> 32);
-      206:  158:	U32TO8_LE(&out[ 8], f2); f3 += (f2 >> 32);
-      206:  159:	U32TO8_LE(&out[12], f3);
-      206:  160:}
+      241:  156:	U32TO8_LE(&out[ 0], f0); f1 += (f0 >> 32);
+      241:  157:	U32TO8_LE(&out[ 4], f1); f2 += (f1 >> 32);
+      241:  158:	U32TO8_LE(&out[ 8], f2); f3 += (f2 >> 32);
+      241:  159:	U32TO8_LE(&out[12], f3);
+      241:  160:}

@@ -53,38 +53,38 @@
         -:   51:	__attribute__((__bounded__(__minbytes__, 3, CURVE25519_SIZE)));
         -:   52:
         -:   53:void
-        2:   54:kexc25519_keygen(u_char key[CURVE25519_SIZE], u_char pub[CURVE25519_SIZE])
+        3:   54:kexc25519_keygen(u_char key[CURVE25519_SIZE], u_char pub[CURVE25519_SIZE])
         -:   55:{
         -:   56:	static const u_char basepoint[CURVE25519_SIZE] = {9};
         -:   57:
-        2:   58:	arc4random_buf(key, CURVE25519_SIZE);
-        2:   59:	crypto_scalarmult_curve25519(pub, key, basepoint);
-        2:   60:}
+        3:   58:	arc4random_buf(key, CURVE25519_SIZE);
+        3:   59:	crypto_scalarmult_curve25519(pub, key, basepoint);
+        3:   60:}
         -:   61:
         -:   62:int
-        2:   63:kexc25519_shared_key(const u_char key[CURVE25519_SIZE],
+        3:   63:kexc25519_shared_key(const u_char key[CURVE25519_SIZE],
         -:   64:    const u_char pub[CURVE25519_SIZE], struct sshbuf *out)
         -:   65:{
         -:   66:	u_char shared_key[CURVE25519_SIZE];
         -:   67:	int r;
         -:   68:
         -:   69:	/* Check for all-zero public key */
-        2:   70:	explicit_bzero(shared_key, CURVE25519_SIZE);
-        2:   71:	if (timingsafe_bcmp(pub, shared_key, CURVE25519_SIZE) == 0)
+        3:   70:	explicit_bzero(shared_key, CURVE25519_SIZE);
+        3:   71:	if (timingsafe_bcmp(pub, shared_key, CURVE25519_SIZE) == 0)
     #####:   72:		return SSH_ERR_KEY_INVALID_EC_VALUE;
         -:   73:
-        2:   74:	crypto_scalarmult_curve25519(shared_key, key, pub);
+        3:   74:	crypto_scalarmult_curve25519(shared_key, key, pub);
         -:   75:#ifdef DEBUG_KEXECDH
         -:   76:	dump_digest("shared secret", shared_key, CURVE25519_SIZE);
         -:   77:#endif
-        2:   78:	sshbuf_reset(out);
-        2:   79:	r = sshbuf_put_bignum2_bytes(out, shared_key, CURVE25519_SIZE);
-        2:   80:	explicit_bzero(shared_key, CURVE25519_SIZE);
-        2:   81:	return r;
+        3:   78:	sshbuf_reset(out);
+        3:   79:	r = sshbuf_put_bignum2_bytes(out, shared_key, CURVE25519_SIZE);
+        3:   80:	explicit_bzero(shared_key, CURVE25519_SIZE);
+        3:   81:	return r;
         -:   82:}
         -:   83:
         -:   84:int
-        2:   85:kex_c25519_hash(
+        3:   85:kex_c25519_hash(
         -:   86:    int hash_alg,
         -:   87:    const char *client_version_string,
         -:   88:    const char *server_version_string,
@@ -99,22 +99,22 @@
         -:   97:	struct sshbuf *b;
         -:   98:	int r;
         -:   99:
-        2:  100:	if (*hashlen < ssh_digest_bytes(hash_alg))
+        3:  100:	if (*hashlen < ssh_digest_bytes(hash_alg))
     #####:  101:		return SSH_ERR_INVALID_ARGUMENT;
-        2:  102:	if ((b = sshbuf_new()) == NULL)
+        3:  102:	if ((b = sshbuf_new()) == NULL)
     #####:  103:		return SSH_ERR_ALLOC_FAIL;
-        2:  104:	if ((r = sshbuf_put_cstring(b, client_version_string)) < 0 ||
-        2:  105:	    (r = sshbuf_put_cstring(b, server_version_string)) < 0 ||
+        3:  104:	if ((r = sshbuf_put_cstring(b, client_version_string)) < 0 ||
+        3:  105:	    (r = sshbuf_put_cstring(b, server_version_string)) < 0 ||
         -:  106:	    /* kexinit messages: fake header: len+SSH2_MSG_KEXINIT */
-        4:  107:	    (r = sshbuf_put_u32(b, ckexinitlen+1)) < 0 ||
-        2:  108:	    (r = sshbuf_put_u8(b, SSH2_MSG_KEXINIT)) < 0 ||
-        2:  109:	    (r = sshbuf_put(b, ckexinit, ckexinitlen)) < 0 ||
-        4:  110:	    (r = sshbuf_put_u32(b, skexinitlen+1)) < 0 ||
-        2:  111:	    (r = sshbuf_put_u8(b, SSH2_MSG_KEXINIT)) < 0 ||
-        2:  112:	    (r = sshbuf_put(b, skexinit, skexinitlen)) < 0 ||
-        2:  113:	    (r = sshbuf_put_string(b, serverhostkeyblob, sbloblen)) < 0 ||
-        2:  114:	    (r = sshbuf_put_string(b, client_dh_pub, CURVE25519_SIZE)) < 0 ||
-        2:  115:	    (r = sshbuf_put_string(b, server_dh_pub, CURVE25519_SIZE)) < 0 ||
+        6:  107:	    (r = sshbuf_put_u32(b, ckexinitlen+1)) < 0 ||
+        3:  108:	    (r = sshbuf_put_u8(b, SSH2_MSG_KEXINIT)) < 0 ||
+        3:  109:	    (r = sshbuf_put(b, ckexinit, ckexinitlen)) < 0 ||
+        6:  110:	    (r = sshbuf_put_u32(b, skexinitlen+1)) < 0 ||
+        3:  111:	    (r = sshbuf_put_u8(b, SSH2_MSG_KEXINIT)) < 0 ||
+        3:  112:	    (r = sshbuf_put(b, skexinit, skexinitlen)) < 0 ||
+        3:  113:	    (r = sshbuf_put_string(b, serverhostkeyblob, sbloblen)) < 0 ||
+        3:  114:	    (r = sshbuf_put_string(b, client_dh_pub, CURVE25519_SIZE)) < 0 ||
+        3:  115:	    (r = sshbuf_put_string(b, server_dh_pub, CURVE25519_SIZE)) < 0 ||
         -:  116:	    (r = sshbuf_put(b, shared_secret, secretlen)) < 0) {
     #####:  117:		sshbuf_free(b);
     #####:  118:		return r;
@@ -122,14 +122,14 @@
         -:  120:#ifdef DEBUG_KEX
         -:  121:	sshbuf_dump(b, stderr);
         -:  122:#endif
-        2:  123:	if (ssh_digest_buffer(hash_alg, b, hash, *hashlen) != 0) {
+        3:  123:	if (ssh_digest_buffer(hash_alg, b, hash, *hashlen) != 0) {
     #####:  124:		sshbuf_free(b);
     #####:  125:		return SSH_ERR_LIBCRYPTO_ERROR;
         -:  126:	}
-        2:  127:	sshbuf_free(b);
-        2:  128:	*hashlen = ssh_digest_bytes(hash_alg);
+        3:  127:	sshbuf_free(b);
+        3:  128:	*hashlen = ssh_digest_bytes(hash_alg);
         -:  129:#ifdef DEBUG_KEX
         -:  130:	dump_digest("hash", hash, *hashlen);
         -:  131:#endif
-        2:  132:	return 0;
+        3:  132:	return 0;
         -:  133:}

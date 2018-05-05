@@ -29,13 +29,13 @@
         -:   27:#include "ssherr.h"
         -:   28:
         -:   29:void
-      114:   30:buffer_append(Buffer *buffer, const void *data, u_int len)
+      131:   30:buffer_append(Buffer *buffer, const void *data, u_int len)
         -:   31:{
         -:   32:	int ret;
         -:   33:
-      114:   34:	if ((ret = sshbuf_put(buffer, data, len)) != 0)
+      131:   34:	if ((ret = sshbuf_put(buffer, data, len)) != 0)
     #####:   35:		fatal("%s: %s", __func__, ssh_err(ret));
-      114:   36:}
+      131:   36:}
         -:   37:
         -:   38:void *
     #####:   39:buffer_append_space(Buffer *buffer, u_int len)
@@ -49,12 +49,12 @@
         -:   47:}
         -:   48:
         -:   49:int
-      302:   50:buffer_check_alloc(Buffer *buffer, u_int len)
+      329:   50:buffer_check_alloc(Buffer *buffer, u_int len)
         -:   51:{
-      302:   52:	int ret = sshbuf_check_reserve(buffer, len);
+      329:   52:	int ret = sshbuf_check_reserve(buffer, len);
         -:   53:
-      302:   54:	if (ret == 0)
-      302:   55:		return 1;
+      329:   54:	if (ret == 0)
+      329:   55:		return 1;
     #####:   56:	if (ret == SSH_ERR_NO_BUFFER_SPACE)
     #####:   57:		return 0;
     #####:   58:	fatal("%s: %s", __func__, ssh_err(ret));
@@ -80,23 +80,23 @@
     #####:   78:}
         -:   79:
         -:   80:int
-      153:   81:buffer_consume_ret(Buffer *buffer, u_int bytes)
+      168:   81:buffer_consume_ret(Buffer *buffer, u_int bytes)
         -:   82:{
-      153:   83:	int ret = sshbuf_consume(buffer, bytes);
+      168:   83:	int ret = sshbuf_consume(buffer, bytes);
         -:   84:
-      153:   85:	if (ret == 0)
-      153:   86:		return 0;
+      168:   85:	if (ret == 0)
+      168:   86:		return 0;
     #####:   87:	if (ret == SSH_ERR_MESSAGE_INCOMPLETE)
     #####:   88:		return -1;
     #####:   89:	fatal("%s: %s", __func__, ssh_err(ret));
         -:   90:}
         -:   91:
         -:   92:void
-      153:   93:buffer_consume(Buffer *buffer, u_int bytes)
+      168:   93:buffer_consume(Buffer *buffer, u_int bytes)
         -:   94:{
-      153:   95:	if (buffer_consume_ret(buffer, bytes) == -1)
+      168:   95:	if (buffer_consume_ret(buffer, bytes) == -1)
     #####:   96:		fatal("%s: buffer error", __func__);
-      153:   97:}
+      168:   97:}
         -:   98:
         -:   99:int
     #####:  100:buffer_consume_end_ret(Buffer *buffer, u_int bytes)

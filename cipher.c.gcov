@@ -168,40 +168,40 @@
         -:  166:}
         -:  167:
         -:  168:u_int
-        4:  169:cipher_blocksize(const struct sshcipher *c)
+        6:  169:cipher_blocksize(const struct sshcipher *c)
         -:  170:{
-        4:  171:	return (c->block_size);
+        6:  171:	return (c->block_size);
         -:  172:}
         -:  173:
         -:  174:u_int
-       12:  175:cipher_keylen(const struct sshcipher *c)
+       18:  175:cipher_keylen(const struct sshcipher *c)
         -:  176:{
-       12:  177:	return (c->key_len);
+       18:  177:	return (c->key_len);
         -:  178:}
         -:  179:
         -:  180:u_int
-        8:  181:cipher_seclen(const struct sshcipher *c)
+       12:  181:cipher_seclen(const struct sshcipher *c)
         -:  182:{
-        8:  183:	if (strcmp("3des-cbc", c->name) == 0)
+       12:  183:	if (strcmp("3des-cbc", c->name) == 0)
     #####:  184:		return 14;
-        8:  185:	return cipher_keylen(c);
+       12:  185:	return cipher_keylen(c);
         -:  186:}
         -:  187:
         -:  188:u_int
-      540:  189:cipher_authlen(const struct sshcipher *c)
+      618:  189:cipher_authlen(const struct sshcipher *c)
         -:  190:{
-      540:  191:	return (c->auth_len);
+      618:  191:	return (c->auth_len);
         -:  192:}
         -:  193:
         -:  194:u_int
-        8:  195:cipher_ivlen(const struct sshcipher *c)
+       12:  195:cipher_ivlen(const struct sshcipher *c)
         -:  196:{
         -:  197:	/*
         -:  198:	 * Default is cipher block size, except for chacha20+poly1305 that
         -:  199:	 * needs no IV. XXX make iv_len == -1 default?
         -:  200:	 */
-       24:  201:	return (c->iv_len != 0 || (c->flags & CFLAG_CHACHAPOLY) != 0) ?
-       16:  202:	    c->iv_len : c->block_size;
+       36:  201:	return (c->iv_len != 0 || (c->flags & CFLAG_CHACHAPOLY) != 0) ?
+       24:  202:	    c->iv_len : c->block_size;
         -:  203:}
         -:  204:
         -:  205:u_int
@@ -217,9 +217,9 @@
         -:  215:}
         -:  216:
         -:  217:u_int
-       86:  218:cipher_ctx_is_plaintext(struct sshcipher_ctx *cc)
+      101:  218:cipher_ctx_is_plaintext(struct sshcipher_ctx *cc)
         -:  219:{
-       86:  220:	return cc->plaintext;
+      101:  220:	return cc->plaintext;
         -:  221:}
         -:  222:
         -:  223:u_int
@@ -241,12 +241,12 @@
         -:  239:}
         -:  240:
         -:  241:const struct sshcipher *
-        6:  242:cipher_by_name(const char *name)
+        9:  242:cipher_by_name(const char *name)
         -:  243:{
         -:  244:	const struct sshcipher *c;
-       70:  245:	for (c = ciphers; c->name != NULL; c++)
-       70:  246:		if (strcmp(c->name, name) == 0)
-        6:  247:			return c;
+      105:  245:	for (c = ciphers; c->name != NULL; c++)
+      105:  246:		if (strcmp(c->name, name) == 0)
+        9:  247:			return c;
     #####:  248:	return NULL;
         -:  249:}
         -:  250:
@@ -309,51 +309,51 @@
         -:  307:}
         -:  308:
         -:  309:const char *
-        4:  310:cipher_warning_message(const struct sshcipher_ctx *cc)
+        6:  310:cipher_warning_message(const struct sshcipher_ctx *cc)
         -:  311:{
-        4:  312:	if (cc == NULL || cc->cipher == NULL)
+        6:  312:	if (cc == NULL || cc->cipher == NULL)
     #####:  313:		return NULL;
-        4:  314:	if (cc->cipher->number == SSH_CIPHER_DES)
+        6:  314:	if (cc->cipher->number == SSH_CIPHER_DES)
     #####:  315:		return "use of DES is strongly discouraged due to "
         -:  316:		    "cryptographic weaknesses";
-        4:  317:	return NULL;
+        6:  317:	return NULL;
         -:  318:}
         -:  319:
         -:  320:int
-        8:  321:cipher_init(struct sshcipher_ctx **ccp, const struct sshcipher *cipher,
+       12:  321:cipher_init(struct sshcipher_ctx **ccp, const struct sshcipher *cipher,
         -:  322:    const u_char *key, u_int keylen, const u_char *iv, u_int ivlen,
         -:  323:    int do_encrypt)
         -:  324:{
-        8:  325:	struct sshcipher_ctx *cc = NULL;
-        8:  326:	int ret = SSH_ERR_INTERNAL_ERROR;
+       12:  325:	struct sshcipher_ctx *cc = NULL;
+       12:  326:	int ret = SSH_ERR_INTERNAL_ERROR;
         -:  327:#ifdef WITH_OPENSSL
         -:  328:	const EVP_CIPHER *type;
         -:  329:	int klen;
         -:  330:	u_char *junk, *discard;
         -:  331:#endif
         -:  332:
-        8:  333:	*ccp = NULL;
-        8:  334:	if ((cc = calloc(sizeof(*cc), 1)) == NULL)
+       12:  333:	*ccp = NULL;
+       12:  334:	if ((cc = calloc(sizeof(*cc), 1)) == NULL)
     #####:  335:		return SSH_ERR_ALLOC_FAIL;
         -:  336:
-        8:  337:	if (cipher->number == SSH_CIPHER_DES) {
+       12:  337:	if (cipher->number == SSH_CIPHER_DES) {
     #####:  338:		if (keylen > 8)
     #####:  339:			keylen = 8;
         -:  340:	}
         -:  341:
-        8:  342:	cc->plaintext = (cipher->number == SSH_CIPHER_NONE);
-        8:  343:	cc->encrypt = do_encrypt;
+       12:  342:	cc->plaintext = (cipher->number == SSH_CIPHER_NONE);
+       12:  343:	cc->encrypt = do_encrypt;
         -:  344:
-        8:  345:	if (keylen < cipher->key_len ||
-        4:  346:	    (iv != NULL && ivlen < cipher_ivlen(cipher))) {
+       12:  345:	if (keylen < cipher->key_len ||
+        6:  346:	    (iv != NULL && ivlen < cipher_ivlen(cipher))) {
     #####:  347:		ret = SSH_ERR_INVALID_ARGUMENT;
     #####:  348:		goto out;
         -:  349:	}
         -:  350:
-        8:  351:	cc->cipher = cipher;
-        8:  352:	if ((cc->cipher->flags & CFLAG_CHACHAPOLY) != 0) {
-        4:  353:		ret = chachapoly_init(&cc->cp_ctx, key, keylen);
-        4:  354:		goto out;
+       12:  351:	cc->cipher = cipher;
+       12:  352:	if ((cc->cipher->flags & CFLAG_CHACHAPOLY) != 0) {
+        6:  353:		ret = chachapoly_init(&cc->cp_ctx, key, keylen);
+        6:  354:		goto out;
         -:  355:	}
         -:  356:#ifndef WITH_OPENSSL
         -:  357:	if ((cc->cipher->flags & CFLAG_AESCTR) != 0) {
@@ -369,35 +369,35 @@
         -:  367:	ret = SSH_ERR_INVALID_ARGUMENT;
         -:  368:	goto out;
         -:  369:#else /* WITH_OPENSSL */
-        4:  370:	type = (*cipher->evptype)();
-        4:  371:	if ((cc->evp = EVP_CIPHER_CTX_new()) == NULL) {
+        6:  370:	type = (*cipher->evptype)();
+        6:  371:	if ((cc->evp = EVP_CIPHER_CTX_new()) == NULL) {
     #####:  372:		ret = SSH_ERR_ALLOC_FAIL;
     #####:  373:		goto out;
         -:  374:	}
-        4:  375:	if (EVP_CipherInit(cc->evp, type, NULL, (u_char *)iv,
+        6:  375:	if (EVP_CipherInit(cc->evp, type, NULL, (u_char *)iv,
         -:  376:	    (do_encrypt == CIPHER_ENCRYPT)) == 0) {
     #####:  377:		ret = SSH_ERR_LIBCRYPTO_ERROR;
     #####:  378:		goto out;
         -:  379:	}
-        4:  380:	if (cipher_authlen(cipher) &&
+        6:  380:	if (cipher_authlen(cipher) &&
     #####:  381:	    !EVP_CIPHER_CTX_ctrl(cc->evp, EVP_CTRL_GCM_SET_IV_FIXED,
         -:  382:	    -1, (u_char *)iv)) {
     #####:  383:		ret = SSH_ERR_LIBCRYPTO_ERROR;
     #####:  384:		goto out;
         -:  385:	}
-        4:  386:	klen = EVP_CIPHER_CTX_key_length(cc->evp);
-        4:  387:	if (klen > 0 && keylen != (u_int)klen) {
+        6:  386:	klen = EVP_CIPHER_CTX_key_length(cc->evp);
+        6:  387:	if (klen > 0 && keylen != (u_int)klen) {
     #####:  388:		if (EVP_CIPHER_CTX_set_key_length(cc->evp, keylen) == 0) {
     #####:  389:			ret = SSH_ERR_LIBCRYPTO_ERROR;
     #####:  390:			goto out;
         -:  391:		}
         -:  392:	}
-        4:  393:	if (EVP_CipherInit(cc->evp, NULL, (u_char *)key, NULL, -1) == 0) {
+        6:  393:	if (EVP_CipherInit(cc->evp, NULL, (u_char *)key, NULL, -1) == 0) {
     #####:  394:		ret = SSH_ERR_LIBCRYPTO_ERROR;
     #####:  395:		goto out;
         -:  396:	}
         -:  397:
-        4:  398:	if (cipher->discard_len > 0) {
+        6:  398:	if (cipher->discard_len > 0) {
     #####:  399:		if ((junk = malloc(cipher->discard_len)) == NULL ||
     #####:  400:		    (discard = malloc(cipher->discard_len)) == NULL) {
     #####:  401:			free(junk);
@@ -413,12 +413,12 @@
     #####:  411:			goto out;
         -:  412:		}
         -:  413:	}
-        4:  414:	ret = 0;
+        6:  414:	ret = 0;
         -:  415:#endif /* WITH_OPENSSL */
         -:  416: out:
-        8:  417:	if (ret == 0) {
+       12:  417:	if (ret == 0) {
         -:  418:		/* success */
-        8:  419:		*ccp = cc;
+       12:  419:		*ccp = cc;
         -:  420:	} else {
     #####:  421:		if (cc != NULL) {
         -:  422:#ifdef WITH_OPENSSL
@@ -429,7 +429,7 @@
     #####:  427:			free(cc);
         -:  428:		}
         -:  429:	}
-        8:  430:	return ret;
+       12:  430:	return ret;
         -:  431:}
         -:  432:
         -:  433:/*
@@ -443,11 +443,11 @@
         -:  441: * Both 'aadlen' and 'authlen' can be set to 0.
         -:  442: */
         -:  443:int
-      224:  444:cipher_crypt(struct sshcipher_ctx *cc, u_int seqnr, u_char *dest,
+      268:  444:cipher_crypt(struct sshcipher_ctx *cc, u_int seqnr, u_char *dest,
         -:  445:   const u_char *src, u_int len, u_int aadlen, u_int authlen)
         -:  446:{
-      224:  447:	if ((cc->cipher->flags & CFLAG_CHACHAPOLY) != 0) {
-      206:  448:		return chachapoly_crypt(&cc->cp_ctx, seqnr, dest, src,
+      268:  447:	if ((cc->cipher->flags & CFLAG_CHACHAPOLY) != 0) {
+      241:  448:		return chachapoly_crypt(&cc->cp_ctx, seqnr, dest, src,
         -:  449:		    len, aadlen, authlen, cc->encrypt);
         -:  450:	}
         -:  451:#ifndef WITH_OPENSSL
@@ -464,7 +464,7 @@
         -:  462:	}
         -:  463:	return SSH_ERR_INVALID_ARGUMENT;
         -:  464:#else
-       18:  465:	if (authlen) {
+       27:  465:	if (authlen) {
         -:  466:		u_char lastiv[1];
         -:  467:
     #####:  468:		if (authlen != cipher_authlen(cc->cipher))
@@ -479,18 +479,18 @@
     #####:  477:		    authlen, (u_char *)src + aadlen + len))
     #####:  478:			return SSH_ERR_LIBCRYPTO_ERROR;
         -:  479:	}
-       18:  480:	if (aadlen) {
+       27:  480:	if (aadlen) {
     #####:  481:		if (authlen &&
     #####:  482:		    EVP_Cipher(cc->evp, NULL, (u_char *)src, aadlen) < 0)
     #####:  483:			return SSH_ERR_LIBCRYPTO_ERROR;
     #####:  484:		memcpy(dest, src, aadlen);
         -:  485:	}
-       18:  486:	if (len % cc->cipher->block_size)
+       27:  486:	if (len % cc->cipher->block_size)
     #####:  487:		return SSH_ERR_INVALID_ARGUMENT;
-       18:  488:	if (EVP_Cipher(cc->evp, dest + aadlen, (u_char *)src + aadlen,
+       27:  488:	if (EVP_Cipher(cc->evp, dest + aadlen, (u_char *)src + aadlen,
         -:  489:	    len) < 0)
     #####:  490:		return SSH_ERR_LIBCRYPTO_ERROR;
-       18:  491:	if (authlen) {
+       27:  491:	if (authlen) {
         -:  492:		/* compute tag (on encrypt) or verify tag (on decrypt) */
     #####:  493:		if (EVP_Cipher(cc->evp, NULL, NULL, 0) < 0)
     #####:  494:			return cc->encrypt ?
@@ -500,17 +500,17 @@
     #####:  498:		    authlen, dest + aadlen + len))
     #####:  499:			return SSH_ERR_LIBCRYPTO_ERROR;
         -:  500:	}
-       18:  501:	return 0;
+       27:  501:	return 0;
         -:  502:#endif
         -:  503:}
         -:  504:
         -:  505:/* Extract the packet length, including any decryption necessary beforehand */
         -:  506:int
-      442:  507:cipher_get_length(struct sshcipher_ctx *cc, u_int *plenp, u_int seqnr,
+      499:  507:cipher_get_length(struct sshcipher_ctx *cc, u_int *plenp, u_int seqnr,
         -:  508:    const u_char *cp, u_int len)
         -:  509:{
-      442:  510:	if ((cc->cipher->flags & CFLAG_CHACHAPOLY) != 0)
-      442:  511:		return chachapoly_get_length(&cc->cp_ctx, plenp, seqnr,
+      499:  510:	if ((cc->cipher->flags & CFLAG_CHACHAPOLY) != 0)
+      499:  511:		return chachapoly_get_length(&cc->cp_ctx, plenp, seqnr,
         -:  512:		    cp, len);
     #####:  513:	if (len < 4)
     #####:  514:		return SSH_ERR_MESSAGE_INCOMPLETE;
@@ -519,22 +519,22 @@
         -:  517:}
         -:  518:
         -:  519:void
-        6:  520:cipher_free(struct sshcipher_ctx *cc)
+        9:  520:cipher_free(struct sshcipher_ctx *cc)
         -:  521:{
-        6:  522:	if (cc == NULL)
-        8:  523:		return;
-        4:  524:	if ((cc->cipher->flags & CFLAG_CHACHAPOLY) != 0)
-        4:  525:		explicit_bzero(&cc->cp_ctx, sizeof(cc->cp_ctx));
+        9:  522:	if (cc == NULL)
+       12:  523:		return;
+        6:  524:	if ((cc->cipher->flags & CFLAG_CHACHAPOLY) != 0)
+        6:  525:		explicit_bzero(&cc->cp_ctx, sizeof(cc->cp_ctx));
     #####:  526:	else if ((cc->cipher->flags & CFLAG_AESCTR) != 0)
     #####:  527:		explicit_bzero(&cc->ac_ctx, sizeof(cc->ac_ctx));
         -:  528:#ifdef WITH_OPENSSL
-        4:  529:	if (cc->evp != NULL) {
+        6:  529:	if (cc->evp != NULL) {
     #####:  530:		EVP_CIPHER_CTX_free(cc->evp);
     #####:  531:		cc->evp = NULL;
         -:  532:	}
         -:  533:#endif
-        4:  534:	explicit_bzero(cc, sizeof(*cc));
-        4:  535:	free(cc);
+        6:  534:	explicit_bzero(cc, sizeof(*cc));
+        6:  535:	free(cc);
         -:  536:}
         -:  537:
         -:  538:/*

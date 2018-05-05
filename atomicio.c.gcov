@@ -51,21 +51,21 @@
         -:   49: * ensure all of data on socket comes through. f==read || f==vwrite
         -:   50: */
         -:   51:size_t
-       98:   52:atomicio6(ssize_t (*f) (int, void *, size_t), int fd, void *_s, size_t n,
+      147:   52:atomicio6(ssize_t (*f) (int, void *, size_t), int fd, void *_s, size_t n,
         -:   53:    int (*cb)(void *, size_t), void *cb_arg)
         -:   54:{
-       98:   55:	char *s = _s;
-       98:   56:	size_t pos = 0;
+      147:   55:	char *s = _s;
+      147:   56:	size_t pos = 0;
         -:   57:	ssize_t res;
         -:   58:	struct pollfd pfd;
         -:   59:
         -:   60:#ifndef BROKEN_READ_COMPARISON
-       98:   61:	pfd.fd = fd;
-       98:   62:	pfd.events = f == read ? POLLIN : POLLOUT;
+      147:   61:	pfd.fd = fd;
+      147:   62:	pfd.events = f == read ? POLLIN : POLLOUT;
         -:   63:#endif
-      292:   64:	while (n > pos) {
-      100:   65:		res = (f) (fd, s + pos, n - pos);
-      100:   66:		switch (res) {
+      438:   64:	while (n > pos) {
+      150:   65:		res = (f) (fd, s + pos, n - pos);
+      150:   66:		switch (res) {
         -:   67:		case -1:
     #####:   68:			if (errno == EINTR)
     #####:   69:				continue;
@@ -77,23 +77,23 @@
         -:   75:			}
     #####:   76:			return 0;
         -:   77:		case 0:
-        4:   78:			errno = EPIPE;
-        4:   79:			return pos;
+        6:   78:			errno = EPIPE;
+        6:   79:			return pos;
         -:   80:		default:
-       96:   81:			pos += (size_t)res;
-       96:   82:			if (cb != NULL && cb(cb_arg, (size_t)res) == -1) {
+      144:   81:			pos += (size_t)res;
+      144:   82:			if (cb != NULL && cb(cb_arg, (size_t)res) == -1) {
     #####:   83:				errno = EINTR;
     #####:   84:				return pos;
         -:   85:			}
         -:   86:		}
         -:   87:	}
-       94:   88:	return pos;
+      141:   88:	return pos;
         -:   89:}
         -:   90:
         -:   91:size_t
-       98:   92:atomicio(ssize_t (*f) (int, void *, size_t), int fd, void *_s, size_t n)
+      147:   92:atomicio(ssize_t (*f) (int, void *, size_t), int fd, void *_s, size_t n)
         -:   93:{
-       98:   94:	return atomicio6(f, fd, _s, n, NULL, NULL);
+      147:   94:	return atomicio6(f, fd, _s, n, NULL, NULL);
         -:   95:}
         -:   96:
         -:   97:/*

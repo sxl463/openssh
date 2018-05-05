@@ -1,0 +1,180 @@
+        -:    0:Source:ttymodes.h
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: ttymodes.h,v 1.15 2016/05/03 09:03:49 dtucker Exp $ */
+        -:    2:
+        -:    3:/*
+        -:    4: * Author: Tatu Ylonen <ylo@cs.hut.fi>
+        -:    5: * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
+        -:    6: *                    All rights reserved
+        -:    7: *
+        -:    8: * As far as I am concerned, the code I have written for this software
+        -:    9: * can be used freely for any purpose.  Any derived versions of this
+        -:   10: * software must be clearly marked as such, and if the derived work is
+        -:   11: * incompatible with the protocol description in the RFC file, it must be
+        -:   12: * called by a name other than "ssh" or "Secure Shell".
+        -:   13: */
+        -:   14:
+        -:   15:/*
+        -:   16: * SSH2 tty modes support by Kevin Steves.
+        -:   17: * Copyright (c) 2001 Kevin Steves.  All rights reserved.
+        -:   18: *
+        -:   19: * Redistribution and use in source and binary forms, with or without
+        -:   20: * modification, are permitted provided that the following conditions
+        -:   21: * are met:
+        -:   22: * 1. Redistributions of source code must retain the above copyright
+        -:   23: *    notice, this list of conditions and the following disclaimer.
+        -:   24: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   25: *    notice, this list of conditions and the following disclaimer in the
+        -:   26: *    documentation and/or other materials provided with the distribution.
+        -:   27: *
+        -:   28: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   29: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   30: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   31: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   32: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   33: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   34: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   35: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   36: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   37: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   38: */
+        -:   39:
+        -:   40:/*
+        -:   41: * SSH1:
+        -:   42: * The tty mode description is a stream of bytes.  The stream consists of
+        -:   43: * opcode-arguments pairs.  It is terminated by opcode TTY_OP_END (0).
+        -:   44: * Opcodes 1-127 have one-byte arguments.  Opcodes 128-159 have integer
+        -:   45: * arguments.  Opcodes 160-255 are not yet defined, and cause parsing to
+        -:   46: * stop (they should only be used after any other data).
+        -:   47: *
+        -:   48: * SSH2:
+        -:   49: * Differences between SSH1 and SSH2 terminal mode encoding include:
+        -:   50: * 1. Encoded terminal modes are represented as a string, and a stream
+        -:   51: *    of bytes within that string.
+        -:   52: * 2. Opcode arguments are uint32 (1-159); 160-255 remain undefined.
+        -:   53: * 3. The values for TTY_OP_ISPEED and TTY_OP_OSPEED are different;
+        -:   54: *    128 and 129 vs. 192 and 193 respectively.
+        -:   55: *
+        -:   56: * The client puts in the stream any modes it knows about, and the
+        -:   57: * server ignores any modes it does not know about.  This allows some degree
+        -:   58: * of machine-independence, at least between systems that use a posix-like
+        -:   59: * tty interface.  The protocol can support other systems as well, but might
+        -:   60: * require reimplementing as mode names would likely be different.
+        -:   61: */
+        -:   62:
+        -:   63:/*
+        -:   64: * Some constants and prototypes are defined in packet.h; this file
+        -:   65: * is only intended for including from ttymodes.c.
+        -:   66: */
+        -:   67:
+        -:   68:/* termios macro */
+        -:   69:/* name, op */
+        3:   70:TTYCHAR(VINTR, 1)
+        3:   71:TTYCHAR(VQUIT, 2)
+        3:   72:TTYCHAR(VERASE, 3)
+        -:   73:#if defined(VKILL)
+        3:   74:TTYCHAR(VKILL, 4)
+        -:   75:#endif /* VKILL */
+        3:   76:TTYCHAR(VEOF, 5)
+        -:   77:#if defined(VEOL)
+        3:   78:TTYCHAR(VEOL, 6)
+        -:   79:#endif /* VEOL */
+        -:   80:#ifdef VEOL2
+        3:   81:TTYCHAR(VEOL2, 7)
+        -:   82:#endif /* VEOL2 */
+        3:   83:TTYCHAR(VSTART, 8)
+        3:   84:TTYCHAR(VSTOP, 9)
+        -:   85:#if defined(VSUSP)
+        3:   86:TTYCHAR(VSUSP, 10)
+        -:   87:#endif /* VSUSP */
+        -:   88:#if defined(VDSUSP)
+        -:   89:TTYCHAR(VDSUSP, 11)
+        -:   90:#endif /* VDSUSP */
+        -:   91:#if defined(VREPRINT)
+        3:   92:TTYCHAR(VREPRINT, 12)
+        -:   93:#endif /* VREPRINT */
+        -:   94:#if defined(VWERASE)
+        3:   95:TTYCHAR(VWERASE, 13)
+        -:   96:#endif /* VWERASE */
+        -:   97:#if defined(VLNEXT)
+        3:   98:TTYCHAR(VLNEXT, 14)
+        -:   99:#endif /* VLNEXT */
+        -:  100:#if defined(VFLUSH)
+        -:  101:TTYCHAR(VFLUSH, 15)
+        -:  102:#endif /* VFLUSH */
+        -:  103:#ifdef VSWTCH
+        -:  104:TTYCHAR(VSWTCH, 16)
+        -:  105:#endif /* VSWTCH */
+        -:  106:#if defined(VSTATUS)
+        -:  107:TTYCHAR(VSTATUS, 17)
+        -:  108:#endif /* VSTATUS */
+        -:  109:#ifdef VDISCARD
+        3:  110:TTYCHAR(VDISCARD, 18)
+        -:  111:#endif /* VDISCARD */
+        -:  112:
+        -:  113:/* name, field, op */
+        3:  114:TTYMODE(IGNPAR,	c_iflag, 30)
+        3:  115:TTYMODE(PARMRK,	c_iflag, 31)
+        3:  116:TTYMODE(INPCK,	c_iflag, 32)
+        3:  117:TTYMODE(ISTRIP,	c_iflag, 33)
+        3:  118:TTYMODE(INLCR,	c_iflag, 34)
+        3:  119:TTYMODE(IGNCR,	c_iflag, 35)
+        3:  120:TTYMODE(ICRNL,	c_iflag, 36)
+        -:  121:#if defined(IUCLC)
+        3:  122:TTYMODE(IUCLC,	c_iflag, 37)
+        -:  123:#endif
+        3:  124:TTYMODE(IXON,	c_iflag, 38)
+        3:  125:TTYMODE(IXANY,	c_iflag, 39)
+        3:  126:TTYMODE(IXOFF,	c_iflag, 40)
+        -:  127:#ifdef IMAXBEL
+        3:  128:TTYMODE(IMAXBEL,c_iflag, 41)
+        -:  129:#endif /* IMAXBEL */
+        -:  130:#ifdef IUTF8
+        3:  131:TTYMODE(IUTF8,  c_iflag, 42)
+        -:  132:#endif /* IUTF8 */
+        -:  133:
+        3:  134:TTYMODE(ISIG,	c_lflag, 50)
+        3:  135:TTYMODE(ICANON,	c_lflag, 51)
+        -:  136:#ifdef XCASE
+        3:  137:TTYMODE(XCASE,	c_lflag, 52)
+        -:  138:#endif
+        3:  139:TTYMODE(ECHO,	c_lflag, 53)
+        3:  140:TTYMODE(ECHOE,	c_lflag, 54)
+        3:  141:TTYMODE(ECHOK,	c_lflag, 55)
+        3:  142:TTYMODE(ECHONL,	c_lflag, 56)
+        3:  143:TTYMODE(NOFLSH,	c_lflag, 57)
+        3:  144:TTYMODE(TOSTOP,	c_lflag, 58)
+        -:  145:#ifdef IEXTEN
+        3:  146:TTYMODE(IEXTEN, c_lflag, 59)
+        -:  147:#endif /* IEXTEN */
+        -:  148:#if defined(ECHOCTL)
+        3:  149:TTYMODE(ECHOCTL,c_lflag, 60)
+        -:  150:#endif /* ECHOCTL */
+        -:  151:#ifdef ECHOKE
+        3:  152:TTYMODE(ECHOKE,	c_lflag, 61)
+        -:  153:#endif /* ECHOKE */
+        -:  154:#if defined(PENDIN)
+        3:  155:TTYMODE(PENDIN,	c_lflag, 62)
+        -:  156:#endif /* PENDIN */
+        -:  157:
+        3:  158:TTYMODE(OPOST,	c_oflag, 70)
+        -:  159:#if defined(OLCUC)
+        3:  160:TTYMODE(OLCUC,	c_oflag, 71)
+        -:  161:#endif
+        -:  162:#ifdef ONLCR
+        3:  163:TTYMODE(ONLCR,	c_oflag, 72)
+        -:  164:#endif
+        -:  165:#ifdef OCRNL
+        3:  166:TTYMODE(OCRNL,	c_oflag, 73)
+        -:  167:#endif
+        -:  168:#ifdef ONOCR
+        3:  169:TTYMODE(ONOCR,	c_oflag, 74)
+        -:  170:#endif
+        -:  171:#ifdef ONLRET
+        3:  172:TTYMODE(ONLRET,	c_oflag, 75)
+        -:  173:#endif
+        -:  174:
+        3:  175:TTYMODE(CS7,	c_cflag, 90)
+        3:  176:TTYMODE(CS8,	c_cflag, 91)
+        3:  177:TTYMODE(PARENB,	c_cflag, 92)
+        3:  178:TTYMODE(PARODD,	c_cflag, 93)
