@@ -1,0 +1,143 @@
+        -:    0:Source:ssherr.c
+        -:    0:Programs:78
+        -:    1:/*	$OpenBSD: ssherr.c,v 1.5 2015/09/13 14:39:16 tim Exp $	*/
+        -:    2:/*
+        -:    3: * Copyright (c) 2011 Damien Miller
+        -:    4: *
+        -:    5: * Permission to use, copy, modify, and distribute this software for any
+        -:    6: * purpose with or without fee is hereby granted, provided that the above
+        -:    7: * copyright notice and this permission notice appear in all copies.
+        -:    8: *
+        -:    9: * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        -:   10: * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        -:   11: * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        -:   12: * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        -:   13: * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        -:   14: * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        -:   15: * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+        -:   16: */
+        -:   17:
+        -:   18:#include <errno.h>
+        -:   19:#include <string.h>
+        -:   20:#include "ssherr.h"
+        -:   21:
+        -:   22:const char *
+        7:   23:ssh_err(int n)
+        -:   24:{
+        7:   25:	switch (n) {
+        -:   26:	case SSH_ERR_SUCCESS:
+    #####:   27:		return "success";
+        -:   28:	case SSH_ERR_INTERNAL_ERROR:
+    #####:   29:		return "unexpected internal error";
+        -:   30:	case SSH_ERR_ALLOC_FAIL:
+    #####:   31:		return "memory allocation failed";
+        -:   32:	case SSH_ERR_MESSAGE_INCOMPLETE:
+    #####:   33:		return "incomplete message";
+        -:   34:	case SSH_ERR_INVALID_FORMAT:
+    #####:   35:		return "invalid format";
+        -:   36:	case SSH_ERR_BIGNUM_IS_NEGATIVE:
+    #####:   37:		return "bignum is negative";
+        -:   38:	case SSH_ERR_STRING_TOO_LARGE:
+    #####:   39:		return "string is too large";
+        -:   40:	case SSH_ERR_BIGNUM_TOO_LARGE:
+    #####:   41:		return "bignum is too large";
+        -:   42:	case SSH_ERR_ECPOINT_TOO_LARGE:
+    #####:   43:		return "elliptic curve point is too large";
+        -:   44:	case SSH_ERR_NO_BUFFER_SPACE:
+    #####:   45:		return "insufficient buffer space";
+        -:   46:	case SSH_ERR_INVALID_ARGUMENT:
+    #####:   47:		return "invalid argument";
+        -:   48:	case SSH_ERR_KEY_BITS_MISMATCH:
+    #####:   49:		return "key bits do not match";
+        -:   50:	case SSH_ERR_EC_CURVE_INVALID:
+    #####:   51:		return "invalid elliptic curve";
+        -:   52:	case SSH_ERR_KEY_TYPE_MISMATCH:
+    #####:   53:		return "key type does not match";
+        -:   54:	case SSH_ERR_KEY_TYPE_UNKNOWN:
+    #####:   55:		return "unknown or unsupported key type";
+        -:   56:	case SSH_ERR_EC_CURVE_MISMATCH:
+    #####:   57:		return "elliptic curve does not match";
+        -:   58:	case SSH_ERR_EXPECTED_CERT:
+    #####:   59:		return "plain key provided where certificate required";
+        -:   60:	case SSH_ERR_KEY_LACKS_CERTBLOB:
+    #####:   61:		return "key lacks certificate data";
+        -:   62:	case SSH_ERR_KEY_CERT_UNKNOWN_TYPE:
+    #####:   63:		return "unknown/unsupported certificate type";
+        -:   64:	case SSH_ERR_KEY_CERT_INVALID_SIGN_KEY:
+    #####:   65:		return "invalid certificate signing key";
+        -:   66:	case SSH_ERR_KEY_INVALID_EC_VALUE:
+    #####:   67:		return "invalid elliptic curve value";
+        -:   68:	case SSH_ERR_SIGNATURE_INVALID:
+    #####:   69:		return "incorrect signature";
+        -:   70:	case SSH_ERR_LIBCRYPTO_ERROR:
+    #####:   71:		return "error in libcrypto";  /* XXX fetch and return */
+        -:   72:	case SSH_ERR_UNEXPECTED_TRAILING_DATA:
+    #####:   73:		return "unexpected bytes remain after decoding";
+        -:   74:	case SSH_ERR_SYSTEM_ERROR:
+        7:   75:		return strerror(errno);
+        -:   76:	case SSH_ERR_KEY_CERT_INVALID:
+    #####:   77:		return "invalid certificate";
+        -:   78:	case SSH_ERR_AGENT_COMMUNICATION:
+    #####:   79:		return "communication with agent failed";
+        -:   80:	case SSH_ERR_AGENT_FAILURE:
+    #####:   81:		return "agent refused operation";
+        -:   82:	case SSH_ERR_DH_GEX_OUT_OF_RANGE:
+    #####:   83:		return "DH GEX group out of range";
+        -:   84:	case SSH_ERR_DISCONNECTED:
+    #####:   85:		return "disconnected";
+        -:   86:	case SSH_ERR_MAC_INVALID:
+    #####:   87:		return "message authentication code incorrect";
+        -:   88:	case SSH_ERR_NO_CIPHER_ALG_MATCH:
+    #####:   89:		return "no matching cipher found";
+        -:   90:	case SSH_ERR_NO_MAC_ALG_MATCH:
+    #####:   91:		return "no matching MAC found";
+        -:   92:	case SSH_ERR_NO_COMPRESS_ALG_MATCH:
+    #####:   93:		return "no matching compression method found";
+        -:   94:	case SSH_ERR_NO_KEX_ALG_MATCH:
+    #####:   95:		return "no matching key exchange method found";
+        -:   96:	case SSH_ERR_NO_HOSTKEY_ALG_MATCH:
+    #####:   97:		return "no matching host key type found";
+        -:   98:	case SSH_ERR_PROTOCOL_MISMATCH:
+    #####:   99:		return "protocol version mismatch";
+        -:  100:	case SSH_ERR_NO_PROTOCOL_VERSION:
+    #####:  101:		return "could not read protocol version";
+        -:  102:	case SSH_ERR_NO_HOSTKEY_LOADED:
+    #####:  103:		return "could not load host key";
+        -:  104:	case SSH_ERR_NEED_REKEY:
+    #####:  105:		return "rekeying not supported by peer";
+        -:  106:	case SSH_ERR_PASSPHRASE_TOO_SHORT:
+    #####:  107:		return "passphrase is too short (minimum five characters)";
+        -:  108:	case SSH_ERR_FILE_CHANGED:
+    #####:  109:		return "file changed while reading";
+        -:  110:	case SSH_ERR_KEY_UNKNOWN_CIPHER:
+    #####:  111:		return "key encrypted using unsupported cipher";
+        -:  112:	case SSH_ERR_KEY_WRONG_PASSPHRASE:
+    #####:  113:		return "incorrect passphrase supplied to decrypt private key";
+        -:  114:	case SSH_ERR_KEY_BAD_PERMISSIONS:
+    #####:  115:		return "bad permissions";
+        -:  116:	case SSH_ERR_KEY_CERT_MISMATCH:
+    #####:  117:		return "certificate does not match key";
+        -:  118:	case SSH_ERR_KEY_NOT_FOUND:
+    #####:  119:		return "key not found";
+        -:  120:	case SSH_ERR_AGENT_NOT_PRESENT:
+    #####:  121:		return "agent not present";
+        -:  122:	case SSH_ERR_AGENT_NO_IDENTITIES:
+    #####:  123:		return "agent contains no identities";
+        -:  124:	case SSH_ERR_BUFFER_READ_ONLY:
+    #####:  125:		return "internal error: buffer is read-only";
+        -:  126:	case SSH_ERR_KRL_BAD_MAGIC:
+    #####:  127:		return "KRL file has invalid magic number";
+        -:  128:	case SSH_ERR_KEY_REVOKED:
+    #####:  129:		return "Key is revoked";
+        -:  130:	case SSH_ERR_CONN_CLOSED:
+    #####:  131:		return "Connection closed";
+        -:  132:	case SSH_ERR_CONN_TIMEOUT:
+    #####:  133:		return "Connection timed out";
+        -:  134:	case SSH_ERR_CONN_CORRUPT:
+    #####:  135:		return "Connection corrupted";
+        -:  136:	case SSH_ERR_PROTOCOL_ERROR:
+    #####:  137:		return "Protocol error";
+        -:  138:	default:
+    #####:  139:		return "unknown error";
+        -:  140:	}
+        -:  141:}

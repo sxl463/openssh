@@ -1,0 +1,358 @@
+        -:    0:Source:ssh-rsa.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: ssh-rsa.c,v 1.60 2016/09/12 23:39:34 djm Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2000, 2003 Markus Friedl <markus@openbsd.org>
+        -:    4: *
+        -:    5: * Permission to use, copy, modify, and distribute this software for any
+        -:    6: * purpose with or without fee is hereby granted, provided that the above
+        -:    7: * copyright notice and this permission notice appear in all copies.
+        -:    8: *
+        -:    9: * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        -:   10: * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        -:   11: * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        -:   12: * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        -:   13: * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        -:   14: * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        -:   15: * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+        -:   16: */
+        -:   17:
+        -:   18:#include "includes.h"
+        -:   19:
+        -:   20:#ifdef WITH_OPENSSL
+        -:   21:
+        -:   22:#include <sys/types.h>
+        -:   23:
+        -:   24:#include <openssl/evp.h>
+        -:   25:#include <openssl/err.h>
+        -:   26:
+        -:   27:#include <stdarg.h>
+        -:   28:#include <string.h>
+        -:   29:
+        -:   30:#include "sshbuf.h"
+        -:   31:#include "compat.h"
+        -:   32:#include "ssherr.h"
+        -:   33:#define SSHKEY_INTERNAL
+        -:   34:#include "sshkey.h"
+        -:   35:#include "digest.h"
+        -:   36:
+        -:   37:static int openssh_RSA_verify(int, u_char *, size_t, u_char *, size_t, RSA *);
+        -:   38:
+        -:   39:static const char *
+        1:   40:rsa_hash_alg_ident(int hash_alg)
+        -:   41:{
+        1:   42:	switch (hash_alg) {
+        -:   43:	case SSH_DIGEST_SHA1:
+        1:   44:		return "ssh-rsa";
+        -:   45:	case SSH_DIGEST_SHA256:
+    #####:   46:		return "rsa-sha2-256";
+        -:   47:	case SSH_DIGEST_SHA512:
+    #####:   48:		return "rsa-sha2-512";
+        -:   49:	}
+    #####:   50:	return NULL;
+        -:   51:}
+        -:   52:
+        -:   53:static int
+        1:   54:rsa_hash_alg_from_ident(const char *ident)
+        -:   55:{
+        1:   56:	if (strcmp(ident, "ssh-rsa") == 0 ||
+    #####:   57:	    strcmp(ident, "ssh-rsa-cert-v01@openssh.com") == 0)
+        1:   58:		return SSH_DIGEST_SHA1;
+    #####:   59:	if (strcmp(ident, "rsa-sha2-256") == 0)
+    #####:   60:		return SSH_DIGEST_SHA256;
+    #####:   61:	if (strcmp(ident, "rsa-sha2-512") == 0)
+    #####:   62:		return SSH_DIGEST_SHA512;
+    #####:   63:	return -1;
+        -:   64:}
+        -:   65:
+        -:   66:static int
+        1:   67:rsa_hash_alg_nid(int type)
+        -:   68:{
+        1:   69:	switch (type) {
+        -:   70:	case SSH_DIGEST_SHA1:
+        1:   71:		return NID_sha1;
+        -:   72:	case SSH_DIGEST_SHA256:
+    #####:   73:		return NID_sha256;
+        -:   74:	case SSH_DIGEST_SHA512:
+    #####:   75:		return NID_sha512;
+        -:   76:	default:
+    #####:   77:		return -1;
+        -:   78:	}
+        -:   79:}
+        -:   80:
+        -:   81:/* RSASSA-PKCS1-v1_5 (PKCS #1 v2.0 signature) with SHA1 */
+        -:   82:int
+        1:   83:ssh_rsa_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
+        -:   84:    const u_char *data, size_t datalen, const char *alg_ident)
+        -:   85:{
+        1:   86:	u_char digest[SSH_DIGEST_MAX_LENGTH], *sig = NULL;
+        -:   87:	size_t slen;
+        -:   88:	u_int dlen, len;
+        1:   89:	int nid, hash_alg, ret = SSH_ERR_INTERNAL_ERROR;
+        1:   90:	struct sshbuf *b = NULL;
+        -:   91:
+        1:   92:	if (lenp != NULL)
+        1:   93:		*lenp = 0;
+        1:   94:	if (sigp != NULL)
+        1:   95:		*sigp = NULL;
+        -:   96:
+        1:   97:	if (alg_ident == NULL || strlen(alg_ident) == 0)
+    #####:   98:		hash_alg = SSH_DIGEST_SHA1;
+        -:   99:	else
+        1:  100:		hash_alg = rsa_hash_alg_from_ident(alg_ident);
+        2:  101:	if (key == NULL || key->rsa == NULL || hash_alg == -1 ||
+        2:  102:	    sshkey_type_plain(key->type) != KEY_RSA ||
+        1:  103:	    BN_num_bits(key->rsa->n) < SSH_RSA_MINIMUM_MODULUS_SIZE)
+    #####:  104:		return SSH_ERR_INVALID_ARGUMENT;
+        1:  105:	slen = RSA_size(key->rsa);
+        1:  106:	if (slen <= 0 || slen > SSHBUF_MAX_BIGNUM)
+    #####:  107:		return SSH_ERR_INVALID_ARGUMENT;
+        -:  108:
+        -:  109:	/* hash the data */
+        1:  110:	nid = rsa_hash_alg_nid(hash_alg);
+        1:  111:	if ((dlen = ssh_digest_bytes(hash_alg)) == 0)
+    #####:  112:		return SSH_ERR_INTERNAL_ERROR;
+        1:  113:	if ((ret = ssh_digest_memory(hash_alg, data, datalen,
+        -:  114:	    digest, sizeof(digest))) != 0)
+    #####:  115:		goto out;
+        -:  116:
+        1:  117:	if ((sig = malloc(slen)) == NULL) {
+    #####:  118:		ret = SSH_ERR_ALLOC_FAIL;
+    #####:  119:		goto out;
+        -:  120:	}
+        -:  121:
+        1:  122:	if (RSA_sign(nid, digest, dlen, sig, &len, key->rsa) != 1) {
+    #####:  123:		ret = SSH_ERR_LIBCRYPTO_ERROR;
+    #####:  124:		goto out;
+        -:  125:	}
+        1:  126:	if (len < slen) {
+    #####:  127:		size_t diff = slen - len;
+    #####:  128:		memmove(sig + diff, sig, len);
+    #####:  129:		explicit_bzero(sig, diff);
+        1:  130:	} else if (len > slen) {
+    #####:  131:		ret = SSH_ERR_INTERNAL_ERROR;
+    #####:  132:		goto out;
+        -:  133:	}
+        -:  134:	/* encode signature */
+        1:  135:	if ((b = sshbuf_new()) == NULL) {
+    #####:  136:		ret = SSH_ERR_ALLOC_FAIL;
+    #####:  137:		goto out;
+        -:  138:	}
+        1:  139:	if ((ret = sshbuf_put_cstring(b, rsa_hash_alg_ident(hash_alg))) != 0 ||
+        -:  140:	    (ret = sshbuf_put_string(b, sig, slen)) != 0)
+        -:  141:		goto out;
+        1:  142:	len = sshbuf_len(b);
+        1:  143:	if (sigp != NULL) {
+        1:  144:		if ((*sigp = malloc(len)) == NULL) {
+    #####:  145:			ret = SSH_ERR_ALLOC_FAIL;
+    #####:  146:			goto out;
+        -:  147:		}
+        1:  148:		memcpy(*sigp, sshbuf_ptr(b), len);
+        -:  149:	}
+        1:  150:	if (lenp != NULL)
+        1:  151:		*lenp = len;
+        1:  152:	ret = 0;
+        -:  153: out:
+        1:  154:	explicit_bzero(digest, sizeof(digest));
+        1:  155:	if (sig != NULL) {
+        1:  156:		explicit_bzero(sig, slen);
+        1:  157:		free(sig);
+        -:  158:	}
+        1:  159:	sshbuf_free(b);
+        1:  160:	return ret;
+        -:  161:}
+        -:  162:
+        -:  163:int
+    #####:  164:ssh_rsa_verify(const struct sshkey *key,
+        -:  165:    const u_char *sig, size_t siglen, const u_char *data, size_t datalen)
+        -:  166:{
+    #####:  167:	char *ktype = NULL;
+    #####:  168:	int hash_alg, ret = SSH_ERR_INTERNAL_ERROR;
+        -:  169:	size_t len, diff, modlen, dlen;
+    #####:  170:	struct sshbuf *b = NULL;
+    #####:  171:	u_char digest[SSH_DIGEST_MAX_LENGTH], *osigblob, *sigblob = NULL;
+        -:  172:
+    #####:  173:	if (key == NULL || key->rsa == NULL ||
+    #####:  174:	    sshkey_type_plain(key->type) != KEY_RSA ||
+    #####:  175:	    BN_num_bits(key->rsa->n) < SSH_RSA_MINIMUM_MODULUS_SIZE ||
+    #####:  176:	    sig == NULL || siglen == 0)
+    #####:  177:		return SSH_ERR_INVALID_ARGUMENT;
+        -:  178:
+    #####:  179:	if ((b = sshbuf_from(sig, siglen)) == NULL)
+    #####:  180:		return SSH_ERR_ALLOC_FAIL;
+    #####:  181:	if (sshbuf_get_cstring(b, &ktype, NULL) != 0) {
+    #####:  182:		ret = SSH_ERR_INVALID_FORMAT;
+    #####:  183:		goto out;
+        -:  184:	}
+    #####:  185:	if ((hash_alg = rsa_hash_alg_from_ident(ktype)) == -1) {
+    #####:  186:		ret = SSH_ERR_KEY_TYPE_MISMATCH;
+    #####:  187:		goto out;
+        -:  188:	}
+    #####:  189:	if (sshbuf_get_string(b, &sigblob, &len) != 0) {
+    #####:  190:		ret = SSH_ERR_INVALID_FORMAT;
+    #####:  191:		goto out;
+        -:  192:	}
+    #####:  193:	if (sshbuf_len(b) != 0) {
+    #####:  194:		ret = SSH_ERR_UNEXPECTED_TRAILING_DATA;
+    #####:  195:		goto out;
+        -:  196:	}
+        -:  197:	/* RSA_verify expects a signature of RSA_size */
+    #####:  198:	modlen = RSA_size(key->rsa);
+    #####:  199:	if (len > modlen) {
+    #####:  200:		ret = SSH_ERR_KEY_BITS_MISMATCH;
+    #####:  201:		goto out;
+    #####:  202:	} else if (len < modlen) {
+    #####:  203:		diff = modlen - len;
+    #####:  204:		osigblob = sigblob;
+    #####:  205:		if ((sigblob = realloc(sigblob, modlen)) == NULL) {
+    #####:  206:			sigblob = osigblob; /* put it back for clear/free */
+    #####:  207:			ret = SSH_ERR_ALLOC_FAIL;
+    #####:  208:			goto out;
+        -:  209:		}
+    #####:  210:		memmove(sigblob + diff, sigblob, len);
+    #####:  211:		explicit_bzero(sigblob, diff);
+    #####:  212:		len = modlen;
+        -:  213:	}
+    #####:  214:	if ((dlen = ssh_digest_bytes(hash_alg)) == 0) {
+    #####:  215:		ret = SSH_ERR_INTERNAL_ERROR;
+    #####:  216:		goto out;
+        -:  217:	}
+    #####:  218:	if ((ret = ssh_digest_memory(hash_alg, data, datalen,
+        -:  219:	    digest, sizeof(digest))) != 0)
+    #####:  220:		goto out;
+        -:  221:
+    #####:  222:	ret = openssh_RSA_verify(hash_alg, digest, dlen, sigblob, len,
+        -:  223:	    key->rsa);
+        -:  224: out:
+    #####:  225:	if (sigblob != NULL) {
+    #####:  226:		explicit_bzero(sigblob, len);
+    #####:  227:		free(sigblob);
+        -:  228:	}
+    #####:  229:	free(ktype);
+    #####:  230:	sshbuf_free(b);
+    #####:  231:	explicit_bzero(digest, sizeof(digest));
+    #####:  232:	return ret;
+        -:  233:}
+        -:  234:
+        -:  235:/*
+        -:  236: * See:
+        -:  237: * http://www.rsasecurity.com/rsalabs/pkcs/pkcs-1/
+        -:  238: * ftp://ftp.rsasecurity.com/pub/pkcs/pkcs-1/pkcs-1v2-1.asn
+        -:  239: */
+        -:  240:
+        -:  241:/*
+        -:  242: * id-sha1 OBJECT IDENTIFIER ::= { iso(1) identified-organization(3)
+        -:  243: *	oiw(14) secsig(3) algorithms(2) 26 }
+        -:  244: */
+        -:  245:static const u_char id_sha1[] = {
+        -:  246:	0x30, 0x21, /* type Sequence, length 0x21 (33) */
+        -:  247:	0x30, 0x09, /* type Sequence, length 0x09 */
+        -:  248:	0x06, 0x05, /* type OID, length 0x05 */
+        -:  249:	0x2b, 0x0e, 0x03, 0x02, 0x1a, /* id-sha1 OID */
+        -:  250:	0x05, 0x00, /* NULL */
+        -:  251:	0x04, 0x14  /* Octet string, length 0x14 (20), followed by sha1 hash */
+        -:  252:};
+        -:  253:
+        -:  254:/*
+        -:  255: * See http://csrc.nist.gov/groups/ST/crypto_apps_infra/csor/algorithms.html
+        -:  256: * id-sha256 OBJECT IDENTIFIER ::= { joint-iso-itu-t(2) country(16) us(840)
+        -:  257: *      organization(1) gov(101) csor(3) nistAlgorithm(4) hashAlgs(2)
+        -:  258: *      id-sha256(1) }
+        -:  259: */
+        -:  260:static const u_char id_sha256[] = {
+        -:  261:	0x30, 0x31, /* type Sequence, length 0x31 (49) */
+        -:  262:	0x30, 0x0d, /* type Sequence, length 0x0d (13) */
+        -:  263:	0x06, 0x09, /* type OID, length 0x09 */
+        -:  264:	0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, /* id-sha256 */
+        -:  265:	0x05, 0x00, /* NULL */
+        -:  266:	0x04, 0x20  /* Octet string, length 0x20 (32), followed by sha256 hash */
+        -:  267:};
+        -:  268:
+        -:  269:/*
+        -:  270: * See http://csrc.nist.gov/groups/ST/crypto_apps_infra/csor/algorithms.html
+        -:  271: * id-sha512 OBJECT IDENTIFIER ::= { joint-iso-itu-t(2) country(16) us(840)
+        -:  272: *      organization(1) gov(101) csor(3) nistAlgorithm(4) hashAlgs(2)
+        -:  273: *      id-sha256(3) }
+        -:  274: */
+        -:  275:static const u_char id_sha512[] = {
+        -:  276:	0x30, 0x51, /* type Sequence, length 0x51 (81) */
+        -:  277:	0x30, 0x0d, /* type Sequence, length 0x0d (13) */
+        -:  278:	0x06, 0x09, /* type OID, length 0x09 */
+        -:  279:	0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, /* id-sha512 */
+        -:  280:	0x05, 0x00, /* NULL */
+        -:  281:	0x04, 0x40  /* Octet string, length 0x40 (64), followed by sha512 hash */
+        -:  282:};
+        -:  283:
+        -:  284:static int
+    #####:  285:rsa_hash_alg_oid(int hash_alg, const u_char **oidp, size_t *oidlenp)
+        -:  286:{
+    #####:  287:	switch (hash_alg) {
+        -:  288:	case SSH_DIGEST_SHA1:
+    #####:  289:		*oidp = id_sha1;
+    #####:  290:		*oidlenp = sizeof(id_sha1);
+    #####:  291:		break;
+        -:  292:	case SSH_DIGEST_SHA256:
+    #####:  293:		*oidp = id_sha256;
+    #####:  294:		*oidlenp = sizeof(id_sha256);
+    #####:  295:		break;
+        -:  296:	case SSH_DIGEST_SHA512:
+    #####:  297:		*oidp = id_sha512;
+    #####:  298:		*oidlenp = sizeof(id_sha512);
+    #####:  299:		break;
+        -:  300:	default:
+    #####:  301:		return SSH_ERR_INVALID_ARGUMENT;
+        -:  302:	}
+    #####:  303:	return 0;
+        -:  304:}
+        -:  305:
+        -:  306:static int
+    #####:  307:openssh_RSA_verify(int hash_alg, u_char *hash, size_t hashlen,
+        -:  308:    u_char *sigbuf, size_t siglen, RSA *rsa)
+        -:  309:{
+    #####:  310:	size_t rsasize = 0, oidlen = 0, hlen = 0;
+        -:  311:	int ret, len, oidmatch, hashmatch;
+    #####:  312:	const u_char *oid = NULL;
+    #####:  313:	u_char *decrypted = NULL;
+        -:  314:
+    #####:  315:	if ((ret = rsa_hash_alg_oid(hash_alg, &oid, &oidlen)) != 0)
+    #####:  316:		return ret;
+    #####:  317:	ret = SSH_ERR_INTERNAL_ERROR;
+    #####:  318:	hlen = ssh_digest_bytes(hash_alg);
+    #####:  319:	if (hashlen != hlen) {
+    #####:  320:		ret = SSH_ERR_INVALID_ARGUMENT;
+    #####:  321:		goto done;
+        -:  322:	}
+    #####:  323:	rsasize = RSA_size(rsa);
+    #####:  324:	if (rsasize <= 0 || rsasize > SSHBUF_MAX_BIGNUM ||
+    #####:  325:	    siglen == 0 || siglen > rsasize) {
+    #####:  326:		ret = SSH_ERR_INVALID_ARGUMENT;
+    #####:  327:		goto done;
+        -:  328:	}
+    #####:  329:	if ((decrypted = malloc(rsasize)) == NULL) {
+    #####:  330:		ret = SSH_ERR_ALLOC_FAIL;
+    #####:  331:		goto done;
+        -:  332:	}
+    #####:  333:	if ((len = RSA_public_decrypt(siglen, sigbuf, decrypted, rsa,
+        -:  334:	    RSA_PKCS1_PADDING)) < 0) {
+    #####:  335:		ret = SSH_ERR_LIBCRYPTO_ERROR;
+    #####:  336:		goto done;
+        -:  337:	}
+    #####:  338:	if (len < 0 || (size_t)len != hlen + oidlen) {
+    #####:  339:		ret = SSH_ERR_INVALID_FORMAT;
+    #####:  340:		goto done;
+        -:  341:	}
+    #####:  342:	oidmatch = timingsafe_bcmp(decrypted, oid, oidlen) == 0;
+    #####:  343:	hashmatch = timingsafe_bcmp(decrypted + oidlen, hash, hlen) == 0;
+    #####:  344:	if (!oidmatch || !hashmatch) {
+    #####:  345:		ret = SSH_ERR_SIGNATURE_INVALID;
+    #####:  346:		goto done;
+        -:  347:	}
+    #####:  348:	ret = 0;
+        -:  349:done:
+    #####:  350:	if (decrypted) {
+    #####:  351:		explicit_bzero(decrypted, rsasize);
+    #####:  352:		free(decrypted);
+        -:  353:	}
+    #####:  354:	return ret;
+        -:  355:}
+        -:  356:#endif /* WITH_OPENSSL */

@@ -1,0 +1,163 @@
+        -:    0:Source:sshbuf-misc.c
+        -:    0:Programs:78
+        -:    1:/*	$OpenBSD: sshbuf-misc.c,v 1.6 2016/05/02 08:49:03 djm Exp $	*/
+        -:    2:/*
+        -:    3: * Copyright (c) 2011 Damien Miller
+        -:    4: *
+        -:    5: * Permission to use, copy, modify, and distribute this software for any
+        -:    6: * purpose with or without fee is hereby granted, provided that the above
+        -:    7: * copyright notice and this permission notice appear in all copies.
+        -:    8: *
+        -:    9: * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        -:   10: * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        -:   11: * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        -:   12: * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        -:   13: * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        -:   14: * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        -:   15: * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+        -:   16: */
+        -:   17:
+        -:   18:#include "includes.h"
+        -:   19:
+        -:   20:#include <sys/types.h>
+        -:   21:#include <sys/socket.h>
+        -:   22:#include <netinet/in.h>
+        -:   23:#include <errno.h>
+        -:   24:#include <stdlib.h>
+        -:   25:#ifdef HAVE_STDINT_H
+        -:   26:#include <stdint.h>
+        -:   27:#endif
+        -:   28:#include <stdio.h>
+        -:   29:#include <limits.h>
+        -:   30:#include <string.h>
+        -:   31:#include <resolv.h>
+        -:   32:#include <ctype.h>
+        -:   33:
+        -:   34:#include "ssherr.h"
+        -:   35:#define SSHBUF_INTERNAL
+        -:   36:#include "sshbuf.h"
+        -:   37:
+        -:   38:void
+    #####:   39:sshbuf_dump_data(const void *s, size_t len, FILE *f)
+        -:   40:{
+        -:   41:	size_t i, j;
+    #####:   42:	const u_char *p = (const u_char *)s;
+        -:   43:
+    #####:   44:	for (i = 0; i < len; i += 16) {
+    #####:   45:		fprintf(f, "%.4zu: ", i);
+    #####:   46:		for (j = i; j < i + 16; j++) {
+    #####:   47:			if (j < len)
+    #####:   48:				fprintf(f, "%02x ", p[j]);
+        -:   49:			else
+    #####:   50:				fprintf(f, "   ");
+        -:   51:		}
+    #####:   52:		fprintf(f, " ");
+    #####:   53:		for (j = i; j < i + 16; j++) {
+    #####:   54:			if (j < len) {
+    #####:   55:				if  (isascii(p[j]) && isprint(p[j]))
+    #####:   56:					fprintf(f, "%c", p[j]);
+        -:   57:				else
+    #####:   58:					fprintf(f, ".");
+        -:   59:			}
+        -:   60:		}
+    #####:   61:		fprintf(f, "\n");
+        -:   62:	}
+    #####:   63:}
+        -:   64:
+        -:   65:void
+    #####:   66:sshbuf_dump(struct sshbuf *buf, FILE *f)
+        -:   67:{
+    #####:   68:	fprintf(f, "buffer %p len = %zu\n", buf, sshbuf_len(buf));
+    #####:   69:	sshbuf_dump_data(sshbuf_ptr(buf), sshbuf_len(buf), f);
+    #####:   70:}
+        -:   71:
+        -:   72:char *
+    #####:   73:sshbuf_dtob16(struct sshbuf *buf)
+        -:   74:{
+    #####:   75:	size_t i, j, len = sshbuf_len(buf);
+    #####:   76:	const u_char *p = sshbuf_ptr(buf);
+        -:   77:	char *ret;
+    #####:   78:	const char hex[] = "0123456789abcdef";
+        -:   79:
+    #####:   80:	if (len == 0)
+    #####:   81:		return strdup("");
+    #####:   82:	if (SIZE_MAX / 2 <= len || (ret = malloc(len * 2 + 1)) == NULL)
+    #####:   83:		return NULL;
+    #####:   84:	for (i = j = 0; i < len; i++) {
+    #####:   85:		ret[j++] = hex[(p[i] >> 4) & 0xf];
+    #####:   86:		ret[j++] = hex[p[i] & 0xf];
+        -:   87:	}
+    #####:   88:	ret[j] = '\0';
+    #####:   89:	return ret;
+        -:   90:}
+        -:   91:
+        -:   92:char *
+    #####:   93:sshbuf_dtob64(struct sshbuf *buf)
+        -:   94:{
+    #####:   95:	size_t len = sshbuf_len(buf), plen;
+    #####:   96:	const u_char *p = sshbuf_ptr(buf);
+        -:   97:	char *ret;
+        -:   98:	int r;
+        -:   99:
+    #####:  100:	if (len == 0)
+    #####:  101:		return strdup("");
+    #####:  102:	plen = ((len + 2) / 3) * 4 + 1;
+    #####:  103:	if (SIZE_MAX / 2 <= len || (ret = malloc(plen)) == NULL)
+    #####:  104:		return NULL;
+    #####:  105:	if ((r = b64_ntop(p, len, ret, plen)) == -1) {
+    #####:  106:		explicit_bzero(ret, plen);
+    #####:  107:		free(ret);
+    #####:  108:		return NULL;
+        -:  109:	}
+    #####:  110:	return ret;
+        -:  111:}
+        -:  112:
+        -:  113:int
+        3:  114:sshbuf_b64tod(struct sshbuf *buf, const char *b64)
+        -:  115:{
+        3:  116:	size_t plen = strlen(b64);
+        -:  117:	int nlen, r;
+        -:  118:	u_char *p;
+        -:  119:
+        3:  120:	if (plen == 0)
+    #####:  121:		return 0;
+        3:  122:	if ((p = malloc(plen)) == NULL)
+    #####:  123:		return SSH_ERR_ALLOC_FAIL;
+        3:  124:	if ((nlen = b64_pton(b64, p, plen)) < 0) {
+    #####:  125:		explicit_bzero(p, plen);
+    #####:  126:		free(p);
+    #####:  127:		return SSH_ERR_INVALID_FORMAT;
+        -:  128:	}
+        3:  129:	if ((r = sshbuf_put(buf, p, nlen)) < 0) {
+    #####:  130:		explicit_bzero(p, plen);
+    #####:  131:		free(p);
+    #####:  132:		return r;
+        -:  133:	}
+        3:  134:	explicit_bzero(p, plen);
+        3:  135:	free(p);
+        3:  136:	return 0;
+        -:  137:}
+        -:  138:
+        -:  139:char *
+        1:  140:sshbuf_dup_string(struct sshbuf *buf)
+        -:  141:{
+        1:  142:	const u_char *p = NULL, *s = sshbuf_ptr(buf);
+        1:  143:	size_t l = sshbuf_len(buf);
+        -:  144:	char *r;
+        -:  145:
+        1:  146:	if (s == NULL || l > SIZE_MAX)
+    #####:  147:		return NULL;
+        -:  148:	/* accept a nul only as the last character in the buffer */
+        1:  149:	if (l > 0 && (p = memchr(s, '\0', l)) != NULL) {
+    #####:  150:		if (p != s + l - 1)
+    #####:  151:			return NULL;
+    #####:  152:		l--; /* the nul is put back below */
+        -:  153:	}
+        1:  154:	if ((r = malloc(l + 1)) == NULL)
+    #####:  155:		return NULL;
+        1:  156:	if (l > 0)
+        1:  157:		memcpy(r, s, l);
+        1:  158:	r[l] = '\0';
+        1:  159:	return r;
+        -:  160:}
+        -:  161:

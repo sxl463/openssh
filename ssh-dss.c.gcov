@@ -1,0 +1,222 @@
+        -:    0:Source:ssh-dss.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: ssh-dss.c,v 1.35 2016/04/21 06:08:02 djm Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2000 Markus Friedl.  All rights reserved.
+        -:    4: *
+        -:    5: * Redistribution and use in source and binary forms, with or without
+        -:    6: * modification, are permitted provided that the following conditions
+        -:    7: * are met:
+        -:    8: * 1. Redistributions of source code must retain the above copyright
+        -:    9: *    notice, this list of conditions and the following disclaimer.
+        -:   10: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   11: *    notice, this list of conditions and the following disclaimer in the
+        -:   12: *    documentation and/or other materials provided with the distribution.
+        -:   13: *
+        -:   14: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   15: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   16: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   17: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   18: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   19: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   20: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   21: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   22: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   23: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   24: */
+        -:   25:
+        -:   26:#include "includes.h"
+        -:   27:
+        -:   28:#ifdef WITH_OPENSSL
+        -:   29:
+        -:   30:#include <sys/types.h>
+        -:   31:
+        -:   32:#include <openssl/bn.h>
+        -:   33:#include <openssl/dsa.h>
+        -:   34:#include <openssl/evp.h>
+        -:   35:
+        -:   36:#include <stdarg.h>
+        -:   37:#include <string.h>
+        -:   38:
+        -:   39:#include "sshbuf.h"
+        -:   40:#include "compat.h"
+        -:   41:#include "ssherr.h"
+        -:   42:#include "digest.h"
+        -:   43:#define SSHKEY_INTERNAL
+        -:   44:#include "sshkey.h"
+        -:   45:
+        -:   46:#define INTBLOB_LEN	20
+        -:   47:#define SIGBLOB_LEN	(2*INTBLOB_LEN)
+        -:   48:
+        -:   49:int
+    #####:   50:ssh_dss_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
+        -:   51:    const u_char *data, size_t datalen, u_int compat)
+        -:   52:{
+    #####:   53:	DSA_SIG *sig = NULL;
+        -:   54:	u_char digest[SSH_DIGEST_MAX_LENGTH], sigblob[SIGBLOB_LEN];
+    #####:   55:	size_t rlen, slen, len, dlen = ssh_digest_bytes(SSH_DIGEST_SHA1);
+    #####:   56:	struct sshbuf *b = NULL;
+    #####:   57:	int ret = SSH_ERR_INVALID_ARGUMENT;
+        -:   58:
+    #####:   59:	if (lenp != NULL)
+    #####:   60:		*lenp = 0;
+    #####:   61:	if (sigp != NULL)
+    #####:   62:		*sigp = NULL;
+        -:   63:
+    #####:   64:	if (key == NULL || key->dsa == NULL ||
+    #####:   65:	    sshkey_type_plain(key->type) != KEY_DSA)
+    #####:   66:		return SSH_ERR_INVALID_ARGUMENT;
+    #####:   67:	if (dlen == 0)
+    #####:   68:		return SSH_ERR_INTERNAL_ERROR;
+        -:   69:
+    #####:   70:	if ((ret = ssh_digest_memory(SSH_DIGEST_SHA1, data, datalen,
+        -:   71:	    digest, sizeof(digest))) != 0)
+    #####:   72:		goto out;
+        -:   73:
+    #####:   74:	if ((sig = DSA_do_sign(digest, dlen, key->dsa)) == NULL) {
+    #####:   75:		ret = SSH_ERR_LIBCRYPTO_ERROR;
+    #####:   76:		goto out;
+        -:   77:	}
+        -:   78:
+    #####:   79:	rlen = BN_num_bytes(sig->r);
+    #####:   80:	slen = BN_num_bytes(sig->s);
+    #####:   81:	if (rlen > INTBLOB_LEN || slen > INTBLOB_LEN) {
+    #####:   82:		ret = SSH_ERR_INTERNAL_ERROR;
+    #####:   83:		goto out;
+        -:   84:	}
+    #####:   85:	explicit_bzero(sigblob, SIGBLOB_LEN);
+    #####:   86:	BN_bn2bin(sig->r, sigblob + SIGBLOB_LEN - INTBLOB_LEN - rlen);
+    #####:   87:	BN_bn2bin(sig->s, sigblob + SIGBLOB_LEN - slen);
+        -:   88:
+    #####:   89:	if (compat & SSH_BUG_SIGBLOB) {
+    #####:   90:		if (sigp != NULL) {
+    #####:   91:			if ((*sigp = malloc(SIGBLOB_LEN)) == NULL) {
+    #####:   92:				ret = SSH_ERR_ALLOC_FAIL;
+    #####:   93:				goto out;
+        -:   94:			}
+    #####:   95:			memcpy(*sigp, sigblob, SIGBLOB_LEN);
+        -:   96:		}
+    #####:   97:		if (lenp != NULL)
+    #####:   98:			*lenp = SIGBLOB_LEN;
+    #####:   99:		ret = 0;
+        -:  100:	} else {
+        -:  101:		/* ietf-drafts */
+    #####:  102:		if ((b = sshbuf_new()) == NULL) {
+    #####:  103:			ret = SSH_ERR_ALLOC_FAIL;
+    #####:  104:			goto out;
+        -:  105:		}
+    #####:  106:		if ((ret = sshbuf_put_cstring(b, "ssh-dss")) != 0 ||
+        -:  107:		    (ret = sshbuf_put_string(b, sigblob, SIGBLOB_LEN)) != 0)
+        -:  108:			goto out;
+    #####:  109:		len = sshbuf_len(b);
+    #####:  110:		if (sigp != NULL) {
+    #####:  111:			if ((*sigp = malloc(len)) == NULL) {
+    #####:  112:				ret = SSH_ERR_ALLOC_FAIL;
+    #####:  113:				goto out;
+        -:  114:			}
+    #####:  115:			memcpy(*sigp, sshbuf_ptr(b), len);
+        -:  116:		}
+    #####:  117:		if (lenp != NULL)
+    #####:  118:			*lenp = len;
+    #####:  119:		ret = 0;
+        -:  120:	}
+        -:  121: out:
+    #####:  122:	explicit_bzero(digest, sizeof(digest));
+    #####:  123:	if (sig != NULL)
+    #####:  124:		DSA_SIG_free(sig);
+    #####:  125:	sshbuf_free(b);
+    #####:  126:	return ret;
+        -:  127:}
+        -:  128:
+        -:  129:int
+    #####:  130:ssh_dss_verify(const struct sshkey *key,
+        -:  131:    const u_char *signature, size_t signaturelen,
+        -:  132:    const u_char *data, size_t datalen, u_int compat)
+        -:  133:{
+    #####:  134:	DSA_SIG *sig = NULL;
+    #####:  135:	u_char digest[SSH_DIGEST_MAX_LENGTH], *sigblob = NULL;
+    #####:  136:	size_t len, dlen = ssh_digest_bytes(SSH_DIGEST_SHA1);
+    #####:  137:	int ret = SSH_ERR_INTERNAL_ERROR;
+    #####:  138:	struct sshbuf *b = NULL;
+    #####:  139:	char *ktype = NULL;
+        -:  140:
+    #####:  141:	if (key == NULL || key->dsa == NULL ||
+    #####:  142:	    sshkey_type_plain(key->type) != KEY_DSA ||
+    #####:  143:	    signature == NULL || signaturelen == 0)
+    #####:  144:		return SSH_ERR_INVALID_ARGUMENT;
+    #####:  145:	if (dlen == 0)
+    #####:  146:		return SSH_ERR_INTERNAL_ERROR;
+        -:  147:
+        -:  148:	/* fetch signature */
+    #####:  149:	if (compat & SSH_BUG_SIGBLOB) {
+    #####:  150:		if ((sigblob = malloc(signaturelen)) == NULL)
+    #####:  151:			return SSH_ERR_ALLOC_FAIL;
+    #####:  152:		memcpy(sigblob, signature, signaturelen);
+    #####:  153:		len = signaturelen;
+        -:  154:	} else {
+        -:  155:		/* ietf-drafts */
+    #####:  156:		if ((b = sshbuf_from(signature, signaturelen)) == NULL)
+    #####:  157:			return SSH_ERR_ALLOC_FAIL;
+    #####:  158:		if (sshbuf_get_cstring(b, &ktype, NULL) != 0 ||
+    #####:  159:		    sshbuf_get_string(b, &sigblob, &len) != 0) {
+    #####:  160:			ret = SSH_ERR_INVALID_FORMAT;
+    #####:  161:			goto out;
+        -:  162:		}
+    #####:  163:		if (strcmp("ssh-dss", ktype) != 0) {
+    #####:  164:			ret = SSH_ERR_KEY_TYPE_MISMATCH;
+    #####:  165:			goto out;
+        -:  166:		}
+    #####:  167:		if (sshbuf_len(b) != 0) {
+    #####:  168:			ret = SSH_ERR_UNEXPECTED_TRAILING_DATA;
+    #####:  169:			goto out;
+        -:  170:		}
+        -:  171:	}
+        -:  172:
+    #####:  173:	if (len != SIGBLOB_LEN) {
+    #####:  174:		ret = SSH_ERR_INVALID_FORMAT;
+    #####:  175:		goto out;
+        -:  176:	}
+        -:  177:
+        -:  178:	/* parse signature */
+    #####:  179:	if ((sig = DSA_SIG_new()) == NULL ||
+    #####:  180:	    (sig->r = BN_new()) == NULL ||
+    #####:  181:	    (sig->s = BN_new()) == NULL) {
+    #####:  182:		ret = SSH_ERR_ALLOC_FAIL;
+    #####:  183:		goto out;
+        -:  184:	}
+    #####:  185:	if ((BN_bin2bn(sigblob, INTBLOB_LEN, sig->r) == NULL) ||
+    #####:  186:	    (BN_bin2bn(sigblob+ INTBLOB_LEN, INTBLOB_LEN, sig->s) == NULL)) {
+    #####:  187:		ret = SSH_ERR_LIBCRYPTO_ERROR;
+    #####:  188:		goto out;
+        -:  189:	}
+        -:  190:
+        -:  191:	/* sha1 the data */
+    #####:  192:	if ((ret = ssh_digest_memory(SSH_DIGEST_SHA1, data, datalen,
+        -:  193:	    digest, sizeof(digest))) != 0)
+    #####:  194:		goto out;
+        -:  195:
+    #####:  196:	switch (DSA_do_verify(digest, dlen, sig, key->dsa)) {
+        -:  197:	case 1:
+    #####:  198:		ret = 0;
+    #####:  199:		break;
+        -:  200:	case 0:
+    #####:  201:		ret = SSH_ERR_SIGNATURE_INVALID;
+    #####:  202:		goto out;
+        -:  203:	default:
+    #####:  204:		ret = SSH_ERR_LIBCRYPTO_ERROR;
+    #####:  205:		goto out;
+        -:  206:	}
+        -:  207:
+        -:  208: out:
+    #####:  209:	explicit_bzero(digest, sizeof(digest));
+    #####:  210:	if (sig != NULL)
+    #####:  211:		DSA_SIG_free(sig);
+    #####:  212:	sshbuf_free(b);
+    #####:  213:	free(ktype);
+    #####:  214:	if (sigblob != NULL) {
+    #####:  215:		explicit_bzero(sigblob, len);
+    #####:  216:		free(sigblob);
+        -:  217:	}
+    #####:  218:	return ret;
+        -:  219:}
+        -:  220:#endif /* WITH_OPENSSL */

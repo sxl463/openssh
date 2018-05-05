@@ -1,0 +1,121 @@
+        -:    0:Source:cipher-chachapoly.c
+        -:    0:Programs:78
+        -:    1:/*
+        -:    2: * Copyright (c) 2013 Damien Miller <djm@mindrot.org>
+        -:    3: *
+        -:    4: * Permission to use, copy, modify, and distribute this software for any
+        -:    5: * purpose with or without fee is hereby granted, provided that the above
+        -:    6: * copyright notice and this permission notice appear in all copies.
+        -:    7: *
+        -:    8: * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        -:    9: * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        -:   10: * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        -:   11: * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        -:   12: * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        -:   13: * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        -:   14: * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+        -:   15: */
+        -:   16:
+        -:   17:/* $OpenBSD: cipher-chachapoly.c,v 1.8 2016/08/03 05:41:57 djm Exp $ */
+        -:   18:
+        -:   19:#include "includes.h"
+        -:   20:
+        -:   21:#include <sys/types.h>
+        -:   22:#include <stdarg.h> /* needed for log.h */
+        -:   23:#include <string.h>
+        -:   24:#include <stdio.h>  /* needed for misc.h */
+        -:   25:
+        -:   26:#include "log.h"
+        -:   27:#include "sshbuf.h"
+        -:   28:#include "ssherr.h"
+        -:   29:#include "cipher-chachapoly.h"
+        -:   30:
+        -:   31:int
+        2:   32:chachapoly_init(struct chachapoly_ctx *ctx,
+        -:   33:    const u_char *key, u_int keylen)
+        -:   34:{
+        2:   35:	if (keylen != (32 + 32)) /* 2 x 256 bit keys */
+    #####:   36:		return SSH_ERR_INVALID_ARGUMENT;
+        2:   37:	chacha_keysetup(&ctx->main_ctx, key, 256);
+        2:   38:	chacha_keysetup(&ctx->header_ctx, key + 32, 256);
+        2:   39:	return 0;
+        -:   40:}
+        -:   41:
+        -:   42:/*
+        -:   43: * chachapoly_crypt() operates as following:
+        -:   44: * En/decrypt with header key 'aadlen' bytes from 'src', storing result
+        -:   45: * to 'dest'. The ciphertext here is treated as additional authenticated
+        -:   46: * data for MAC calculation.
+        -:   47: * En/decrypt 'len' bytes at offset 'aadlen' from 'src' to 'dest'. Use
+        -:   48: * POLY1305_TAGLEN bytes at offset 'len'+'aadlen' as the authentication
+        -:   49: * tag. This tag is written on encryption and verified on decryption.
+        -:   50: */
+        -:   51:int
+       35:   52:chachapoly_crypt(struct chachapoly_ctx *ctx, u_int seqnr, u_char *dest,
+        -:   53:    const u_char *src, u_int len, u_int aadlen, u_int authlen, int do_encrypt)
+        -:   54:{
+        -:   55:	u_char seqbuf[8];
+       35:   56:	const u_char one[8] = { 1, 0, 0, 0, 0, 0, 0, 0 }; /* NB little-endian */
+        -:   57:	u_char expected_tag[POLY1305_TAGLEN], poly_key[POLY1305_KEYLEN];
+       35:   58:	int r = SSH_ERR_INTERNAL_ERROR;
+        -:   59:
+        -:   60:	/*
+        -:   61:	 * Run ChaCha20 once to generate the Poly1305 key. The IV is the
+        -:   62:	 * packet sequence number.
+        -:   63:	 */
+       35:   64:	memset(poly_key, 0, sizeof(poly_key));
+       35:   65:	POKE_U64(seqbuf, seqnr);
+       35:   66:	chacha_ivsetup(&ctx->main_ctx, seqbuf, NULL);
+       35:   67:	chacha_encrypt_bytes(&ctx->main_ctx,
+        -:   68:	    poly_key, poly_key, sizeof(poly_key));
+        -:   69:
+        -:   70:	/* If decrypting, check tag before anything else */
+       35:   71:	if (!do_encrypt) {
+       20:   72:		const u_char *tag = src + aadlen + len;
+        -:   73:
+       20:   74:		poly1305_auth(expected_tag, src, aadlen + len, poly_key);
+       20:   75:		if (timingsafe_bcmp(expected_tag, tag, POLY1305_TAGLEN) != 0) {
+    #####:   76:			r = SSH_ERR_MAC_INVALID;
+    #####:   77:			goto out;
+        -:   78:		}
+        -:   79:	}
+        -:   80:
+        -:   81:	/* Crypt additional data */
+       35:   82:	if (aadlen) {
+       35:   83:		chacha_ivsetup(&ctx->header_ctx, seqbuf, NULL);
+       35:   84:		chacha_encrypt_bytes(&ctx->header_ctx, src, dest, aadlen);
+        -:   85:	}
+        -:   86:
+        -:   87:	/* Set Chacha's block counter to 1 */
+       35:   88:	chacha_ivsetup(&ctx->main_ctx, seqbuf, one);
+       35:   89:	chacha_encrypt_bytes(&ctx->main_ctx, src + aadlen,
+        -:   90:	    dest + aadlen, len);
+        -:   91:
+        -:   92:	/* If encrypting, calculate and append tag */
+       35:   93:	if (do_encrypt) {
+       15:   94:		poly1305_auth(dest + aadlen + len, dest, aadlen + len,
+        -:   95:		    poly_key);
+        -:   96:	}
+       35:   97:	r = 0;
+        -:   98: out:
+       35:   99:	explicit_bzero(expected_tag, sizeof(expected_tag));
+       35:  100:	explicit_bzero(seqbuf, sizeof(seqbuf));
+       35:  101:	explicit_bzero(poly_key, sizeof(poly_key));
+       35:  102:	return r;
+        -:  103:}
+        -:  104:
+        -:  105:/* Decrypt and extract the encrypted packet length */
+        -:  106:int
+       56:  107:chachapoly_get_length(struct chachapoly_ctx *ctx,
+        -:  108:    u_int *plenp, u_int seqnr, const u_char *cp, u_int len)
+        -:  109:{
+        -:  110:	u_char buf[4], seqbuf[8];
+        -:  111:
+       56:  112:	if (len < 4)
+       36:  113:		return SSH_ERR_MESSAGE_INCOMPLETE;
+       20:  114:	POKE_U64(seqbuf, seqnr);
+       20:  115:	chacha_ivsetup(&ctx->header_ctx, seqbuf, NULL);
+       20:  116:	chacha_encrypt_bytes(&ctx->header_ctx, cp, buf, 4);
+       20:  117:	*plenp = PEEK_U32(buf);
+       20:  118:	return 0;
+        -:  119:}

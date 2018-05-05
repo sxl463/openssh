@@ -1,0 +1,501 @@
+        -:    0:Source:addrmatch.c
+        -:    0:Programs:78
+        -:    1:/*	$OpenBSD: addrmatch.c,v 1.13 2016/09/21 16:55:42 djm Exp $ */
+        -:    2:
+        -:    3:/*
+        -:    4: * Copyright (c) 2004-2008 Damien Miller <djm@mindrot.org>
+        -:    5: *
+        -:    6: * Permission to use, copy, modify, and distribute this software for any
+        -:    7: * purpose with or without fee is hereby granted, provided that the above
+        -:    8: * copyright notice and this permission notice appear in all copies.
+        -:    9: *
+        -:   10: * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        -:   11: * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        -:   12: * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        -:   13: * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        -:   14: * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        -:   15: * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        -:   16: * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+        -:   17: */
+        -:   18:
+        -:   19:#include "includes.h"
+        -:   20:
+        -:   21:#include <sys/types.h>
+        -:   22:#include <sys/socket.h>
+        -:   23:#include <netinet/in.h>
+        -:   24:#include <arpa/inet.h>
+        -:   25:
+        -:   26:#include <netdb.h>
+        -:   27:#include <string.h>
+        -:   28:#include <stdlib.h>
+        -:   29:#include <stdio.h>
+        -:   30:#include <stdarg.h>
+        -:   31:
+        -:   32:#include "match.h"
+        -:   33:#include "log.h"
+        -:   34:
+        -:   35:struct xaddr {
+        -:   36:	sa_family_t	af;
+        -:   37:	union {
+        -:   38:		struct in_addr		v4;
+        -:   39:		struct in6_addr		v6;
+        -:   40:		u_int8_t		addr8[16];
+        -:   41:		u_int32_t		addr32[4];
+        -:   42:	} xa;		    /* 128-bit address */
+        -:   43:	u_int32_t	scope_id;	/* iface scope id for v6 */
+        -:   44:#define v4	xa.v4
+        -:   45:#define v6	xa.v6
+        -:   46:#define addr8	xa.addr8
+        -:   47:#define addr32	xa.addr32
+        -:   48:};
+        -:   49:
+        -:   50:static int
+    #####:   51:addr_unicast_masklen(int af)
+        -:   52:{
+    #####:   53:	switch (af) {
+        -:   54:	case AF_INET:
+    #####:   55:		return 32;
+        -:   56:	case AF_INET6:
+    #####:   57:		return 128;
+        -:   58:	default:
+    #####:   59:		return -1;
+        -:   60:	}
+        -:   61:}
+        -:   62:
+        -:   63:static inline int
+    #####:   64:masklen_valid(int af, u_int masklen)
+        -:   65:{
+    #####:   66:	switch (af) {
+        -:   67:	case AF_INET:
+    #####:   68:		return masklen <= 32 ? 0 : -1;
+        -:   69:	case AF_INET6:
+    #####:   70:		return masklen <= 128 ? 0 : -1;
+        -:   71:	default:
+    #####:   72:		return -1;
+        -:   73:	}
+        -:   74:}
+        -:   75:
+        -:   76:/*
+        -:   77: * Convert struct sockaddr to struct xaddr
+        -:   78: * Returns 0 on success, -1 on failure.
+        -:   79: */
+        -:   80:static int
+    #####:   81:addr_sa_to_xaddr(struct sockaddr *sa, socklen_t slen, struct xaddr *xa)
+        -:   82:{
+    #####:   83:	struct sockaddr_in *in4 = (struct sockaddr_in *)sa;
+    #####:   84:	struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)sa;
+        -:   85:
+    #####:   86:	memset(xa, '\0', sizeof(*xa));
+        -:   87:
+    #####:   88:	switch (sa->sa_family) {
+        -:   89:	case AF_INET:
+    #####:   90:		if (slen < (socklen_t)sizeof(*in4))
+    #####:   91:			return -1;
+    #####:   92:		xa->af = AF_INET;
+    #####:   93:		memcpy(&xa->v4, &in4->sin_addr, sizeof(xa->v4));
+    #####:   94:		break;
+        -:   95:	case AF_INET6:
+    #####:   96:		if (slen < (socklen_t)sizeof(*in6))
+    #####:   97:			return -1;
+    #####:   98:		xa->af = AF_INET6;
+    #####:   99:		memcpy(&xa->v6, &in6->sin6_addr, sizeof(xa->v6));
+        -:  100:#ifdef HAVE_STRUCT_SOCKADDR_IN6_SIN6_SCOPE_ID
+    #####:  101:		xa->scope_id = in6->sin6_scope_id;
+        -:  102:#endif
+    #####:  103:		break;
+        -:  104:	default:
+    #####:  105:		return -1;
+        -:  106:	}
+        -:  107:
+    #####:  108:	return 0;
+        -:  109:}
+        -:  110:
+        -:  111:/*
+        -:  112: * Calculate a netmask of length 'l' for address family 'af' and
+        -:  113: * store it in 'n'.
+        -:  114: * Returns 0 on success, -1 on failure.
+        -:  115: */
+        -:  116:static int
+    #####:  117:addr_netmask(int af, u_int l, struct xaddr *n)
+        -:  118:{
+        -:  119:	int i;
+        -:  120:
+    #####:  121:	if (masklen_valid(af, l) != 0 || n == NULL)
+    #####:  122:		return -1;
+        -:  123:
+    #####:  124:	memset(n, '\0', sizeof(*n));
+    #####:  125:	switch (af) {
+        -:  126:	case AF_INET:
+    #####:  127:		n->af = AF_INET;
+    #####:  128:		if (l == 0)
+    #####:  129:			return 0;
+    #####:  130:		n->v4.s_addr = htonl((0xffffffff << (32 - l)) & 0xffffffff);
+    #####:  131:		return 0;
+        -:  132:	case AF_INET6:
+    #####:  133:		n->af = AF_INET6;
+    #####:  134:		for (i = 0; i < 4 && l >= 32; i++, l -= 32)
+    #####:  135:			n->addr32[i] = 0xffffffffU;
+    #####:  136:		if (i < 4 && l != 0)
+    #####:  137:			n->addr32[i] = htonl((0xffffffff << (32 - l)) &
+        -:  138:			    0xffffffff);
+    #####:  139:		return 0;
+        -:  140:	default:
+    #####:  141:		return -1;
+        -:  142:	}
+        -:  143:}
+        -:  144:
+        -:  145:/*
+        -:  146: * Perform logical AND of addresses 'a' and 'b', storing result in 'dst'.
+        -:  147: * Returns 0 on success, -1 on failure.
+        -:  148: */
+        -:  149:static int
+    #####:  150:addr_and(struct xaddr *dst, const struct xaddr *a, const struct xaddr *b)
+        -:  151:{
+        -:  152:	int i;
+        -:  153:
+    #####:  154:	if (dst == NULL || a == NULL || b == NULL || a->af != b->af)
+    #####:  155:		return -1;
+        -:  156:
+    #####:  157:	memcpy(dst, a, sizeof(*dst));
+    #####:  158:	switch (a->af) {
+        -:  159:	case AF_INET:
+    #####:  160:		dst->v4.s_addr &= b->v4.s_addr;
+    #####:  161:		return 0;
+        -:  162:	case AF_INET6:
+    #####:  163:		dst->scope_id = a->scope_id;
+    #####:  164:		for (i = 0; i < 4; i++)
+    #####:  165:			dst->addr32[i] &= b->addr32[i];
+    #####:  166:		return 0;
+        -:  167:	default:
+    #####:  168:		return -1;
+        -:  169:	}
+        -:  170:}
+        -:  171:
+        -:  172:/*
+        -:  173: * Compare addresses 'a' and 'b'
+        -:  174: * Return 0 if addresses are identical, -1 if (a < b) or 1 if (a > b)
+        -:  175: */
+        -:  176:static int
+    #####:  177:addr_cmp(const struct xaddr *a, const struct xaddr *b)
+        -:  178:{
+        -:  179:	int i;
+        -:  180:
+    #####:  181:	if (a->af != b->af)
+    #####:  182:		return a->af == AF_INET6 ? 1 : -1;
+        -:  183:
+    #####:  184:	switch (a->af) {
+        -:  185:	case AF_INET:
+    #####:  186:		if (a->v4.s_addr == b->v4.s_addr)
+    #####:  187:			return 0;
+    #####:  188:		return ntohl(a->v4.s_addr) > ntohl(b->v4.s_addr) ? 1 : -1;
+        -:  189:	case AF_INET6:
+    #####:  190:		for (i = 0; i < 16; i++)
+    #####:  191:			if (a->addr8[i] - b->addr8[i] != 0)
+    #####:  192:				return a->addr8[i] > b->addr8[i] ? 1 : -1;
+    #####:  193:		if (a->scope_id == b->scope_id)
+    #####:  194:			return 0;
+    #####:  195:		return a->scope_id > b->scope_id ? 1 : -1;
+        -:  196:	default:
+    #####:  197:		return -1;
+        -:  198:	}
+        -:  199:}
+        -:  200:
+        -:  201:/*
+        -:  202: * Parse string address 'p' into 'n'
+        -:  203: * Returns 0 on success, -1 on failure.
+        -:  204: */
+        -:  205:static int
+    #####:  206:addr_pton(const char *p, struct xaddr *n)
+        -:  207:{
+        -:  208:	struct addrinfo hints, *ai;
+        -:  209:
+    #####:  210:	memset(&hints, '\0', sizeof(hints));
+    #####:  211:	hints.ai_flags = AI_NUMERICHOST;
+        -:  212:
+    #####:  213:	if (p == NULL || getaddrinfo(p, NULL, &hints, &ai) != 0)
+    #####:  214:		return -1;
+        -:  215:
+    #####:  216:	if (ai == NULL || ai->ai_addr == NULL)
+    #####:  217:		return -1;
+        -:  218:
+    #####:  219:	if (n != NULL &&
+    #####:  220:	    addr_sa_to_xaddr(ai->ai_addr, ai->ai_addrlen, n) == -1) {
+    #####:  221:		freeaddrinfo(ai);
+    #####:  222:		return -1;
+        -:  223:	}
+        -:  224:
+    #####:  225:	freeaddrinfo(ai);
+    #####:  226:	return 0;
+        -:  227:}
+        -:  228:
+        -:  229:/*
+        -:  230: * Perform bitwise negation of address
+        -:  231: * Returns 0 on success, -1 on failure.
+        -:  232: */
+        -:  233:static int
+    #####:  234:addr_invert(struct xaddr *n)
+        -:  235:{
+        -:  236:	int i;
+        -:  237:
+    #####:  238:	if (n == NULL)
+    #####:  239:		return (-1);
+        -:  240:
+    #####:  241:	switch (n->af) {
+        -:  242:	case AF_INET:
+    #####:  243:		n->v4.s_addr = ~n->v4.s_addr;
+    #####:  244:		return (0);
+        -:  245:	case AF_INET6:
+    #####:  246:		for (i = 0; i < 4; i++)
+    #####:  247:			n->addr32[i] = ~n->addr32[i];
+    #####:  248:		return (0);
+        -:  249:	default:
+    #####:  250:		return (-1);
+        -:  251:	}
+        -:  252:}
+        -:  253:
+        -:  254:/*
+        -:  255: * Calculate a netmask of length 'l' for address family 'af' and
+        -:  256: * store it in 'n'.
+        -:  257: * Returns 0 on success, -1 on failure.
+        -:  258: */
+        -:  259:static int
+    #####:  260:addr_hostmask(int af, u_int l, struct xaddr *n)
+        -:  261:{
+    #####:  262:	if (addr_netmask(af, l, n) == -1 || addr_invert(n) == -1)
+    #####:  263:		return (-1);
+    #####:  264:	return (0);
+        -:  265:}
+        -:  266:
+        -:  267:/*
+        -:  268: * Test whether address 'a' is all zeros (i.e. 0.0.0.0 or ::)
+        -:  269: * Returns 0 on if address is all-zeros, -1 if not all zeros or on failure.
+        -:  270: */
+        -:  271:static int
+    #####:  272:addr_is_all0s(const struct xaddr *a)
+        -:  273:{
+        -:  274:	int i;
+        -:  275:
+    #####:  276:	switch (a->af) {
+        -:  277:	case AF_INET:
+    #####:  278:		return (a->v4.s_addr == 0 ? 0 : -1);
+        -:  279:	case AF_INET6:;
+    #####:  280:		for (i = 0; i < 4; i++)
+    #####:  281:			if (a->addr32[i] != 0)
+    #####:  282:				return (-1);
+    #####:  283:		return (0);
+        -:  284:	default:
+    #####:  285:		return (-1);
+        -:  286:	}
+        -:  287:}
+        -:  288:
+        -:  289:/*
+        -:  290: * Test whether host portion of address 'a', as determined by 'masklen'
+        -:  291: * is all zeros.
+        -:  292: * Returns 0 on if host portion of address is all-zeros,
+        -:  293: * -1 if not all zeros or on failure.
+        -:  294: */
+        -:  295:static int
+    #####:  296:addr_host_is_all0s(const struct xaddr *a, u_int masklen)
+        -:  297:{
+        -:  298:	struct xaddr tmp_addr, tmp_mask, tmp_result;
+        -:  299:
+    #####:  300:	memcpy(&tmp_addr, a, sizeof(tmp_addr));
+    #####:  301:	if (addr_hostmask(a->af, masklen, &tmp_mask) == -1)
+    #####:  302:		return (-1);
+    #####:  303:	if (addr_and(&tmp_result, &tmp_addr, &tmp_mask) == -1)
+    #####:  304:		return (-1);
+    #####:  305:	return (addr_is_all0s(&tmp_result));
+        -:  306:}
+        -:  307:
+        -:  308:/*
+        -:  309: * Parse a CIDR address (x.x.x.x/y or xxxx:yyyy::/z).
+        -:  310: * Return -1 on parse error, -2 on inconsistency or 0 on success.
+        -:  311: */
+        -:  312:static int
+    #####:  313:addr_pton_cidr(const char *p, struct xaddr *n, u_int *l)
+        -:  314:{
+        -:  315:	struct xaddr tmp;
+    #####:  316:	long unsigned int masklen = 999;
+        -:  317:	char addrbuf[64], *mp, *cp;
+        -:  318:
+        -:  319:	/* Don't modify argument */
+    #####:  320:	if (p == NULL || strlcpy(addrbuf, p, sizeof(addrbuf)) >= sizeof(addrbuf))
+    #####:  321:		return -1;
+        -:  322:
+    #####:  323:	if ((mp = strchr(addrbuf, '/')) != NULL) {
+    #####:  324:		*mp = '\0';
+    #####:  325:		mp++;
+    #####:  326:		masklen = strtoul(mp, &cp, 10);
+    #####:  327:		if (*mp == '\0' || *cp != '\0' || masklen > 128)
+    #####:  328:			return -1;
+        -:  329:	}
+        -:  330:
+    #####:  331:	if (addr_pton(addrbuf, &tmp) == -1)
+    #####:  332:		return -1;
+        -:  333:
+    #####:  334:	if (mp == NULL)
+    #####:  335:		masklen = addr_unicast_masklen(tmp.af);
+    #####:  336:	if (masklen_valid(tmp.af, masklen) == -1)
+    #####:  337:		return -2;
+    #####:  338:	if (addr_host_is_all0s(&tmp, masklen) != 0)
+    #####:  339:		return -2;
+        -:  340:
+    #####:  341:	if (n != NULL)
+    #####:  342:		memcpy(n, &tmp, sizeof(*n));
+    #####:  343:	if (l != NULL)
+    #####:  344:		*l = masklen;
+        -:  345:
+    #####:  346:	return 0;
+        -:  347:}
+        -:  348:
+        -:  349:static int
+    #####:  350:addr_netmatch(const struct xaddr *host, const struct xaddr *net, u_int masklen)
+        -:  351:{
+        -:  352:	struct xaddr tmp_mask, tmp_result;
+        -:  353:
+    #####:  354:	if (host->af != net->af)
+    #####:  355:		return -1;
+        -:  356:
+    #####:  357:	if (addr_netmask(host->af, masklen, &tmp_mask) == -1)
+    #####:  358:		return -1;
+    #####:  359:	if (addr_and(&tmp_result, host, &tmp_mask) == -1)
+    #####:  360:		return -1;
+    #####:  361:	return addr_cmp(&tmp_result, net);
+        -:  362:}
+        -:  363:
+        -:  364:/*
+        -:  365: * Match "addr" against list pattern list "_list", which may contain a
+        -:  366: * mix of CIDR addresses and old-school wildcards.
+        -:  367: *
+        -:  368: * If addr is NULL, then no matching is performed, but _list is parsed
+        -:  369: * and checked for well-formedness.
+        -:  370: *
+        -:  371: * Returns 1 on match found (never returned when addr == NULL).
+        -:  372: * Returns 0 on if no match found, or no errors found when addr == NULL.
+        -:  373: * Returns -1 on negated match found (never returned when addr == NULL).
+        -:  374: * Returns -2 on invalid list entry.
+        -:  375: */
+        -:  376:int
+    #####:  377:addr_match_list(const char *addr, const char *_list)
+        -:  378:{
+        -:  379:	char *list, *cp, *o;
+        -:  380:	struct xaddr try_addr, match_addr;
+        -:  381:	u_int masklen, neg;
+    #####:  382:	int ret = 0, r;
+        -:  383:
+    #####:  384:	if (addr != NULL && addr_pton(addr, &try_addr) != 0) {
+    #####:  385:		debug2("%s: couldn't parse address %.100s", __func__, addr);
+    #####:  386:		return 0;
+        -:  387:	}
+    #####:  388:	if ((o = list = strdup(_list)) == NULL)
+    #####:  389:		return -1;
+    #####:  390:	while ((cp = strsep(&list, ",")) != NULL) {
+    #####:  391:		neg = *cp == '!';
+    #####:  392:		if (neg)
+    #####:  393:			cp++;
+    #####:  394:		if (*cp == '\0') {
+    #####:  395:			ret = -2;
+    #####:  396:			break;
+        -:  397:		}
+        -:  398:		/* Prefer CIDR address matching */
+    #####:  399:		r = addr_pton_cidr(cp, &match_addr, &masklen);
+    #####:  400:		if (r == -2) {
+    #####:  401:			debug2("%s: inconsistent mask length for "
+        -:  402:			    "match network \"%.100s\"", __func__, cp);
+    #####:  403:			ret = -2;
+    #####:  404:			break;
+    #####:  405:		} else if (r == 0) {
+    #####:  406:			if (addr != NULL && addr_netmatch(&try_addr,
+        -:  407:                           &match_addr, masklen) == 0) {
+        -:  408: foundit:
+    #####:  409:				if (neg) {
+    #####:  410:					ret = -1;
+    #####:  411:					break;
+        -:  412:				}
+    #####:  413:				ret = 1;
+        -:  414:			}
+    #####:  415:			continue;
+        -:  416:		} else {
+        -:  417:			/* If CIDR parse failed, try wildcard string match */
+    #####:  418:			if (addr != NULL && match_pattern(addr, cp) == 1)
+    #####:  419:				goto foundit;
+        -:  420:		}
+        -:  421:	}
+    #####:  422:	free(o);
+        -:  423:
+    #####:  424:	return ret;
+        -:  425:}
+        -:  426:
+        -:  427:/*
+        -:  428: * Match "addr" against list CIDR list "_list". Lexical wildcards and
+        -:  429: * negation are not supported. If "addr" == NULL, will verify structure
+        -:  430: * of "_list".
+        -:  431: *
+        -:  432: * Returns 1 on match found (never returned when addr == NULL).
+        -:  433: * Returns 0 on if no match found, or no errors found when addr == NULL.
+        -:  434: * Returns -1 on error
+        -:  435: */
+        -:  436:int
+    #####:  437:addr_match_cidr_list(const char *addr, const char *_list)
+        -:  438:{
+        -:  439:	char *list, *cp, *o;
+        -:  440:	struct xaddr try_addr, match_addr;
+        -:  441:	u_int masklen;
+    #####:  442:	int ret = 0, r;
+        -:  443:
+    #####:  444:	if (addr != NULL && addr_pton(addr, &try_addr) != 0) {
+    #####:  445:		debug2("%s: couldn't parse address %.100s", __func__, addr);
+    #####:  446:		return 0;
+        -:  447:	}
+    #####:  448:	if ((o = list = strdup(_list)) == NULL)
+    #####:  449:		return -1;
+    #####:  450:	while ((cp = strsep(&list, ",")) != NULL) {
+    #####:  451:		if (*cp == '\0') {
+    #####:  452:			error("%s: empty entry in list \"%.100s\"",
+        -:  453:			    __func__, o);
+    #####:  454:			ret = -1;
+    #####:  455:			break;
+        -:  456:		}
+        -:  457:
+        -:  458:		/*
+        -:  459:		 * NB. This function is called in pre-auth with untrusted data,
+        -:  460:		 * so be extra paranoid about junk reaching getaddrino (via
+        -:  461:		 * addr_pton_cidr).
+        -:  462:		 */
+        -:  463:
+        -:  464:		/* Stop junk from reaching getaddrinfo. +3 is for masklen */
+    #####:  465:		if (strlen(cp) > INET6_ADDRSTRLEN + 3) {
+    #####:  466:			error("%s: list entry \"%.100s\" too long",
+        -:  467:			    __func__, cp);
+    #####:  468:			ret = -1;
+    #####:  469:			break;
+        -:  470:		}
+        -:  471:#define VALID_CIDR_CHARS "0123456789abcdefABCDEF.:/"
+    #####:  472:		if (strspn(cp, VALID_CIDR_CHARS) != strlen(cp)) {
+    #####:  473:			error("%s: list entry \"%.100s\" contains invalid "
+        -:  474:			    "characters", __func__, cp);
+    #####:  475:			ret = -1;
+        -:  476:		}
+        -:  477:
+        -:  478:		/* Prefer CIDR address matching */
+    #####:  479:		r = addr_pton_cidr(cp, &match_addr, &masklen);
+    #####:  480:		if (r == -1) {
+    #####:  481:			error("Invalid network entry \"%.100s\"", cp);
+    #####:  482:			ret = -1;
+    #####:  483:			break;
+    #####:  484:		} else if (r == -2) {
+    #####:  485:			error("Inconsistent mask length for "
+        -:  486:			    "network \"%.100s\"", cp);
+    #####:  487:			ret = -1;
+    #####:  488:			break;
+    #####:  489:		} else if (r == 0 && addr != NULL) {
+    #####:  490:			if (addr_netmatch(&try_addr, &match_addr,
+        -:  491:			    masklen) == 0)
+    #####:  492:				ret = 1;
+    #####:  493:			continue;
+        -:  494:		}
+        -:  495:	}
+    #####:  496:	free(o);
+        -:  497:
+    #####:  498:	return ret;
+        -:  499:}

@@ -1,0 +1,288 @@
+        -:    0:Source:match.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: match.c,v 1.33 2016/11/06 05:46:37 djm Exp $ */
+        -:    2:/*
+        -:    3: * Author: Tatu Ylonen <ylo@cs.hut.fi>
+        -:    4: * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
+        -:    5: *                    All rights reserved
+        -:    6: * Simple pattern matching, with '*' and '?' as wildcards.
+        -:    7: *
+        -:    8: * As far as I am concerned, the code I have written for this software
+        -:    9: * can be used freely for any purpose.  Any derived versions of this
+        -:   10: * software must be clearly marked as such, and if the derived work is
+        -:   11: * incompatible with the protocol description in the RFC file, it must be
+        -:   12: * called by a name other than "ssh" or "Secure Shell".
+        -:   13: */
+        -:   14:/*
+        -:   15: * Copyright (c) 2000 Markus Friedl.  All rights reserved.
+        -:   16: *
+        -:   17: * Redistribution and use in source and binary forms, with or without
+        -:   18: * modification, are permitted provided that the following conditions
+        -:   19: * are met:
+        -:   20: * 1. Redistributions of source code must retain the above copyright
+        -:   21: *    notice, this list of conditions and the following disclaimer.
+        -:   22: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   23: *    notice, this list of conditions and the following disclaimer in the
+        -:   24: *    documentation and/or other materials provided with the distribution.
+        -:   25: *
+        -:   26: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   27: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   28: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   29: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   30: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   31: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   32: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   33: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   34: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   35: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   36: */
+        -:   37:
+        -:   38:#include "includes.h"
+        -:   39:
+        -:   40:#include <sys/types.h>
+        -:   41:
+        -:   42:#include <ctype.h>
+        -:   43:#include <stdlib.h>
+        -:   44:#include <string.h>
+        -:   45:
+        -:   46:#include "xmalloc.h"
+        -:   47:#include "match.h"
+        -:   48:
+        -:   49:/*
+        -:   50: * Returns true if the given string matches the pattern (which may contain ?
+        -:   51: * and * as wildcards), and zero if it does not match.
+        -:   52: */
+        -:   53:
+        -:   54:int
+      239:   55:match_pattern(const char *s, const char *pattern)
+        -:   56:{
+        -:   57:	for (;;) {
+        -:   58:		/* If at end of pattern, accept if also at end of string. */
+      239:   59:		if (!*pattern)
+        3:   60:			return !*s;
+        -:   61:
+      236:   62:		if (*pattern == '*') {
+        -:   63:			/* Skip the asterisk. */
+        1:   64:			pattern++;
+        -:   65:
+        -:   66:			/* If at end of pattern, accept immediately. */
+        1:   67:			if (!*pattern)
+        1:   68:				return 1;
+        -:   69:
+        -:   70:			/* If next character in pattern is known, optimize. */
+    #####:   71:			if (*pattern != '?' && *pattern != '*') {
+        -:   72:				/*
+        -:   73:				 * Look instances of the next character in
+        -:   74:				 * pattern, and try to match starting from
+        -:   75:				 * those.
+        -:   76:				 */
+    #####:   77:				for (; *s; s++)
+    #####:   78:					if (*s == *pattern &&
+    #####:   79:					    match_pattern(s + 1, pattern + 1))
+    #####:   80:						return 1;
+        -:   81:				/* Failed. */
+    #####:   82:				return 0;
+        -:   83:			}
+        -:   84:			/*
+        -:   85:			 * Move ahead one character at a time and try to
+        -:   86:			 * match at each position.
+        -:   87:			 */
+    #####:   88:			for (; *s; s++)
+    #####:   89:				if (match_pattern(s, pattern))
+    #####:   90:					return 1;
+        -:   91:			/* Failed. */
+    #####:   92:			return 0;
+        -:   93:		}
+        -:   94:		/*
+        -:   95:		 * There must be at least one more character in the string.
+        -:   96:		 * If we are at the end, fail.
+        -:   97:		 */
+      235:   98:		if (!*s)
+        1:   99:			return 0;
+        -:  100:
+        -:  101:		/* Check if the next character of the string is acceptable. */
+      234:  102:		if (*pattern != '?' && *pattern != *s)
+       29:  103:			return 0;
+        -:  104:
+        -:  105:		/* Move to the next character, both in string and in pattern. */
+      205:  106:		s++;
+      205:  107:		pattern++;
+      205:  108:	}
+        -:  109:	/* NOTREACHED */
+        -:  110:}
+        -:  111:
+        -:  112:/*
+        -:  113: * Tries to match the string against the
+        -:  114: * comma-separated sequence of subpatterns (each possibly preceded by ! to
+        -:  115: * indicate negation).  Returns -1 if negation matches, 1 if there is
+        -:  116: * a positive match, 0 if there is no match at all.
+        -:  117: */
+        -:  118:int
+       15:  119:match_pattern_list(const char *string, const char *pattern, int dolower)
+        -:  120:{
+        -:  121:	char sub[1024];
+        -:  122:	int negated;
+        -:  123:	int got_positive;
+       15:  124:	u_int i, subi, len = strlen(pattern);
+        -:  125:
+       15:  126:	got_positive = 0;
+       64:  127:	for (i = 0; i < len;) {
+        -:  128:		/* Check if the subpattern is negated. */
+       34:  129:		if (pattern[i] == '!') {
+    #####:  130:			negated = 1;
+    #####:  131:			i++;
+        -:  132:		} else
+       34:  133:			negated = 0;
+        -:  134:
+        -:  135:		/*
+        -:  136:		 * Extract the subpattern up to a comma or end.  Convert the
+        -:  137:		 * subpattern to lowercase.
+        -:  138:		 */
+      630:  139:		for (subi = 0;
+      581:  140:		    i < len && subi < sizeof(sub) - 1 && pattern[i] != ',';
+      562:  141:		    subi++, i++)
+     1124:  142:			sub[subi] = dolower && isupper((u_char)pattern[i]) ?
+      562:  143:			    tolower((u_char)pattern[i]) : pattern[i];
+        -:  144:		/* If subpattern too long, return failure (no match). */
+       34:  145:		if (subi >= sizeof(sub) - 1)
+    #####:  146:			return 0;
+        -:  147:
+        -:  148:		/* If the subpattern was terminated by a comma, skip the comma. */
+       34:  149:		if (i < len && pattern[i] == ',')
+       19:  150:			i++;
+        -:  151:
+        -:  152:		/* Null-terminate the subpattern. */
+       34:  153:		sub[subi] = '\0';
+        -:  154:
+        -:  155:		/* Try to match the subpattern against the string. */
+       34:  156:		if (match_pattern(string, sub)) {
+        4:  157:			if (negated)
+    #####:  158:				return -1;		/* Negative */
+        -:  159:			else
+        4:  160:				got_positive = 1;	/* Positive */
+        -:  161:		}
+        -:  162:	}
+        -:  163:
+        -:  164:	/*
+        -:  165:	 * Return success if got a positive match.  If there was a negative
+        -:  166:	 * match, we have already returned -1 and never get here.
+        -:  167:	 */
+       15:  168:	return got_positive;
+        -:  169:}
+        -:  170:
+        -:  171:/*
+        -:  172: * Tries to match the host name (which must be in all lowercase) against the
+        -:  173: * comma-separated sequence of subpatterns (each possibly preceded by ! to
+        -:  174: * indicate negation).  Returns -1 if negation matches, 1 if there is
+        -:  175: * a positive match, 0 if there is no match at all.
+        -:  176: */
+        -:  177:int
+        2:  178:match_hostname(const char *host, const char *pattern)
+        -:  179:{
+        2:  180:	return match_pattern_list(host, pattern, 1);
+        -:  181:}
+        -:  182:
+        -:  183:/*
+        -:  184: * returns 0 if we get a negative match for the hostname or the ip
+        -:  185: * or if we get no match at all.  returns -1 on error, or 1 on
+        -:  186: * successful match.
+        -:  187: */
+        -:  188:int
+    #####:  189:match_host_and_ip(const char *host, const char *ipaddr,
+        -:  190:    const char *patterns)
+        -:  191:{
+        -:  192:	int mhost, mip;
+        -:  193:
+    #####:  194:	if ((mip = addr_match_list(ipaddr, patterns)) == -2)
+    #####:  195:		return -1; /* error in ipaddr match */
+    #####:  196:	else if (host == NULL || ipaddr == NULL || mip == -1)
+    #####:  197:		return 0; /* negative ip address match, or testing pattern */
+        -:  198:
+        -:  199:	/* negative hostname match */
+    #####:  200:	if ((mhost = match_hostname(host, patterns)) == -1)
+    #####:  201:		return 0;
+        -:  202:	/* no match at all */
+    #####:  203:	if (mhost == 0 && mip == 0)
+    #####:  204:		return 0;
+    #####:  205:	return 1;
+        -:  206:}
+        -:  207:
+        -:  208:/*
+        -:  209: * Match user, user@host_or_ip, user@host_or_ip_list against pattern.
+        -:  210: * If user, host and ipaddr are all NULL then validate pattern/
+        -:  211: * Returns -1 on invalid pattern, 0 on no match, 1 on match.
+        -:  212: */
+        -:  213:int
+    #####:  214:match_user(const char *user, const char *host, const char *ipaddr,
+        -:  215:    const char *pattern)
+        -:  216:{
+        -:  217:	char *p, *pat;
+        -:  218:	int ret;
+        -:  219:
+        -:  220:	/* test mode */
+    #####:  221:	if (user == NULL && host == NULL && ipaddr == NULL) {
+    #####:  222:		if ((p = strchr(pattern, '@')) != NULL &&
+    #####:  223:		    match_host_and_ip(NULL, NULL, p + 1) < 0)
+    #####:  224:			return -1;
+    #####:  225:		return 0;
+        -:  226:	}
+        -:  227:
+    #####:  228:	if ((p = strchr(pattern,'@')) == NULL)
+    #####:  229:		return match_pattern(user, pattern);
+        -:  230:
+    #####:  231:	pat = xstrdup(pattern);
+    #####:  232:	p = strchr(pat, '@');
+    #####:  233:	*p++ = '\0';
+        -:  234:
+    #####:  235:	if ((ret = match_pattern(user, pat)) == 1)
+    #####:  236:		ret = match_host_and_ip(host, ipaddr, p);
+    #####:  237:	free(pat);
+        -:  238:
+    #####:  239:	return ret;
+        -:  240:}
+        -:  241:
+        -:  242:/*
+        -:  243: * Returns first item from client-list that is also supported by server-list,
+        -:  244: * caller must free the returned string.
+        -:  245: */
+        -:  246:#define	MAX_PROP	40
+        -:  247:#define	SEP	","
+        -:  248:char *
+        8:  249:match_list(const char *client, const char *server, u_int *next)
+        -:  250:{
+        -:  251:	char *sproposals[MAX_PROP];
+        -:  252:	char *c, *s, *p, *ret, *cp, *sp;
+        -:  253:	int i, j, nproposals;
+        -:  254:
+        8:  255:	c = cp = xstrdup(client);
+        8:  256:	s = sp = xstrdup(server);
+        -:  257:
+       67:  258:	for ((p = strsep(&sp, SEP)), i=0; p && *p != '\0';
+       51:  259:	    (p = strsep(&sp, SEP)), i++) {
+       51:  260:		if (i < MAX_PROP)
+       51:  261:			sproposals[i] = p;
+        -:  262:		else
+    #####:  263:			break;
+        -:  264:	}
+        8:  265:	nproposals = i;
+        -:  266:
+       31:  267:	for ((p = strsep(&cp, SEP)), i=0; p && *p != '\0';
+       15:  268:	    (p = strsep(&cp, SEP)), i++) {
+       69:  269:		for (j = 0; j < nproposals; j++) {
+       54:  270:			if (strcmp(p, sproposals[j]) == 0) {
+        7:  271:				ret = xstrdup(p);
+        7:  272:				if (next != NULL)
+        2:  273:					*next = (cp == NULL) ?
+        1:  274:					    strlen(c) : (u_int)(cp - c);
+        7:  275:				free(c);
+        7:  276:				free(s);
+        7:  277:				return ret;
+        -:  278:			}
+        -:  279:		}
+        -:  280:	}
+        1:  281:	if (next != NULL)
+    #####:  282:		*next = strlen(c);
+        1:  283:	free(c);
+        1:  284:	free(s);
+        1:  285:	return NULL;
+        -:  286:}

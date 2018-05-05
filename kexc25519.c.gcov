@@ -1,0 +1,135 @@
+        -:    0:Source:kexc25519.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: kexc25519.c,v 1.10 2016/05/02 08:49:03 djm Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2001, 2013 Markus Friedl.  All rights reserved.
+        -:    4: * Copyright (c) 2010 Damien Miller.  All rights reserved.
+        -:    5: * Copyright (c) 2013 Aris Adamantiadis.  All rights reserved.
+        -:    6: *
+        -:    7: * Redistribution and use in source and binary forms, with or without
+        -:    8: * modification, are permitted provided that the following conditions
+        -:    9: * are met:
+        -:   10: * 1. Redistributions of source code must retain the above copyright
+        -:   11: *    notice, this list of conditions and the following disclaimer.
+        -:   12: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   13: *    notice, this list of conditions and the following disclaimer in the
+        -:   14: *    documentation and/or other materials provided with the distribution.
+        -:   15: *
+        -:   16: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   17: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   18: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   19: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   20: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   21: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   22: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   23: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   24: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   25: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   26: */
+        -:   27:
+        -:   28:#include "includes.h"
+        -:   29:
+        -:   30:#include <sys/types.h>
+        -:   31:
+        -:   32:#include <signal.h>
+        -:   33:#include <string.h>
+        -:   34:
+        -:   35:#include <openssl/bn.h>
+        -:   36:#include <openssl/evp.h>
+        -:   37:
+        -:   38:#include "sshbuf.h"
+        -:   39:#include "ssh2.h"
+        -:   40:#include "sshkey.h"
+        -:   41:#include "cipher.h"
+        -:   42:#include "kex.h"
+        -:   43:#include "log.h"
+        -:   44:#include "digest.h"
+        -:   45:#include "ssherr.h"
+        -:   46:
+        -:   47:extern int crypto_scalarmult_curve25519(u_char a[CURVE25519_SIZE],
+        -:   48:    const u_char b[CURVE25519_SIZE], const u_char c[CURVE25519_SIZE])
+        -:   49:	__attribute__((__bounded__(__minbytes__, 1, CURVE25519_SIZE)))
+        -:   50:	__attribute__((__bounded__(__minbytes__, 2, CURVE25519_SIZE)))
+        -:   51:	__attribute__((__bounded__(__minbytes__, 3, CURVE25519_SIZE)));
+        -:   52:
+        -:   53:void
+        1:   54:kexc25519_keygen(u_char key[CURVE25519_SIZE], u_char pub[CURVE25519_SIZE])
+        -:   55:{
+        -:   56:	static const u_char basepoint[CURVE25519_SIZE] = {9};
+        -:   57:
+        1:   58:	arc4random_buf(key, CURVE25519_SIZE);
+        1:   59:	crypto_scalarmult_curve25519(pub, key, basepoint);
+        1:   60:}
+        -:   61:
+        -:   62:int
+        1:   63:kexc25519_shared_key(const u_char key[CURVE25519_SIZE],
+        -:   64:    const u_char pub[CURVE25519_SIZE], struct sshbuf *out)
+        -:   65:{
+        -:   66:	u_char shared_key[CURVE25519_SIZE];
+        -:   67:	int r;
+        -:   68:
+        -:   69:	/* Check for all-zero public key */
+        1:   70:	explicit_bzero(shared_key, CURVE25519_SIZE);
+        1:   71:	if (timingsafe_bcmp(pub, shared_key, CURVE25519_SIZE) == 0)
+    #####:   72:		return SSH_ERR_KEY_INVALID_EC_VALUE;
+        -:   73:
+        1:   74:	crypto_scalarmult_curve25519(shared_key, key, pub);
+        -:   75:#ifdef DEBUG_KEXECDH
+        -:   76:	dump_digest("shared secret", shared_key, CURVE25519_SIZE);
+        -:   77:#endif
+        1:   78:	sshbuf_reset(out);
+        1:   79:	r = sshbuf_put_bignum2_bytes(out, shared_key, CURVE25519_SIZE);
+        1:   80:	explicit_bzero(shared_key, CURVE25519_SIZE);
+        1:   81:	return r;
+        -:   82:}
+        -:   83:
+        -:   84:int
+        1:   85:kex_c25519_hash(
+        -:   86:    int hash_alg,
+        -:   87:    const char *client_version_string,
+        -:   88:    const char *server_version_string,
+        -:   89:    const u_char *ckexinit, size_t ckexinitlen,
+        -:   90:    const u_char *skexinit, size_t skexinitlen,
+        -:   91:    const u_char *serverhostkeyblob, size_t sbloblen,
+        -:   92:    const u_char client_dh_pub[CURVE25519_SIZE],
+        -:   93:    const u_char server_dh_pub[CURVE25519_SIZE],
+        -:   94:    const u_char *shared_secret, size_t secretlen,
+        -:   95:    u_char *hash, size_t *hashlen)
+        -:   96:{
+        -:   97:	struct sshbuf *b;
+        -:   98:	int r;
+        -:   99:
+        1:  100:	if (*hashlen < ssh_digest_bytes(hash_alg))
+    #####:  101:		return SSH_ERR_INVALID_ARGUMENT;
+        1:  102:	if ((b = sshbuf_new()) == NULL)
+    #####:  103:		return SSH_ERR_ALLOC_FAIL;
+        1:  104:	if ((r = sshbuf_put_cstring(b, client_version_string)) < 0 ||
+        1:  105:	    (r = sshbuf_put_cstring(b, server_version_string)) < 0 ||
+        -:  106:	    /* kexinit messages: fake header: len+SSH2_MSG_KEXINIT */
+        2:  107:	    (r = sshbuf_put_u32(b, ckexinitlen+1)) < 0 ||
+        1:  108:	    (r = sshbuf_put_u8(b, SSH2_MSG_KEXINIT)) < 0 ||
+        1:  109:	    (r = sshbuf_put(b, ckexinit, ckexinitlen)) < 0 ||
+        2:  110:	    (r = sshbuf_put_u32(b, skexinitlen+1)) < 0 ||
+        1:  111:	    (r = sshbuf_put_u8(b, SSH2_MSG_KEXINIT)) < 0 ||
+        1:  112:	    (r = sshbuf_put(b, skexinit, skexinitlen)) < 0 ||
+        1:  113:	    (r = sshbuf_put_string(b, serverhostkeyblob, sbloblen)) < 0 ||
+        1:  114:	    (r = sshbuf_put_string(b, client_dh_pub, CURVE25519_SIZE)) < 0 ||
+        1:  115:	    (r = sshbuf_put_string(b, server_dh_pub, CURVE25519_SIZE)) < 0 ||
+        -:  116:	    (r = sshbuf_put(b, shared_secret, secretlen)) < 0) {
+    #####:  117:		sshbuf_free(b);
+    #####:  118:		return r;
+        -:  119:	}
+        -:  120:#ifdef DEBUG_KEX
+        -:  121:	sshbuf_dump(b, stderr);
+        -:  122:#endif
+        1:  123:	if (ssh_digest_buffer(hash_alg, b, hash, *hashlen) != 0) {
+    #####:  124:		sshbuf_free(b);
+    #####:  125:		return SSH_ERR_LIBCRYPTO_ERROR;
+        -:  126:	}
+        1:  127:	sshbuf_free(b);
+        1:  128:	*hashlen = ssh_digest_bytes(hash_alg);
+        -:  129:#ifdef DEBUG_KEX
+        -:  130:	dump_digest("hash", hash, *hashlen);
+        -:  131:#endif
+        1:  132:	return 0;
+        -:  133:}

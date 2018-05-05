@@ -1,0 +1,73 @@
+        -:    0:Source:platform-pledge.c
+        -:    0:Programs:78
+        -:    1:/*
+        -:    2: * Copyright (c) 2015 Joyent, Inc
+        -:    3: * Author: Alex Wilson <alex.wilson@joyent.com>
+        -:    4: *
+        -:    5: * Permission to use, copy, modify, and distribute this software for any
+        -:    6: * purpose with or without fee is hereby granted, provided that the above
+        -:    7: * copyright notice and this permission notice appear in all copies.
+        -:    8: *
+        -:    9: * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        -:   10: * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        -:   11: * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        -:   12: * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        -:   13: * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        -:   14: * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        -:   15: * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+        -:   16: */
+        -:   17:
+        -:   18:#include "includes.h"
+        -:   19:
+        -:   20:#include <sys/types.h>
+        -:   21:
+        -:   22:#include <stdarg.h>
+        -:   23:#include <unistd.h>
+        -:   24:
+        -:   25:#include "platform.h"
+        -:   26:
+        -:   27:#include "openbsd-compat/openbsd-compat.h"
+        -:   28:
+        -:   29:/*
+        -:   30: * Drop any fine-grained privileges that are not needed for post-startup
+        -:   31: * operation of ssh-agent
+        -:   32: *
+        -:   33: * Should be as close as possible to pledge("stdio cpath unix id proc exec", ...)
+        -:   34: */
+        -:   35:void
+    #####:   36:platform_pledge_agent(void)
+        -:   37:{
+        -:   38:#ifdef USE_SOLARIS_PRIVS
+        -:   39:	/*
+        -:   40:	 * Note: Solaris priv dropping is closer to tame() than pledge(), but
+        -:   41:	 * we will use what we have.
+        -:   42:	 */
+        -:   43:	solaris_drop_privs_root_pinfo_net();
+        -:   44:#endif
+    #####:   45:}
+        -:   46:
+        -:   47:/*
+        -:   48: * Drop any fine-grained privileges that are not needed for post-startup
+        -:   49: * operation of sftp-server
+        -:   50: */
+        -:   51:void
+    #####:   52:platform_pledge_sftp_server(void)
+        -:   53:{
+        -:   54:#ifdef USE_SOLARIS_PRIVS
+        -:   55:	solaris_drop_privs_pinfo_net_fork_exec();
+        -:   56:#endif
+    #####:   57:}
+        -:   58:
+        -:   59:/*
+        -:   60: * Drop any fine-grained privileges that are not needed for the post-startup
+        -:   61: * operation of the SSH client mux
+        -:   62: *
+        -:   63: * Should be as close as possible to pledge("stdio proc tty", ...)
+        -:   64: */
+        -:   65:void
+    #####:   66:platform_pledge_mux(void)
+        -:   67:{
+        -:   68:#ifdef USE_SOLARIS_PRIVS
+        -:   69:	solaris_drop_privs_root_pinfo_net_exec();
+        -:   70:#endif
+    #####:   71:}

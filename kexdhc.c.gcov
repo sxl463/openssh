@@ -1,0 +1,222 @@
+        -:    0:Source:kexdhc.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: kexdhc.c,v 1.19 2016/05/02 10:26:04 djm Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2001 Markus Friedl.  All rights reserved.
+        -:    4: *
+        -:    5: * Redistribution and use in source and binary forms, with or without
+        -:    6: * modification, are permitted provided that the following conditions
+        -:    7: * are met:
+        -:    8: * 1. Redistributions of source code must retain the above copyright
+        -:    9: *    notice, this list of conditions and the following disclaimer.
+        -:   10: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   11: *    notice, this list of conditions and the following disclaimer in the
+        -:   12: *    documentation and/or other materials provided with the distribution.
+        -:   13: *
+        -:   14: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   15: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   16: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   17: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   18: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   19: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   20: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   21: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   22: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   23: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   24: */
+        -:   25:
+        -:   26:#include "includes.h"
+        -:   27:
+        -:   28:#ifdef WITH_OPENSSL
+        -:   29:
+        -:   30:#include <sys/types.h>
+        -:   31:
+        -:   32:#include <openssl/dh.h>
+        -:   33:
+        -:   34:#include <stdarg.h>
+        -:   35:#include <stdio.h>
+        -:   36:#include <string.h>
+        -:   37:#include <signal.h>
+        -:   38:
+        -:   39:#include "sshkey.h"
+        -:   40:#include "cipher.h"
+        -:   41:#include "digest.h"
+        -:   42:#include "kex.h"
+        -:   43:#include "log.h"
+        -:   44:#include "packet.h"
+        -:   45:#include "dh.h"
+        -:   46:#include "ssh2.h"
+        -:   47:#include "dispatch.h"
+        -:   48:#include "compat.h"
+        -:   49:#include "ssherr.h"
+        -:   50:#include "sshbuf.h"
+        -:   51:
+        -:   52:static int input_kex_dh(int, u_int32_t, void *);
+        -:   53:
+        -:   54:int
+    #####:   55:kexdh_client(struct ssh *ssh)
+        -:   56:{
+    #####:   57:	struct kex *kex = ssh->kex;
+        -:   58:	int r;
+        -:   59:
+        -:   60:	/* generate and send 'e', client DH public key */
+    #####:   61:	switch (kex->kex_type) {
+        -:   62:	case KEX_DH_GRP1_SHA1:
+    #####:   63:		kex->dh = dh_new_group1();
+    #####:   64:		break;
+        -:   65:	case KEX_DH_GRP14_SHA1:
+        -:   66:	case KEX_DH_GRP14_SHA256:
+    #####:   67:		kex->dh = dh_new_group14();
+    #####:   68:		break;
+        -:   69:	case KEX_DH_GRP16_SHA512:
+    #####:   70:		kex->dh = dh_new_group16();
+    #####:   71:		break;
+        -:   72:	case KEX_DH_GRP18_SHA512:
+    #####:   73:		kex->dh = dh_new_group18();
+    #####:   74:		break;
+        -:   75:	default:
+    #####:   76:		r = SSH_ERR_INVALID_ARGUMENT;
+    #####:   77:		goto out;
+        -:   78:	}
+    #####:   79:	if (kex->dh == NULL) {
+    #####:   80:		r = SSH_ERR_ALLOC_FAIL;
+    #####:   81:		goto out;
+        -:   82:	}
+    #####:   83:	debug("sending SSH2_MSG_KEXDH_INIT");
+    #####:   84:	if ((r = dh_gen_key(kex->dh, kex->we_need * 8)) != 0 ||
+    #####:   85:	    (r = sshpkt_start(ssh, SSH2_MSG_KEXDH_INIT)) != 0 ||
+    #####:   86:	    (r = sshpkt_put_bignum2(ssh, kex->dh->pub_key)) != 0 ||
+        -:   87:	    (r = sshpkt_send(ssh)) != 0)
+        -:   88:		goto out;
+        -:   89:#ifdef DEBUG_KEXDH
+        -:   90:	DHparams_print_fp(stderr, kex->dh);
+        -:   91:	fprintf(stderr, "pub= ");
+        -:   92:	BN_print_fp(stderr, kex->dh->pub_key);
+        -:   93:	fprintf(stderr, "\n");
+        -:   94:#endif
+    #####:   95:	debug("expecting SSH2_MSG_KEXDH_REPLY");
+    #####:   96:	ssh_dispatch_set(ssh, SSH2_MSG_KEXDH_REPLY, &input_kex_dh);
+    #####:   97:	r = 0;
+        -:   98: out:
+    #####:   99:	return r;
+        -:  100:}
+        -:  101:
+        -:  102:static int
+    #####:  103:input_kex_dh(int type, u_int32_t seq, void *ctxt)
+        -:  104:{
+    #####:  105:	struct ssh *ssh = ctxt;
+    #####:  106:	struct kex *kex = ssh->kex;
+    #####:  107:	BIGNUM *dh_server_pub = NULL, *shared_secret = NULL;
+    #####:  108:	struct sshkey *server_host_key = NULL;
+    #####:  109:	u_char *kbuf = NULL, *server_host_key_blob = NULL, *signature = NULL;
+        -:  110:	u_char hash[SSH_DIGEST_MAX_LENGTH];
+    #####:  111:	size_t klen = 0, slen, sbloblen, hashlen;
+        -:  112:	int kout, r;
+        -:  113:
+    #####:  114:	if (kex->verify_host_key == NULL) {
+    #####:  115:		r = SSH_ERR_INVALID_ARGUMENT;
+    #####:  116:		goto out;
+        -:  117:	}
+        -:  118:	/* key, cert */
+    #####:  119:	if ((r = sshpkt_get_string(ssh, &server_host_key_blob,
+    #####:  120:	    &sbloblen)) != 0 ||
+    #####:  121:	    (r = sshkey_from_blob(server_host_key_blob, sbloblen,
+        -:  122:	    &server_host_key)) != 0)
+        -:  123:		goto out;
+    #####:  124:	if (server_host_key->type != kex->hostkey_type ||
+    #####:  125:	    (kex->hostkey_type == KEY_ECDSA &&
+    #####:  126:	    server_host_key->ecdsa_nid != kex->hostkey_nid)) {
+    #####:  127:		r = SSH_ERR_KEY_TYPE_MISMATCH;
+    #####:  128:		goto out;
+        -:  129:	}
+    #####:  130:	if (kex->verify_host_key(server_host_key, ssh) == -1) {
+    #####:  131:		r = SSH_ERR_SIGNATURE_INVALID;
+    #####:  132:		goto out;
+        -:  133:	}
+        -:  134:	/* DH parameter f, server public DH key */
+    #####:  135:	if ((dh_server_pub = BN_new()) == NULL) {
+    #####:  136:		r = SSH_ERR_ALLOC_FAIL;
+    #####:  137:		goto out;
+        -:  138:	}
+        -:  139:	/* signed H */
+    #####:  140:	if ((r = sshpkt_get_bignum2(ssh, dh_server_pub)) != 0 ||
+    #####:  141:	    (r = sshpkt_get_string(ssh, &signature, &slen)) != 0 ||
+        -:  142:	    (r = sshpkt_get_end(ssh)) != 0)
+        -:  143:		goto out;
+        -:  144:#ifdef DEBUG_KEXDH
+        -:  145:	fprintf(stderr, "dh_server_pub= ");
+        -:  146:	BN_print_fp(stderr, dh_server_pub);
+        -:  147:	fprintf(stderr, "\n");
+        -:  148:	debug("bits %d", BN_num_bits(dh_server_pub));
+        -:  149:#endif
+    #####:  150:	if (!dh_pub_is_valid(kex->dh, dh_server_pub)) {
+    #####:  151:		sshpkt_disconnect(ssh, "bad server public DH value");
+    #####:  152:		r = SSH_ERR_MESSAGE_INCOMPLETE;
+    #####:  153:		goto out;
+        -:  154:	}
+        -:  155:
+    #####:  156:	klen = DH_size(kex->dh);
+    #####:  157:	if ((kbuf = malloc(klen)) == NULL ||
+        -:  158:	    (shared_secret = BN_new()) == NULL) {
+    #####:  159:		r = SSH_ERR_ALLOC_FAIL;
+    #####:  160:		goto out;
+        -:  161:	}
+    #####:  162:	if ((kout = DH_compute_key(kbuf, dh_server_pub, kex->dh)) < 0 ||
+    #####:  163:	    BN_bin2bn(kbuf, kout, shared_secret) == NULL) {
+    #####:  164:		r = SSH_ERR_LIBCRYPTO_ERROR;
+    #####:  165:		goto out;
+        -:  166:	}
+        -:  167:#ifdef DEBUG_KEXDH
+        -:  168:	dump_digest("shared secret", kbuf, kout);
+        -:  169:#endif
+        -:  170:
+        -:  171:	/* calc and verify H */
+    #####:  172:	hashlen = sizeof(hash);
+    #####:  173:	if ((r = kex_dh_hash(
+        -:  174:	    kex->hash_alg,
+    #####:  175:	    kex->client_version_string,
+    #####:  176:	    kex->server_version_string,
+    #####:  177:	    sshbuf_ptr(kex->my), sshbuf_len(kex->my),
+    #####:  178:	    sshbuf_ptr(kex->peer), sshbuf_len(kex->peer),
+        -:  179:	    server_host_key_blob, sbloblen,
+    #####:  180:	    kex->dh->pub_key,
+        -:  181:	    dh_server_pub,
+        -:  182:	    shared_secret,
+        -:  183:	    hash, &hashlen)) != 0)
+    #####:  184:		goto out;
+        -:  185:
+    #####:  186:	if ((r = sshkey_verify(server_host_key, signature, slen, hash, hashlen,
+    #####:  187:	    ssh->compat)) != 0)
+    #####:  188:		goto out;
+        -:  189:
+        -:  190:	/* save session id */
+    #####:  191:	if (kex->session_id == NULL) {
+    #####:  192:		kex->session_id_len = hashlen;
+    #####:  193:		kex->session_id = malloc(kex->session_id_len);
+    #####:  194:		if (kex->session_id == NULL) {
+    #####:  195:			r = SSH_ERR_ALLOC_FAIL;
+    #####:  196:			goto out;
+        -:  197:		}
+    #####:  198:		memcpy(kex->session_id, hash, kex->session_id_len);
+        -:  199:	}
+        -:  200:
+    #####:  201:	if ((r = kex_derive_keys_bn(ssh, hash, hashlen, shared_secret)) == 0)
+    #####:  202:		r = kex_send_newkeys(ssh);
+        -:  203: out:
+    #####:  204:	explicit_bzero(hash, sizeof(hash));
+    #####:  205:	DH_free(kex->dh);
+    #####:  206:	kex->dh = NULL;
+    #####:  207:	if (dh_server_pub)
+    #####:  208:		BN_clear_free(dh_server_pub);
+    #####:  209:	if (kbuf) {
+    #####:  210:		explicit_bzero(kbuf, klen);
+    #####:  211:		free(kbuf);
+        -:  212:	}
+    #####:  213:	if (shared_secret)
+    #####:  214:		BN_clear_free(shared_secret);
+    #####:  215:	sshkey_free(server_host_key);
+    #####:  216:	free(server_host_key_blob);
+    #####:  217:	free(signature);
+    #####:  218:	return r;
+        -:  219:}
+        -:  220:#endif /* WITH_OPENSSL */

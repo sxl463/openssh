@@ -1,0 +1,206 @@
+        -:    0:Source:canohost.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: canohost.c,v 1.73 2016/03/07 19:02:43 djm Exp $ */
+        -:    2:/*
+        -:    3: * Author: Tatu Ylonen <ylo@cs.hut.fi>
+        -:    4: * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
+        -:    5: *                    All rights reserved
+        -:    6: * Functions for returning the canonical host name of the remote site.
+        -:    7: *
+        -:    8: * As far as I am concerned, the code I have written for this software
+        -:    9: * can be used freely for any purpose.  Any derived versions of this
+        -:   10: * software must be clearly marked as such, and if the derived work is
+        -:   11: * incompatible with the protocol description in the RFC file, it must be
+        -:   12: * called by a name other than "ssh" or "Secure Shell".
+        -:   13: */
+        -:   14:
+        -:   15:#include "includes.h"
+        -:   16:
+        -:   17:#include <sys/types.h>
+        -:   18:#include <sys/socket.h>
+        -:   19:#include <sys/un.h>
+        -:   20:
+        -:   21:#include <netinet/in.h>
+        -:   22:#include <arpa/inet.h>
+        -:   23:
+        -:   24:#include <errno.h>
+        -:   25:#include <netdb.h>
+        -:   26:#include <stdio.h>
+        -:   27:#include <stdlib.h>
+        -:   28:#include <string.h>
+        -:   29:#include <stdarg.h>
+        -:   30:#include <unistd.h>
+        -:   31:
+        -:   32:#include "xmalloc.h"
+        -:   33:#include "packet.h"
+        -:   34:#include "log.h"
+        -:   35:#include "canohost.h"
+        -:   36:#include "misc.h"
+        -:   37:
+        -:   38:void
+    #####:   39:ipv64_normalise_mapped(struct sockaddr_storage *addr, socklen_t *len)
+        -:   40:{
+    #####:   41:	struct sockaddr_in6 *a6 = (struct sockaddr_in6 *)addr;
+    #####:   42:	struct sockaddr_in *a4 = (struct sockaddr_in *)addr;
+        -:   43:	struct in_addr inaddr;
+        -:   44:	u_int16_t port;
+        -:   45:
+    #####:   46:	if (addr->ss_family != AF_INET6 ||
+    #####:   47:	    !IN6_IS_ADDR_V4MAPPED(&a6->sin6_addr))
+    #####:   48:		return;
+        -:   49:
+    #####:   50:	debug3("Normalising mapped IPv4 in IPv6 address");
+        -:   51:
+    #####:   52:	memcpy(&inaddr, ((char *)&a6->sin6_addr) + 12, sizeof(inaddr));
+    #####:   53:	port = a6->sin6_port;
+        -:   54:
+    #####:   55:	memset(a4, 0, sizeof(*a4));
+        -:   56:
+    #####:   57:	a4->sin_family = AF_INET;
+    #####:   58:	*len = sizeof(*a4);
+    #####:   59:	memcpy(&a4->sin_addr, &inaddr, sizeof(inaddr));
+    #####:   60:	a4->sin_port = port;
+        -:   61:}
+        -:   62:
+        -:   63:/*
+        -:   64: * Returns the local/remote IP-address/hostname of socket as a string.
+        -:   65: * The returned string must be freed.
+        -:   66: */
+        -:   67:static char *
+        2:   68:get_socket_address(int sock, int remote, int flags)
+        -:   69:{
+        -:   70:	struct sockaddr_storage addr;
+        -:   71:	socklen_t addrlen;
+        -:   72:	char ntop[NI_MAXHOST];
+        -:   73:	int r;
+        -:   74:
+        -:   75:	/* Get IP address of client. */
+        2:   76:	addrlen = sizeof(addr);
+        2:   77:	memset(&addr, 0, sizeof(addr));
+        -:   78:
+        2:   79:	if (remote) {
+        1:   80:		if (getpeername(sock, (struct sockaddr *)&addr, &addrlen) != 0)
+    #####:   81:			return NULL;
+        -:   82:	} else {
+        1:   83:		if (getsockname(sock, (struct sockaddr *)&addr, &addrlen) != 0)
+    #####:   84:			return NULL;
+        -:   85:	}
+        -:   86:
+        -:   87:	/* Work around Linux IPv6 weirdness */
+        2:   88:	if (addr.ss_family == AF_INET6) {
+    #####:   89:		addrlen = sizeof(struct sockaddr_in6);
+    #####:   90:		ipv64_normalise_mapped(&addr, &addrlen);
+        -:   91:	}
+        -:   92:
+        2:   93:	switch (addr.ss_family) {
+        -:   94:	case AF_INET:
+        -:   95:	case AF_INET6:
+        -:   96:		/* Get the address in ascii. */
+        2:   97:		if ((r = getnameinfo((struct sockaddr *)&addr, addrlen, ntop,
+        -:   98:		    sizeof(ntop), NULL, 0, flags)) != 0) {
+    #####:   99:			error("%s: getnameinfo %d failed: %s", __func__,
+        -:  100:			    flags, ssh_gai_strerror(r));
+    #####:  101:			return NULL;
+        -:  102:		}
+        2:  103:		return xstrdup(ntop);
+        -:  104:	case AF_UNIX:
+        -:  105:		/* Get the Unix domain socket path. */
+    #####:  106:		return xstrdup(((struct sockaddr_un *)&addr)->sun_path);
+        -:  107:	default:
+        -:  108:		/* We can't look up remote Unix domain sockets. */
+    #####:  109:		return NULL;
+        -:  110:	}
+        -:  111:}
+        -:  112:
+        -:  113:char *
+        1:  114:get_peer_ipaddr(int sock)
+        -:  115:{
+        -:  116:	char *p;
+        -:  117:
+        1:  118:	if ((p = get_socket_address(sock, 1, NI_NUMERICHOST)) != NULL)
+        1:  119:		return p;
+    #####:  120:	return xstrdup("UNKNOWN");
+        -:  121:}
+        -:  122:
+        -:  123:char *
+        1:  124:get_local_ipaddr(int sock)
+        -:  125:{
+        -:  126:	char *p;
+        -:  127:
+        1:  128:	if ((p = get_socket_address(sock, 0, NI_NUMERICHOST)) != NULL)
+        1:  129:		return p;
+    #####:  130:	return xstrdup("UNKNOWN");
+        -:  131:}
+        -:  132:
+        -:  133:char *
+    #####:  134:get_local_name(int fd)
+        -:  135:{
+        -:  136:	char *host, myname[NI_MAXHOST];
+        -:  137:
+        -:  138:	/* Assume we were passed a socket */
+    #####:  139:	if ((host = get_socket_address(fd, 0, NI_NAMEREQD)) != NULL)
+    #####:  140:		return host;
+        -:  141:
+        -:  142:	/* Handle the case where we were passed a pipe */
+    #####:  143:	if (gethostname(myname, sizeof(myname)) == -1) {
+    #####:  144:		verbose("%s: gethostname: %s", __func__, strerror(errno));
+    #####:  145:		host = xstrdup("UNKNOWN");
+        -:  146:	} else {
+    #####:  147:		host = xstrdup(myname);
+        -:  148:	}
+        -:  149:
+    #####:  150:	return host;
+        -:  151:}
+        -:  152:
+        -:  153:/* Returns the local/remote port for the socket. */
+        -:  154:
+        -:  155:static int
+        2:  156:get_sock_port(int sock, int local)
+        -:  157:{
+        -:  158:	struct sockaddr_storage from;
+        -:  159:	socklen_t fromlen;
+        -:  160:	char strport[NI_MAXSERV];
+        -:  161:	int r;
+        -:  162:
+        -:  163:	/* Get IP address of client. */
+        2:  164:	fromlen = sizeof(from);
+        2:  165:	memset(&from, 0, sizeof(from));
+        2:  166:	if (local) {
+        1:  167:		if (getsockname(sock, (struct sockaddr *)&from, &fromlen) < 0) {
+    #####:  168:			error("getsockname failed: %.100s", strerror(errno));
+    #####:  169:			return 0;
+        -:  170:		}
+        -:  171:	} else {
+        1:  172:		if (getpeername(sock, (struct sockaddr *)&from, &fromlen) < 0) {
+    #####:  173:			debug("getpeername failed: %.100s", strerror(errno));
+    #####:  174:			return -1;
+        -:  175:		}
+        -:  176:	}
+        -:  177:
+        -:  178:	/* Work around Linux IPv6 weirdness */
+        2:  179:	if (from.ss_family == AF_INET6)
+    #####:  180:		fromlen = sizeof(struct sockaddr_in6);
+        -:  181:
+        -:  182:	/* Non-inet sockets don't have a port number. */
+        2:  183:	if (from.ss_family != AF_INET && from.ss_family != AF_INET6)
+    #####:  184:		return 0;
+        -:  185:
+        -:  186:	/* Return port number. */
+        2:  187:	if ((r = getnameinfo((struct sockaddr *)&from, fromlen, NULL, 0,
+        -:  188:	    strport, sizeof(strport), NI_NUMERICSERV)) != 0)
+    #####:  189:		fatal("%s: getnameinfo NI_NUMERICSERV failed: %s", __func__,
+        -:  190:		    ssh_gai_strerror(r));
+        2:  191:	return atoi(strport);
+        -:  192:}
+        -:  193:
+        -:  194:int
+        1:  195:get_peer_port(int sock)
+        -:  196:{
+        1:  197:	return get_sock_port(sock, 0);
+        -:  198:}
+        -:  199:
+        -:  200:int
+        1:  201:get_local_port(int sock)
+        -:  202:{
+        1:  203:	return get_sock_port(sock, 1);
+        -:  204:}

@@ -1,0 +1,102 @@
+        -:    0:Source:kexecdh.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: kexecdh.c,v 1.6 2015/01/19 20:16:15 markus Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2001 Markus Friedl.  All rights reserved.
+        -:    4: * Copyright (c) 2010 Damien Miller.  All rights reserved.
+        -:    5: *
+        -:    6: * Redistribution and use in source and binary forms, with or without
+        -:    7: * modification, are permitted provided that the following conditions
+        -:    8: * are met:
+        -:    9: * 1. Redistributions of source code must retain the above copyright
+        -:   10: *    notice, this list of conditions and the following disclaimer.
+        -:   11: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   12: *    notice, this list of conditions and the following disclaimer in the
+        -:   13: *    documentation and/or other materials provided with the distribution.
+        -:   14: *
+        -:   15: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   16: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   17: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   18: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   19: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   20: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   21: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   22: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   23: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   24: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   25: */
+        -:   26:
+        -:   27:#include "includes.h"
+        -:   28:
+        -:   29:#if defined(WITH_OPENSSL) && defined(OPENSSL_HAS_ECC)
+        -:   30:
+        -:   31:#include <sys/types.h>
+        -:   32:
+        -:   33:#include <signal.h>
+        -:   34:#include <string.h>
+        -:   35:
+        -:   36:#include <openssl/bn.h>
+        -:   37:#include <openssl/evp.h>
+        -:   38:#include <openssl/ec.h>
+        -:   39:#include <openssl/ecdh.h>
+        -:   40:
+        -:   41:#include "ssh2.h"
+        -:   42:#include "sshkey.h"
+        -:   43:#include "cipher.h"
+        -:   44:#include "kex.h"
+        -:   45:#include "sshbuf.h"
+        -:   46:#include "digest.h"
+        -:   47:#include "ssherr.h"
+        -:   48:
+        -:   49:int
+    #####:   50:kex_ecdh_hash(
+        -:   51:    int hash_alg,
+        -:   52:    const EC_GROUP *ec_group,
+        -:   53:    const char *client_version_string,
+        -:   54:    const char *server_version_string,
+        -:   55:    const u_char *ckexinit, size_t ckexinitlen,
+        -:   56:    const u_char *skexinit, size_t skexinitlen,
+        -:   57:    const u_char *serverhostkeyblob, size_t sbloblen,
+        -:   58:    const EC_POINT *client_dh_pub,
+        -:   59:    const EC_POINT *server_dh_pub,
+        -:   60:    const BIGNUM *shared_secret,
+        -:   61:    u_char *hash, size_t *hashlen)
+        -:   62:{
+        -:   63:	struct sshbuf *b;
+        -:   64:	int r;
+        -:   65:
+    #####:   66:	if (*hashlen < ssh_digest_bytes(hash_alg))
+    #####:   67:		return SSH_ERR_INVALID_ARGUMENT;
+    #####:   68:	if ((b = sshbuf_new()) == NULL)
+    #####:   69:		return SSH_ERR_ALLOC_FAIL;
+    #####:   70:	if ((r = sshbuf_put_cstring(b, client_version_string)) != 0 ||
+    #####:   71:	    (r = sshbuf_put_cstring(b, server_version_string)) != 0 ||
+        -:   72:	    /* kexinit messages: fake header: len+SSH2_MSG_KEXINIT */
+    #####:   73:	    (r = sshbuf_put_u32(b, ckexinitlen+1)) != 0 ||
+    #####:   74:	    (r = sshbuf_put_u8(b, SSH2_MSG_KEXINIT)) != 0 ||
+    #####:   75:	    (r = sshbuf_put(b, ckexinit, ckexinitlen)) != 0 ||
+    #####:   76:	    (r = sshbuf_put_u32(b, skexinitlen+1)) != 0 ||
+    #####:   77:	    (r = sshbuf_put_u8(b, SSH2_MSG_KEXINIT)) != 0 ||
+    #####:   78:	    (r = sshbuf_put(b, skexinit, skexinitlen)) != 0 ||
+    #####:   79:	    (r = sshbuf_put_string(b, serverhostkeyblob, sbloblen)) != 0 ||
+    #####:   80:	    (r = sshbuf_put_ec(b, client_dh_pub, ec_group)) != 0 ||
+    #####:   81:	    (r = sshbuf_put_ec(b, server_dh_pub, ec_group)) != 0 ||
+        -:   82:	    (r = sshbuf_put_bignum2(b, shared_secret)) != 0) {
+    #####:   83:		sshbuf_free(b);
+    #####:   84:		return r;
+        -:   85:	}
+        -:   86:#ifdef DEBUG_KEX
+        -:   87:	sshbuf_dump(b, stderr);
+        -:   88:#endif
+    #####:   89:	if (ssh_digest_buffer(hash_alg, b, hash, *hashlen) != 0) {
+    #####:   90:		sshbuf_free(b);
+    #####:   91:		return SSH_ERR_LIBCRYPTO_ERROR;
+        -:   92:	}
+    #####:   93:	sshbuf_free(b);
+    #####:   94:	*hashlen = ssh_digest_bytes(hash_alg);
+        -:   95:#ifdef DEBUG_KEX
+        -:   96:	dump_digest("hash", hash, *hashlen);
+        -:   97:#endif
+    #####:   98:	return 0;
+        -:   99:}
+        -:  100:#endif /* defined(WITH_OPENSSL) && defined(OPENSSL_HAS_ECC) */

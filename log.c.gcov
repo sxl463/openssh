@@ -1,0 +1,472 @@
+        -:    0:Source:log.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: log.c,v 1.48 2016/07/15 05:01:58 dtucker Exp $ */
+        -:    2:/*
+        -:    3: * Author: Tatu Ylonen <ylo@cs.hut.fi>
+        -:    4: * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
+        -:    5: *                    All rights reserved
+        -:    6: *
+        -:    7: * As far as I am concerned, the code I have written for this software
+        -:    8: * can be used freely for any purpose.  Any derived versions of this
+        -:    9: * software must be clearly marked as such, and if the derived work is
+        -:   10: * incompatible with the protocol description in the RFC file, it must be
+        -:   11: * called by a name other than "ssh" or "Secure Shell".
+        -:   12: */
+        -:   13:/*
+        -:   14: * Copyright (c) 2000 Markus Friedl.  All rights reserved.
+        -:   15: *
+        -:   16: * Redistribution and use in source and binary forms, with or without
+        -:   17: * modification, are permitted provided that the following conditions
+        -:   18: * are met:
+        -:   19: * 1. Redistributions of source code must retain the above copyright
+        -:   20: *    notice, this list of conditions and the following disclaimer.
+        -:   21: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   22: *    notice, this list of conditions and the following disclaimer in the
+        -:   23: *    documentation and/or other materials provided with the distribution.
+        -:   24: *
+        -:   25: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   26: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   27: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   28: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   29: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   30: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   31: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   32: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   33: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   34: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   35: */
+        -:   36:
+        -:   37:#include "includes.h"
+        -:   38:
+        -:   39:#include <sys/types.h>
+        -:   40:
+        -:   41:#include <fcntl.h>
+        -:   42:#include <stdarg.h>
+        -:   43:#include <stdio.h>
+        -:   44:#include <stdlib.h>
+        -:   45:#include <string.h>
+        -:   46:#include <syslog.h>
+        -:   47:#include <unistd.h>
+        -:   48:#include <errno.h>
+        -:   49:#if defined(HAVE_STRNVIS) && defined(HAVE_VIS_H) && !defined(BROKEN_STRNVIS)
+        -:   50:# include <vis.h>
+        -:   51:#endif
+        -:   52:
+        -:   53:#include "log.h"
+        -:   54:
+        -:   55:static LogLevel log_level = SYSLOG_LEVEL_INFO;
+        -:   56:static int log_on_stderr = 1;
+        -:   57:static int log_stderr_fd = STDERR_FILENO;
+        -:   58:static int log_facility = LOG_AUTH;
+        -:   59:static char *argv0;
+        -:   60:static log_handler_fn *log_handler;
+        -:   61:static void *log_handler_ctx;
+        -:   62:
+        -:   63:extern char *__progname;
+        -:   64:
+        -:   65:#define LOG_SYSLOG_VIS	(VIS_CSTYLE|VIS_NL|VIS_TAB|VIS_OCTAL)
+        -:   66:#define LOG_STDERR_VIS	(VIS_SAFE|VIS_OCTAL)
+        -:   67:
+        -:   68:/* textual representation of log-facilities/levels */
+        -:   69:
+        -:   70:static struct {
+        -:   71:	const char *name;
+        -:   72:	SyslogFacility val;
+        -:   73:} log_facilities[] = {
+        -:   74:	{ "DAEMON",	SYSLOG_FACILITY_DAEMON },
+        -:   75:	{ "USER",	SYSLOG_FACILITY_USER },
+        -:   76:	{ "AUTH",	SYSLOG_FACILITY_AUTH },
+        -:   77:#ifdef LOG_AUTHPRIV
+        -:   78:	{ "AUTHPRIV",	SYSLOG_FACILITY_AUTHPRIV },
+        -:   79:#endif
+        -:   80:	{ "LOCAL0",	SYSLOG_FACILITY_LOCAL0 },
+        -:   81:	{ "LOCAL1",	SYSLOG_FACILITY_LOCAL1 },
+        -:   82:	{ "LOCAL2",	SYSLOG_FACILITY_LOCAL2 },
+        -:   83:	{ "LOCAL3",	SYSLOG_FACILITY_LOCAL3 },
+        -:   84:	{ "LOCAL4",	SYSLOG_FACILITY_LOCAL4 },
+        -:   85:	{ "LOCAL5",	SYSLOG_FACILITY_LOCAL5 },
+        -:   86:	{ "LOCAL6",	SYSLOG_FACILITY_LOCAL6 },
+        -:   87:	{ "LOCAL7",	SYSLOG_FACILITY_LOCAL7 },
+        -:   88:	{ NULL,		SYSLOG_FACILITY_NOT_SET }
+        -:   89:};
+        -:   90:
+        -:   91:static struct {
+        -:   92:	const char *name;
+        -:   93:	LogLevel val;
+        -:   94:} log_levels[] =
+        -:   95:{
+        -:   96:	{ "QUIET",	SYSLOG_LEVEL_QUIET },
+        -:   97:	{ "FATAL",	SYSLOG_LEVEL_FATAL },
+        -:   98:	{ "ERROR",	SYSLOG_LEVEL_ERROR },
+        -:   99:	{ "INFO",	SYSLOG_LEVEL_INFO },
+        -:  100:	{ "VERBOSE",	SYSLOG_LEVEL_VERBOSE },
+        -:  101:	{ "DEBUG",	SYSLOG_LEVEL_DEBUG1 },
+        -:  102:	{ "DEBUG1",	SYSLOG_LEVEL_DEBUG1 },
+        -:  103:	{ "DEBUG2",	SYSLOG_LEVEL_DEBUG2 },
+        -:  104:	{ "DEBUG3",	SYSLOG_LEVEL_DEBUG3 },
+        -:  105:	{ NULL,		SYSLOG_LEVEL_NOT_SET }
+        -:  106:};
+        -:  107:
+        -:  108:SyslogFacility
+    #####:  109:log_facility_number(char *name)
+        -:  110:{
+        -:  111:	int i;
+        -:  112:
+    #####:  113:	if (name != NULL)
+    #####:  114:		for (i = 0; log_facilities[i].name; i++)
+    #####:  115:			if (strcasecmp(log_facilities[i].name, name) == 0)
+    #####:  116:				return log_facilities[i].val;
+    #####:  117:	return SYSLOG_FACILITY_NOT_SET;
+        -:  118:}
+        -:  119:
+        -:  120:const char *
+    #####:  121:log_facility_name(SyslogFacility facility)
+        -:  122:{
+        -:  123:	u_int i;
+        -:  124:
+    #####:  125:	for (i = 0;  log_facilities[i].name; i++)
+    #####:  126:		if (log_facilities[i].val == facility)
+    #####:  127:			return log_facilities[i].name;
+    #####:  128:	return NULL;
+        -:  129:}
+        -:  130:
+        -:  131:LogLevel
+    #####:  132:log_level_number(char *name)
+        -:  133:{
+        -:  134:	int i;
+        -:  135:
+    #####:  136:	if (name != NULL)
+    #####:  137:		for (i = 0; log_levels[i].name; i++)
+    #####:  138:			if (strcasecmp(log_levels[i].name, name) == 0)
+    #####:  139:				return log_levels[i].val;
+    #####:  140:	return SYSLOG_LEVEL_NOT_SET;
+        -:  141:}
+        -:  142:
+        -:  143:const char *
+    #####:  144:log_level_name(LogLevel level)
+        -:  145:{
+        -:  146:	u_int i;
+        -:  147:
+    #####:  148:	for (i = 0; log_levels[i].name != NULL; i++)
+    #####:  149:		if (log_levels[i].val == level)
+    #####:  150:			return log_levels[i].name;
+    #####:  151:	return NULL;
+        -:  152:}
+        -:  153:
+        -:  154:/* Error messages that should be logged. */
+        -:  155:
+        -:  156:void
+    #####:  157:error(const char *fmt,...)
+        -:  158:{
+        -:  159:	va_list args;
+        -:  160:
+    #####:  161:	va_start(args, fmt);
+    #####:  162:	do_log(SYSLOG_LEVEL_ERROR, fmt, args);
+    #####:  163:	va_end(args);
+    #####:  164:}
+        -:  165:
+        -:  166:void
+    #####:  167:sigdie(const char *fmt,...)
+        -:  168:{
+        -:  169:#ifdef DO_LOG_SAFE_IN_SIGHAND
+        -:  170:	va_list args;
+        -:  171:
+        -:  172:	va_start(args, fmt);
+        -:  173:	do_log(SYSLOG_LEVEL_FATAL, fmt, args);
+        -:  174:	va_end(args);
+        -:  175:#endif
+    #####:  176:	_exit(1);
+        -:  177:}
+        -:  178:
+        -:  179:void
+    #####:  180:logdie(const char *fmt,...)
+        -:  181:{
+        -:  182:	va_list args;
+        -:  183:
+    #####:  184:	va_start(args, fmt);
+    #####:  185:	do_log(SYSLOG_LEVEL_INFO, fmt, args);
+    #####:  186:	va_end(args);
+    #####:  187:	cleanup_exit(255);
+        -:  188:}
+        -:  189:
+        -:  190:/* Log this message (information that usually should go to the log). */
+        -:  191:
+        -:  192:void
+    #####:  193:logit(const char *fmt,...)
+        -:  194:{
+        -:  195:	va_list args;
+        -:  196:
+    #####:  197:	va_start(args, fmt);
+    #####:  198:	do_log(SYSLOG_LEVEL_INFO, fmt, args);
+    #####:  199:	va_end(args);
+    #####:  200:}
+        -:  201:
+        -:  202:/* More detailed messages (information that does not need to go to the log). */
+        -:  203:
+        -:  204:void
+        3:  205:verbose(const char *fmt,...)
+        -:  206:{
+        -:  207:	va_list args;
+        -:  208:
+        3:  209:	va_start(args, fmt);
+        3:  210:	do_log(SYSLOG_LEVEL_VERBOSE, fmt, args);
+        3:  211:	va_end(args);
+        3:  212:}
+        -:  213:
+        -:  214:/* Debugging messages that should not be logged during normal operation. */
+        -:  215:
+        -:  216:void
+       54:  217:debug(const char *fmt,...)
+        -:  218:{
+        -:  219:	va_list args;
+        -:  220:
+       54:  221:	va_start(args, fmt);
+       54:  222:	do_log(SYSLOG_LEVEL_DEBUG1, fmt, args);
+       54:  223:	va_end(args);
+       54:  224:}
+        -:  225:
+        -:  226:void
+       66:  227:debug2(const char *fmt,...)
+        -:  228:{
+        -:  229:	va_list args;
+        -:  230:
+       66:  231:	va_start(args, fmt);
+       66:  232:	do_log(SYSLOG_LEVEL_DEBUG2, fmt, args);
+       66:  233:	va_end(args);
+       66:  234:}
+        -:  235:
+        -:  236:void
+       45:  237:debug3(const char *fmt,...)
+        -:  238:{
+        -:  239:	va_list args;
+        -:  240:
+       45:  241:	va_start(args, fmt);
+       45:  242:	do_log(SYSLOG_LEVEL_DEBUG3, fmt, args);
+       45:  243:	va_end(args);
+       45:  244:}
+        -:  245:
+        -:  246:/*
+        -:  247: * Initialize the log.
+        -:  248: */
+        -:  249:
+        -:  250:void
+        2:  251:log_init(char *av0, LogLevel level, SyslogFacility facility, int on_stderr)
+        -:  252:{
+        -:  253:#if defined(HAVE_OPENLOG_R) && defined(SYSLOG_DATA_INIT)
+        -:  254:	struct syslog_data sdata = SYSLOG_DATA_INIT;
+        -:  255:#endif
+        -:  256:
+        2:  257:	argv0 = av0;
+        -:  258:
+        2:  259:	switch (level) {
+        -:  260:	case SYSLOG_LEVEL_QUIET:
+        -:  261:	case SYSLOG_LEVEL_FATAL:
+        -:  262:	case SYSLOG_LEVEL_ERROR:
+        -:  263:	case SYSLOG_LEVEL_INFO:
+        -:  264:	case SYSLOG_LEVEL_VERBOSE:
+        -:  265:	case SYSLOG_LEVEL_DEBUG1:
+        -:  266:	case SYSLOG_LEVEL_DEBUG2:
+        -:  267:	case SYSLOG_LEVEL_DEBUG3:
+        2:  268:		log_level = level;
+        2:  269:		break;
+        -:  270:	default:
+    #####:  271:		fprintf(stderr, "Unrecognized internal syslog level code %d\n",
+        -:  272:		    (int) level);
+    #####:  273:		exit(1);
+        -:  274:	}
+        -:  275:
+        2:  276:	log_handler = NULL;
+        2:  277:	log_handler_ctx = NULL;
+        -:  278:
+        2:  279:	log_on_stderr = on_stderr;
+        2:  280:	if (on_stderr)
+        4:  281:		return;
+        -:  282:
+    #####:  283:	switch (facility) {
+        -:  284:	case SYSLOG_FACILITY_DAEMON:
+    #####:  285:		log_facility = LOG_DAEMON;
+    #####:  286:		break;
+        -:  287:	case SYSLOG_FACILITY_USER:
+    #####:  288:		log_facility = LOG_USER;
+    #####:  289:		break;
+        -:  290:	case SYSLOG_FACILITY_AUTH:
+    #####:  291:		log_facility = LOG_AUTH;
+    #####:  292:		break;
+        -:  293:#ifdef LOG_AUTHPRIV
+        -:  294:	case SYSLOG_FACILITY_AUTHPRIV:
+    #####:  295:		log_facility = LOG_AUTHPRIV;
+    #####:  296:		break;
+        -:  297:#endif
+        -:  298:	case SYSLOG_FACILITY_LOCAL0:
+    #####:  299:		log_facility = LOG_LOCAL0;
+    #####:  300:		break;
+        -:  301:	case SYSLOG_FACILITY_LOCAL1:
+    #####:  302:		log_facility = LOG_LOCAL1;
+    #####:  303:		break;
+        -:  304:	case SYSLOG_FACILITY_LOCAL2:
+    #####:  305:		log_facility = LOG_LOCAL2;
+    #####:  306:		break;
+        -:  307:	case SYSLOG_FACILITY_LOCAL3:
+    #####:  308:		log_facility = LOG_LOCAL3;
+    #####:  309:		break;
+        -:  310:	case SYSLOG_FACILITY_LOCAL4:
+    #####:  311:		log_facility = LOG_LOCAL4;
+    #####:  312:		break;
+        -:  313:	case SYSLOG_FACILITY_LOCAL5:
+    #####:  314:		log_facility = LOG_LOCAL5;
+    #####:  315:		break;
+        -:  316:	case SYSLOG_FACILITY_LOCAL6:
+    #####:  317:		log_facility = LOG_LOCAL6;
+    #####:  318:		break;
+        -:  319:	case SYSLOG_FACILITY_LOCAL7:
+    #####:  320:		log_facility = LOG_LOCAL7;
+    #####:  321:		break;
+        -:  322:	default:
+    #####:  323:		fprintf(stderr,
+        -:  324:		    "Unrecognized internal syslog facility code %d\n",
+        -:  325:		    (int) facility);
+    #####:  326:		exit(1);
+        -:  327:	}
+        -:  328:
+        -:  329:	/*
+        -:  330:	 * If an external library (eg libwrap) attempts to use syslog
+        -:  331:	 * immediately after reexec, syslog may be pointing to the wrong
+        -:  332:	 * facility, so we force an open/close of syslog here.
+        -:  333:	 */
+        -:  334:#if defined(HAVE_OPENLOG_R) && defined(SYSLOG_DATA_INIT)
+        -:  335:	openlog_r(argv0 ? argv0 : __progname, LOG_PID, log_facility, &sdata);
+        -:  336:	closelog_r(&sdata);
+        -:  337:#else
+    #####:  338:	openlog(argv0 ? argv0 : __progname, LOG_PID, log_facility);
+    #####:  339:	closelog();
+        -:  340:#endif
+        -:  341:}
+        -:  342:
+        -:  343:void
+    #####:  344:log_change_level(LogLevel new_log_level)
+        -:  345:{
+        -:  346:	/* no-op if log_init has not been called */
+    #####:  347:	if (argv0 == NULL)
+    #####:  348:		return;
+    #####:  349:	log_init(argv0, new_log_level, log_facility, log_on_stderr);
+        -:  350:}
+        -:  351:
+        -:  352:int
+    #####:  353:log_is_on_stderr(void)
+        -:  354:{
+    #####:  355:	return log_on_stderr && log_stderr_fd == STDERR_FILENO;
+        -:  356:}
+        -:  357:
+        -:  358:/* redirect what would usually get written to stderr to specified file */
+        -:  359:void
+    #####:  360:log_redirect_stderr_to(const char *logfile)
+        -:  361:{
+        -:  362:	int fd;
+        -:  363:
+    #####:  364:	if ((fd = open(logfile, O_WRONLY|O_CREAT|O_APPEND, 0600)) == -1) {
+    #####:  365:		fprintf(stderr, "Couldn't open logfile %s: %s\n", logfile,
+    #####:  366:		     strerror(errno));
+    #####:  367:		exit(1);
+        -:  368:	}
+    #####:  369:	log_stderr_fd = fd;
+    #####:  370:}
+        -:  371:
+        -:  372:#define MSGBUFSIZ 1024
+        -:  373:
+        -:  374:void
+    #####:  375:set_log_handler(log_handler_fn *handler, void *ctx)
+        -:  376:{
+    #####:  377:	log_handler = handler;
+    #####:  378:	log_handler_ctx = ctx;
+    #####:  379:}
+        -:  380:
+        -:  381:void
+    #####:  382:do_log2(LogLevel level, const char *fmt,...)
+        -:  383:{
+        -:  384:	va_list args;
+        -:  385:
+    #####:  386:	va_start(args, fmt);
+    #####:  387:	do_log(level, fmt, args);
+    #####:  388:	va_end(args);
+    #####:  389:}
+        -:  390:
+        -:  391:void
+      168:  392:do_log(LogLevel level, const char *fmt, va_list args)
+        -:  393:{
+        -:  394:#if defined(HAVE_OPENLOG_R) && defined(SYSLOG_DATA_INIT)
+        -:  395:	struct syslog_data sdata = SYSLOG_DATA_INIT;
+        -:  396:#endif
+        -:  397:	char msgbuf[MSGBUFSIZ];
+        -:  398:	char fmtbuf[MSGBUFSIZ];
+      168:  399:	char *txt = NULL;
+      168:  400:	int pri = LOG_INFO;
+      168:  401:	int saved_errno = errno;
+        -:  402:	log_handler_fn *tmp_handler;
+        -:  403:
+      168:  404:	if (level > log_level)
+      336:  405:		return;
+        -:  406:
+    #####:  407:	switch (level) {
+        -:  408:	case SYSLOG_LEVEL_FATAL:
+    #####:  409:		if (!log_on_stderr)
+    #####:  410:			txt = "fatal";
+    #####:  411:		pri = LOG_CRIT;
+    #####:  412:		break;
+        -:  413:	case SYSLOG_LEVEL_ERROR:
+    #####:  414:		if (!log_on_stderr)
+    #####:  415:			txt = "error";
+    #####:  416:		pri = LOG_ERR;
+    #####:  417:		break;
+        -:  418:	case SYSLOG_LEVEL_INFO:
+    #####:  419:		pri = LOG_INFO;
+    #####:  420:		break;
+        -:  421:	case SYSLOG_LEVEL_VERBOSE:
+    #####:  422:		pri = LOG_INFO;
+    #####:  423:		break;
+        -:  424:	case SYSLOG_LEVEL_DEBUG1:
+    #####:  425:		txt = "debug1";
+    #####:  426:		pri = LOG_DEBUG;
+    #####:  427:		break;
+        -:  428:	case SYSLOG_LEVEL_DEBUG2:
+    #####:  429:		txt = "debug2";
+    #####:  430:		pri = LOG_DEBUG;
+    #####:  431:		break;
+        -:  432:	case SYSLOG_LEVEL_DEBUG3:
+    #####:  433:		txt = "debug3";
+    #####:  434:		pri = LOG_DEBUG;
+    #####:  435:		break;
+        -:  436:	default:
+    #####:  437:		txt = "internal error";
+    #####:  438:		pri = LOG_ERR;
+    #####:  439:		break;
+        -:  440:	}
+    #####:  441:	if (txt != NULL && log_handler == NULL) {
+    #####:  442:		snprintf(fmtbuf, sizeof(fmtbuf), "%s: %s", txt, fmt);
+    #####:  443:		vsnprintf(msgbuf, sizeof(msgbuf), fmtbuf, args);
+        -:  444:	} else {
+    #####:  445:		vsnprintf(msgbuf, sizeof(msgbuf), fmt, args);
+        -:  446:	}
+    #####:  447:	strnvis(fmtbuf, msgbuf, sizeof(fmtbuf),
+    #####:  448:	    log_on_stderr ? LOG_STDERR_VIS : LOG_SYSLOG_VIS);
+    #####:  449:	if (log_handler != NULL) {
+        -:  450:		/* Avoid recursion */
+    #####:  451:		tmp_handler = log_handler;
+    #####:  452:		log_handler = NULL;
+    #####:  453:		tmp_handler(level, fmtbuf, log_handler_ctx);
+    #####:  454:		log_handler = tmp_handler;
+    #####:  455:	} else if (log_on_stderr) {
+    #####:  456:		snprintf(msgbuf, sizeof msgbuf, "%s\r\n", fmtbuf);
+    #####:  457:		(void)write(log_stderr_fd, msgbuf, strlen(msgbuf));
+        -:  458:	} else {
+        -:  459:#if defined(HAVE_OPENLOG_R) && defined(SYSLOG_DATA_INIT)
+        -:  460:		openlog_r(argv0 ? argv0 : __progname, LOG_PID, log_facility, &sdata);
+        -:  461:		syslog_r(pri, &sdata, "%.500s", fmtbuf);
+        -:  462:		closelog_r(&sdata);
+        -:  463:#else
+    #####:  464:		openlog(argv0 ? argv0 : __progname, LOG_PID, log_facility);
+    #####:  465:		syslog(pri, "%.500s", fmtbuf);
+    #####:  466:		closelog();
+        -:  467:#endif
+        -:  468:	}
+    #####:  469:	errno = saved_errno;
+        -:  470:}

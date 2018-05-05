@@ -1,0 +1,226 @@
+        -:    0:Source:sshbuf-getput-crypto.c
+        -:    0:Programs:78
+        -:    1:/*	$OpenBSD: sshbuf-getput-crypto.c,v 1.5 2016/01/12 23:42:54 djm Exp $	*/
+        -:    2:/*
+        -:    3: * Copyright (c) 2011 Damien Miller
+        -:    4: *
+        -:    5: * Permission to use, copy, modify, and distribute this software for any
+        -:    6: * purpose with or without fee is hereby granted, provided that the above
+        -:    7: * copyright notice and this permission notice appear in all copies.
+        -:    8: *
+        -:    9: * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        -:   10: * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        -:   11: * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        -:   12: * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        -:   13: * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        -:   14: * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        -:   15: * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+        -:   16: */
+        -:   17:
+        -:   18:#define SSHBUF_INTERNAL
+        -:   19:#include "includes.h"
+        -:   20:
+        -:   21:#include <sys/types.h>
+        -:   22:#include <stdlib.h>
+        -:   23:#include <stdio.h>
+        -:   24:#include <string.h>
+        -:   25:
+        -:   26:#include <openssl/bn.h>
+        -:   27:#ifdef OPENSSL_HAS_ECC
+        -:   28:# include <openssl/ec.h>
+        -:   29:#endif /* OPENSSL_HAS_ECC */
+        -:   30:
+        -:   31:#include "ssherr.h"
+        -:   32:#include "sshbuf.h"
+        -:   33:
+        -:   34:int
+        6:   35:sshbuf_get_bignum2(struct sshbuf *buf, BIGNUM *v)
+        -:   36:{
+        -:   37:	const u_char *d;
+        -:   38:	size_t len;
+        -:   39:	int r;
+        -:   40:
+        6:   41:	if ((r = sshbuf_get_bignum2_bytes_direct(buf, &d, &len)) != 0)
+    #####:   42:		return r;
+        6:   43:	if (v != NULL && BN_bin2bn(d, len, v) == NULL)
+    #####:   44:		return SSH_ERR_ALLOC_FAIL;
+        6:   45:	return 0;
+        -:   46:}
+        -:   47:
+        -:   48:int
+    #####:   49:sshbuf_get_bignum1(struct sshbuf *buf, BIGNUM *v)
+        -:   50:{
+    #####:   51:	const u_char *d = sshbuf_ptr(buf);
+        -:   52:	u_int16_t len_bits;
+        -:   53:	size_t len_bytes;
+        -:   54:
+        -:   55:	/* Length in bits */
+    #####:   56:	if (sshbuf_len(buf) < 2)
+    #####:   57:		return SSH_ERR_MESSAGE_INCOMPLETE;
+    #####:   58:	len_bits = PEEK_U16(d);
+    #####:   59:	len_bytes = (len_bits + 7) >> 3;
+    #####:   60:	if (len_bytes > SSHBUF_MAX_BIGNUM)
+    #####:   61:		return SSH_ERR_BIGNUM_TOO_LARGE;
+    #####:   62:	if (sshbuf_len(buf) < 2 + len_bytes)
+    #####:   63:		return SSH_ERR_MESSAGE_INCOMPLETE;
+    #####:   64:	if (v != NULL && BN_bin2bn(d + 2, len_bytes, v) == NULL)
+    #####:   65:		return SSH_ERR_ALLOC_FAIL;
+    #####:   66:	if (sshbuf_consume(buf, 2 + len_bytes) != 0) {
+        -:   67:		SSHBUF_DBG(("SSH_ERR_INTERNAL_ERROR"));
+        -:   68:		SSHBUF_ABORT();
+    #####:   69:		return SSH_ERR_INTERNAL_ERROR;
+        -:   70:	}
+    #####:   71:	return 0;
+        -:   72:}
+        -:   73:
+        -:   74:#ifdef OPENSSL_HAS_ECC
+        -:   75:static int
+        3:   76:get_ec(const u_char *d, size_t len, EC_POINT *v, const EC_GROUP *g)
+        -:   77:{
+        -:   78:	/* Refuse overlong bignums */
+        3:   79:	if (len == 0 || len > SSHBUF_MAX_ECPOINT)
+    #####:   80:		return SSH_ERR_ECPOINT_TOO_LARGE;
+        -:   81:	/* Only handle uncompressed points */
+        3:   82:	if (*d != POINT_CONVERSION_UNCOMPRESSED)
+    #####:   83:		return SSH_ERR_INVALID_FORMAT;
+        3:   84:	if (v != NULL && EC_POINT_oct2point(g, v, d, len, NULL) != 1)
+    #####:   85:		return SSH_ERR_INVALID_FORMAT; /* XXX assumption */
+        3:   86:	return 0;
+        -:   87:}
+        -:   88:
+        -:   89:int
+        3:   90:sshbuf_get_ec(struct sshbuf *buf, EC_POINT *v, const EC_GROUP *g)
+        -:   91:{
+        -:   92:	const u_char *d;
+        -:   93:	size_t len;
+        -:   94:	int r;
+        -:   95:
+        3:   96:	if ((r = sshbuf_peek_string_direct(buf, &d, &len)) < 0)
+    #####:   97:		return r;
+        3:   98:	if ((r = get_ec(d, len, v, g)) != 0)
+    #####:   99:		return r;
+        -:  100:	/* Skip string */
+        3:  101:	if (sshbuf_get_string_direct(buf, NULL, NULL) != 0) {
+        -:  102:		/* Shouldn't happen */
+        -:  103:		SSHBUF_DBG(("SSH_ERR_INTERNAL_ERROR"));
+        -:  104:		SSHBUF_ABORT();
+    #####:  105:		return SSH_ERR_INTERNAL_ERROR;
+        -:  106:	}
+        3:  107:	return 0;
+        -:  108:}
+        -:  109:
+        -:  110:int
+    #####:  111:sshbuf_get_eckey(struct sshbuf *buf, EC_KEY *v)
+        -:  112:{
+    #####:  113:	EC_POINT *pt = EC_POINT_new(EC_KEY_get0_group(v));
+        -:  114:	int r;
+        -:  115:	const u_char *d;
+        -:  116:	size_t len;
+        -:  117:
+    #####:  118:	if (pt == NULL) {
+        -:  119:		SSHBUF_DBG(("SSH_ERR_ALLOC_FAIL"));
+    #####:  120:		return SSH_ERR_ALLOC_FAIL;
+        -:  121:	}
+    #####:  122:	if ((r = sshbuf_peek_string_direct(buf, &d, &len)) < 0) {
+    #####:  123:		EC_POINT_free(pt);
+    #####:  124:		return r;
+        -:  125:	}
+    #####:  126:	if ((r = get_ec(d, len, pt, EC_KEY_get0_group(v))) != 0) {
+    #####:  127:		EC_POINT_free(pt);
+    #####:  128:		return r;
+        -:  129:	}
+    #####:  130:	if (EC_KEY_set_public_key(v, pt) != 1) {
+    #####:  131:		EC_POINT_free(pt);
+    #####:  132:		return SSH_ERR_ALLOC_FAIL; /* XXX assumption */
+        -:  133:	}
+    #####:  134:	EC_POINT_free(pt);
+        -:  135:	/* Skip string */
+    #####:  136:	if (sshbuf_get_string_direct(buf, NULL, NULL) != 0) {
+        -:  137:		/* Shouldn't happen */
+        -:  138:		SSHBUF_DBG(("SSH_ERR_INTERNAL_ERROR"));
+        -:  139:		SSHBUF_ABORT();
+    #####:  140:		return SSH_ERR_INTERNAL_ERROR;
+        -:  141:	}
+    #####:  142:	return 0;	
+        -:  143:}
+        -:  144:#endif /* OPENSSL_HAS_ECC */
+        -:  145:
+        -:  146:int
+        8:  147:sshbuf_put_bignum2(struct sshbuf *buf, const BIGNUM *v)
+        -:  148:{
+        -:  149:	u_char d[SSHBUF_MAX_BIGNUM + 1];
+        8:  150:	int len = BN_num_bytes(v), prepend = 0, r;
+        -:  151:
+        8:  152:	if (len < 0 || len > SSHBUF_MAX_BIGNUM)
+    #####:  153:		return SSH_ERR_INVALID_ARGUMENT;
+        8:  154:	*d = '\0';
+        8:  155:	if (BN_bn2bin(v, d + 1) != len)
+    #####:  156:		return SSH_ERR_INTERNAL_ERROR; /* Shouldn't happen */
+        -:  157:	/* If MSB is set, prepend a \0 */
+        8:  158:	if (len > 0 && (d[1] & 0x80) != 0)
+        4:  159:		prepend = 1;
+        8:  160:	if ((r = sshbuf_put_string(buf, d + 1 - prepend, len + prepend)) < 0) {
+    #####:  161:		explicit_bzero(d, sizeof(d));
+    #####:  162:		return r;
+        -:  163:	}
+        8:  164:	explicit_bzero(d, sizeof(d));
+        8:  165:	return 0;
+        -:  166:}
+        -:  167:
+        -:  168:int
+    #####:  169:sshbuf_put_bignum1(struct sshbuf *buf, const BIGNUM *v)
+        -:  170:{
+    #####:  171:	int r, len_bits = BN_num_bits(v);
+    #####:  172:	size_t len_bytes = (len_bits + 7) / 8;
+        -:  173:	u_char d[SSHBUF_MAX_BIGNUM], *dp;
+        -:  174:
+    #####:  175:	if (len_bits < 0 || len_bytes > SSHBUF_MAX_BIGNUM)
+    #####:  176:		return SSH_ERR_INVALID_ARGUMENT;
+    #####:  177:	if (BN_bn2bin(v, d) != (int)len_bytes)
+    #####:  178:		return SSH_ERR_INTERNAL_ERROR; /* Shouldn't happen */
+    #####:  179:	if ((r = sshbuf_reserve(buf, len_bytes + 2, &dp)) < 0) {
+    #####:  180:		explicit_bzero(d, sizeof(d));
+    #####:  181:		return r;
+        -:  182:	}
+    #####:  183:	POKE_U16(dp, len_bits);
+    #####:  184:	if (len_bytes != 0)
+    #####:  185:		memcpy(dp + 2, d, len_bytes);
+    #####:  186:	explicit_bzero(d, sizeof(d));
+    #####:  187:	return 0;
+        -:  188:}
+        -:  189:
+        -:  190:#ifdef OPENSSL_HAS_ECC
+        -:  191:int
+        1:  192:sshbuf_put_ec(struct sshbuf *buf, const EC_POINT *v, const EC_GROUP *g)
+        -:  193:{
+        -:  194:	u_char d[SSHBUF_MAX_ECPOINT];
+        -:  195:	BN_CTX *bn_ctx;
+        -:  196:	size_t len;
+        -:  197:	int ret;
+        -:  198:
+        1:  199:	if ((bn_ctx = BN_CTX_new()) == NULL)
+    #####:  200:		return SSH_ERR_ALLOC_FAIL;
+        1:  201:	if ((len = EC_POINT_point2oct(g, v, POINT_CONVERSION_UNCOMPRESSED,
+        -:  202:	    NULL, 0, bn_ctx)) > SSHBUF_MAX_ECPOINT) {
+    #####:  203:		BN_CTX_free(bn_ctx);
+    #####:  204:		return SSH_ERR_INVALID_ARGUMENT;
+        -:  205:	}
+        1:  206:	if (EC_POINT_point2oct(g, v, POINT_CONVERSION_UNCOMPRESSED,
+        -:  207:	    d, len, bn_ctx) != len) {
+    #####:  208:		BN_CTX_free(bn_ctx);
+    #####:  209:		return SSH_ERR_INTERNAL_ERROR; /* Shouldn't happen */
+        -:  210:	}
+        1:  211:	BN_CTX_free(bn_ctx);
+        1:  212:	ret = sshbuf_put_string(buf, d, len);
+        1:  213:	explicit_bzero(d, len);
+        1:  214:	return ret;
+        -:  215:}
+        -:  216:
+        -:  217:int
+        1:  218:sshbuf_put_eckey(struct sshbuf *buf, const EC_KEY *v)
+        -:  219:{
+        1:  220:	return sshbuf_put_ec(buf, EC_KEY_get0_public_key(v),
+        -:  221:	    EC_KEY_get0_group(v));
+        -:  222:}
+        -:  223:#endif /* OPENSSL_HAS_ECC */
+        -:  224:

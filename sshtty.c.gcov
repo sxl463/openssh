@@ -1,0 +1,98 @@
+        -:    0:Source:sshtty.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: sshtty.c,v 1.14 2010/01/09 05:04:24 djm Exp $ */
+        -:    2:/*
+        -:    3: * Author: Tatu Ylonen <ylo@cs.hut.fi>
+        -:    4: * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
+        -:    5: *                    All rights reserved
+        -:    6: *
+        -:    7: * As far as I am concerned, the code I have written for this software
+        -:    8: * can be used freely for any purpose.  Any derived versions of this
+        -:    9: * software must be clearly marked as such, and if the derived work is
+        -:   10: * incompatible with the protocol description in the RFC file, it must be
+        -:   11: * called by a name other than "ssh" or "Secure Shell".
+        -:   12: */
+        -:   13:/*
+        -:   14: * Copyright (c) 2001 Markus Friedl.  All rights reserved.
+        -:   15: * Copyright (c) 2001 Kevin Steves.  All rights reserved.
+        -:   16: *
+        -:   17: * Redistribution and use in source and binary forms, with or without
+        -:   18: * modification, are permitted provided that the following conditions
+        -:   19: * are met:
+        -:   20: * 1. Redistributions of source code must retain the above copyright
+        -:   21: *    notice, this list of conditions and the following disclaimer.
+        -:   22: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   23: *    notice, this list of conditions and the following disclaimer in the
+        -:   24: *    documentation and/or other materials provided with the distribution.
+        -:   25: *
+        -:   26: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   27: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   28: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   29: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   30: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   31: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   32: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   33: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   34: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   35: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   36: */
+        -:   37:
+        -:   38:#include "includes.h"
+        -:   39:
+        -:   40:#include <sys/types.h>
+        -:   41:#include <stdio.h>
+        -:   42:#include <termios.h>
+        -:   43:#include <pwd.h>
+        -:   44:
+        -:   45:#include "sshpty.h"
+        -:   46:
+        -:   47:static struct termios _saved_tio;
+        -:   48:static int _in_raw_mode = 0;
+        -:   49:
+        -:   50:struct termios *
+        1:   51:get_saved_tio(void)
+        -:   52:{
+        1:   53:	return _in_raw_mode ? &_saved_tio : NULL;
+        -:   54:}
+        -:   55:
+        -:   56:void
+        2:   57:leave_raw_mode(int quiet)
+        -:   58:{
+        2:   59:	if (!_in_raw_mode)
+        3:   60:		return;
+        1:   61:	if (tcsetattr(fileno(stdin), TCSADRAIN, &_saved_tio) == -1) {
+    #####:   62:		if (!quiet)
+    #####:   63:			perror("tcsetattr");
+        -:   64:	} else
+        1:   65:		_in_raw_mode = 0;
+        -:   66:}
+        -:   67:
+        -:   68:void
+        1:   69:enter_raw_mode(int quiet)
+        -:   70:{
+        -:   71:	struct termios tio;
+        -:   72:
+        1:   73:	if (tcgetattr(fileno(stdin), &tio) == -1) {
+    #####:   74:		if (!quiet)
+    #####:   75:			perror("tcgetattr");
+        1:   76:		return;
+        -:   77:	}
+        1:   78:	_saved_tio = tio;
+        1:   79:	tio.c_iflag |= IGNPAR;
+        1:   80:	tio.c_iflag &= ~(ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXANY | IXOFF);
+        -:   81:#ifdef IUCLC
+        1:   82:	tio.c_iflag &= ~IUCLC;
+        -:   83:#endif
+        1:   84:	tio.c_lflag &= ~(ISIG | ICANON | ECHO | ECHOE | ECHOK | ECHONL);
+        -:   85:#ifdef IEXTEN
+        1:   86:	tio.c_lflag &= ~IEXTEN;
+        -:   87:#endif
+        1:   88:	tio.c_oflag &= ~OPOST;
+        1:   89:	tio.c_cc[VMIN] = 1;
+        1:   90:	tio.c_cc[VTIME] = 0;
+        1:   91:	if (tcsetattr(fileno(stdin), TCSADRAIN, &tio) == -1) {
+    #####:   92:		if (!quiet)
+    #####:   93:			perror("tcsetattr");
+        -:   94:	} else
+        1:   95:		_in_raw_mode = 1;
+        -:   96:}

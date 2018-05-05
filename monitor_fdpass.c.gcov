@@ -1,0 +1,189 @@
+        -:    0:Source:monitor_fdpass.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: monitor_fdpass.c,v 1.21 2016/02/29 20:22:36 jca Exp $ */
+        -:    2:/*
+        -:    3: * Copyright 2001 Niels Provos <provos@citi.umich.edu>
+        -:    4: * All rights reserved.
+        -:    5: *
+        -:    6: * Redistribution and use in source and binary forms, with or without
+        -:    7: * modification, are permitted provided that the following conditions
+        -:    8: * are met:
+        -:    9: * 1. Redistributions of source code must retain the above copyright
+        -:   10: *    notice, this list of conditions and the following disclaimer.
+        -:   11: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   12: *    notice, this list of conditions and the following disclaimer in the
+        -:   13: *    documentation and/or other materials provided with the distribution.
+        -:   14: *
+        -:   15: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   16: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   17: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   18: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   19: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   20: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   21: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   22: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   23: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   24: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   25: */
+        -:   26:
+        -:   27:#include "includes.h"
+        -:   28:
+        -:   29:#include <sys/types.h>
+        -:   30:#include <sys/socket.h>
+        -:   31:#include <sys/uio.h>
+        -:   32:#ifdef HAVE_SYS_UN_H
+        -:   33:#include <sys/un.h>
+        -:   34:#endif
+        -:   35:
+        -:   36:#include <errno.h>
+        -:   37:#include <string.h>
+        -:   38:#include <stdarg.h>
+        -:   39:
+        -:   40:#ifdef HAVE_POLL_H
+        -:   41:# include <poll.h>
+        -:   42:#else
+        -:   43:# ifdef HAVE_SYS_POLL_H
+        -:   44:#  include <sys/poll.h>
+        -:   45:# endif
+        -:   46:#endif
+        -:   47:
+        -:   48:#include "log.h"
+        -:   49:#include "monitor_fdpass.h"
+        -:   50:
+        -:   51:int
+    #####:   52:mm_send_fd(int sock, int fd)
+        -:   53:{
+        -:   54:#if defined(HAVE_SENDMSG) && (defined(HAVE_ACCRIGHTS_IN_MSGHDR) || defined(HAVE_CONTROL_IN_MSGHDR))
+        -:   55:	struct msghdr msg;
+        -:   56:#ifndef HAVE_ACCRIGHTS_IN_MSGHDR
+        -:   57:	union {
+        -:   58:		struct cmsghdr hdr;
+        -:   59:		char buf[CMSG_SPACE(sizeof(int))];
+        -:   60:	} cmsgbuf;
+        -:   61:	struct cmsghdr *cmsg;
+        -:   62:#endif
+        -:   63:	struct iovec vec;
+    #####:   64:	char ch = '\0';
+        -:   65:	ssize_t n;
+        -:   66:	struct pollfd pfd;
+        -:   67:
+    #####:   68:	memset(&msg, 0, sizeof(msg));
+        -:   69:#ifdef HAVE_ACCRIGHTS_IN_MSGHDR
+        -:   70:	msg.msg_accrights = (caddr_t)&fd;
+        -:   71:	msg.msg_accrightslen = sizeof(fd);
+        -:   72:#else
+    #####:   73:	memset(&cmsgbuf, 0, sizeof(cmsgbuf));
+    #####:   74:	msg.msg_control = (caddr_t)&cmsgbuf.buf;
+    #####:   75:	msg.msg_controllen = sizeof(cmsgbuf.buf);
+    #####:   76:	cmsg = CMSG_FIRSTHDR(&msg);
+    #####:   77:	cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+    #####:   78:	cmsg->cmsg_level = SOL_SOCKET;
+    #####:   79:	cmsg->cmsg_type = SCM_RIGHTS;
+    #####:   80:	*(int *)CMSG_DATA(cmsg) = fd;
+        -:   81:#endif
+        -:   82:
+    #####:   83:	vec.iov_base = &ch;
+    #####:   84:	vec.iov_len = 1;
+    #####:   85:	msg.msg_iov = &vec;
+    #####:   86:	msg.msg_iovlen = 1;
+        -:   87:
+    #####:   88:	pfd.fd = sock;
+    #####:   89:	pfd.events = POLLOUT;
+    #####:   90:	while ((n = sendmsg(sock, &msg, 0)) == -1 &&
+    #####:   91:	    (errno == EAGAIN || errno == EINTR)) {
+    #####:   92:		debug3("%s: sendmsg(%d): %s", __func__, fd, strerror(errno));
+    #####:   93:		(void)poll(&pfd, 1, -1);
+        -:   94:	}
+    #####:   95:	if (n == -1) {
+    #####:   96:		error("%s: sendmsg(%d): %s", __func__, fd,
+    #####:   97:		    strerror(errno));
+    #####:   98:		return -1;
+        -:   99:	}
+        -:  100:
+    #####:  101:	if (n != 1) {
+    #####:  102:		error("%s: sendmsg: expected sent 1 got %zd", __func__, n);
+    #####:  103:		return -1;
+        -:  104:	}
+    #####:  105:	return 0;
+        -:  106:#else
+        -:  107:	error("%s: file descriptor passing not supported", __func__);
+        -:  108:	return -1;
+        -:  109:#endif
+        -:  110:}
+        -:  111:
+        -:  112:int
+    #####:  113:mm_receive_fd(int sock)
+        -:  114:{
+        -:  115:#if defined(HAVE_RECVMSG) && (defined(HAVE_ACCRIGHTS_IN_MSGHDR) || defined(HAVE_CONTROL_IN_MSGHDR))
+        -:  116:	struct msghdr msg;
+        -:  117:#ifndef HAVE_ACCRIGHTS_IN_MSGHDR
+        -:  118:	union {
+        -:  119:		struct cmsghdr hdr;
+        -:  120:		char buf[CMSG_SPACE(sizeof(int))];
+        -:  121:	} cmsgbuf;
+        -:  122:	struct cmsghdr *cmsg;
+        -:  123:#endif
+        -:  124:	struct iovec vec;
+        -:  125:	ssize_t n;
+        -:  126:	char ch;
+        -:  127:	int fd;
+        -:  128:	struct pollfd pfd;
+        -:  129:
+    #####:  130:	memset(&msg, 0, sizeof(msg));
+    #####:  131:	vec.iov_base = &ch;
+    #####:  132:	vec.iov_len = 1;
+    #####:  133:	msg.msg_iov = &vec;
+    #####:  134:	msg.msg_iovlen = 1;
+        -:  135:#ifdef HAVE_ACCRIGHTS_IN_MSGHDR
+        -:  136:	msg.msg_accrights = (caddr_t)&fd;
+        -:  137:	msg.msg_accrightslen = sizeof(fd);
+        -:  138:#else
+    #####:  139:	memset(&cmsgbuf, 0, sizeof(cmsgbuf));
+    #####:  140:	msg.msg_control = &cmsgbuf.buf;
+    #####:  141:	msg.msg_controllen = sizeof(cmsgbuf.buf);
+        -:  142:#endif
+        -:  143:
+    #####:  144:	pfd.fd = sock;
+    #####:  145:	pfd.events = POLLIN;
+    #####:  146:	while ((n = recvmsg(sock, &msg, 0)) == -1 &&
+    #####:  147:	    (errno == EAGAIN || errno == EINTR)) {
+    #####:  148:		debug3("%s: recvmsg: %s", __func__, strerror(errno));
+    #####:  149:		(void)poll(&pfd, 1, -1);
+        -:  150:	}
+    #####:  151:	if (n == -1) {
+    #####:  152:		error("%s: recvmsg: %s", __func__, strerror(errno));
+    #####:  153:		return -1;
+        -:  154:	}
+        -:  155:
+    #####:  156:	if (n != 1) {
+    #####:  157:		error("%s: recvmsg: expected received 1 got %zd", __func__, n);
+    #####:  158:		return -1;
+        -:  159:	}
+        -:  160:
+        -:  161:#ifdef HAVE_ACCRIGHTS_IN_MSGHDR
+        -:  162:	if (msg.msg_accrightslen != sizeof(fd)) {
+        -:  163:		error("%s: no fd", __func__);
+        -:  164:		return -1;
+        -:  165:	}
+        -:  166:#else
+    #####:  167:	cmsg = CMSG_FIRSTHDR(&msg);
+    #####:  168:	if (cmsg == NULL) {
+    #####:  169:		error("%s: no message header", __func__);
+    #####:  170:		return -1;
+        -:  171:	}
+        -:  172:
+        -:  173:#ifndef BROKEN_CMSG_TYPE
+    #####:  174:	if (cmsg->cmsg_type != SCM_RIGHTS) {
+    #####:  175:		error("%s: expected type %d got %d", __func__,
+        -:  176:		    SCM_RIGHTS, cmsg->cmsg_type);
+    #####:  177:		return -1;
+        -:  178:	}
+        -:  179:#endif
+    #####:  180:	fd = (*(int *)CMSG_DATA(cmsg));
+        -:  181:#endif
+    #####:  182:	return fd;
+        -:  183:#else
+        -:  184:	error("%s: file descriptor passing not supported", __func__);
+        -:  185:	return -1;
+        -:  186:#endif
+        -:  187:}

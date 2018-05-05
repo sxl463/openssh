@@ -1,0 +1,51 @@
+        -:    0:Source:verify.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: verify.c,v 1.3 2013/12/09 11:03:45 markus Exp $ */
+        -:    2:
+        -:    3:/*
+        -:    4: * Public Domain, Author: Daniel J. Bernstein
+        -:    5: * Copied from nacl-20110221/crypto_verify/32/ref/verify.c
+        -:    6: */
+        -:    7:
+        -:    8:#include "includes.h"
+        -:    9:
+        -:   10:#include "crypto_api.h"
+        -:   11:
+    #####:   12:int crypto_verify_32(const unsigned char *x,const unsigned char *y)
+        -:   13:{
+    #####:   14:  unsigned int differentbits = 0;
+        -:   15:#define F(i) differentbits |= x[i] ^ y[i];
+    #####:   16:  F(0)
+    #####:   17:  F(1)
+    #####:   18:  F(2)
+    #####:   19:  F(3)
+    #####:   20:  F(4)
+    #####:   21:  F(5)
+    #####:   22:  F(6)
+    #####:   23:  F(7)
+    #####:   24:  F(8)
+    #####:   25:  F(9)
+    #####:   26:  F(10)
+    #####:   27:  F(11)
+    #####:   28:  F(12)
+    #####:   29:  F(13)
+    #####:   30:  F(14)
+    #####:   31:  F(15)
+    #####:   32:  F(16)
+    #####:   33:  F(17)
+    #####:   34:  F(18)
+    #####:   35:  F(19)
+    #####:   36:  F(20)
+    #####:   37:  F(21)
+    #####:   38:  F(22)
+    #####:   39:  F(23)
+    #####:   40:  F(24)
+    #####:   41:  F(25)
+    #####:   42:  F(26)
+    #####:   43:  F(27)
+    #####:   44:  F(28)
+    #####:   45:  F(29)
+    #####:   46:  F(30)
+    #####:   47:  F(31)
+    #####:   48:  return (1 & ((differentbits - 1) >> 8)) - 1;
+        -:   49:}

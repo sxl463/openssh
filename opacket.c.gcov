@@ -1,0 +1,339 @@
+        -:    0:Source:opacket.c
+        -:    0:Programs:78
+        -:    1:/* Written by Markus Friedl. Placed in the public domain.  */
+        -:    2:
+        -:    3:#include "includes.h"
+        -:    4:
+        -:    5:#include "ssherr.h"
+        -:    6:#include "packet.h"
+        -:    7:#include "log.h"
+        -:    8:
+        -:    9:struct ssh *active_state, *backup_state;
+        -:   10:
+        -:   11:/* Map old to new API */
+        -:   12:
+        -:   13:void
+       14:   14:ssh_packet_start(struct ssh *ssh, u_char type)
+        -:   15:{
+        -:   16:	int r;
+        -:   17:
+       14:   18:	if ((r = sshpkt_start(ssh, type)) != 0)
+    #####:   19:		fatal("%s: %s", __func__, ssh_err(r));
+       14:   20:}
+        -:   21:
+        -:   22:void
+        4:   23:ssh_packet_put_char(struct ssh *ssh, int value)
+        -:   24:{
+        4:   25:	u_char ch = value;
+        -:   26:	int r;
+        -:   27:
+        4:   28:	if ((r = sshpkt_put_u8(ssh, ch)) != 0)
+    #####:   29:		fatal("%s: %s", __func__, ssh_err(r));
+        4:   30:}
+        -:   31:
+        -:   32:void
+       16:   33:ssh_packet_put_int(struct ssh *ssh, u_int value)
+        -:   34:{
+        -:   35:	int r;
+        -:   36:
+       16:   37:	if ((r = sshpkt_put_u32(ssh, value)) != 0)
+    #####:   38:		fatal("%s: %s", __func__, ssh_err(r));
+       16:   39:}
+        -:   40:
+        -:   41:void
+    #####:   42:ssh_packet_put_int64(struct ssh *ssh, u_int64_t value)
+        -:   43:{
+        -:   44:	int r;
+        -:   45:
+    #####:   46:	if ((r = sshpkt_put_u64(ssh, value)) != 0)
+    #####:   47:		fatal("%s: %s", __func__, ssh_err(r));
+    #####:   48:}
+        -:   49:
+        -:   50:void
+        7:   51:ssh_packet_put_string(struct ssh *ssh, const void *buf, u_int len)
+        -:   52:{
+        -:   53:	int r;
+        -:   54:
+        7:   55:	if ((r = sshpkt_put_string(ssh, buf, len)) != 0)
+    #####:   56:		fatal("%s: %s", __func__, ssh_err(r));
+        7:   57:}
+        -:   58:
+        -:   59:void
+       14:   60:ssh_packet_put_cstring(struct ssh *ssh, const char *str)
+        -:   61:{
+        -:   62:	int r;
+        -:   63:
+       14:   64:	if ((r = sshpkt_put_cstring(ssh, str)) != 0)
+    #####:   65:		fatal("%s: %s", __func__, ssh_err(r));
+       14:   66:}
+        -:   67:
+        -:   68:void
+        1:   69:ssh_packet_put_raw(struct ssh *ssh, const void *buf, u_int len)
+        -:   70:{
+        -:   71:	int r;
+        -:   72:
+        1:   73:	if ((r = sshpkt_put(ssh, buf, len)) != 0)
+    #####:   74:		fatal("%s: %s", __func__, ssh_err(r));
+        1:   75:}
+        -:   76:
+        -:   77:#ifdef WITH_SSH1
+        -:   78:void
+        -:   79:ssh_packet_put_bignum(struct ssh *ssh, BIGNUM * value)
+        -:   80:{
+        -:   81:	int r;
+        -:   82:
+        -:   83:	if ((r = sshpkt_put_bignum1(ssh, value)) != 0)
+        -:   84:		fatal("%s: %s", __func__, ssh_err(r));
+        -:   85:}
+        -:   86:#endif
+        -:   87:
+        -:   88:#ifdef WITH_OPENSSL
+        -:   89:void
+    #####:   90:ssh_packet_put_bignum2(struct ssh *ssh, BIGNUM * value)
+        -:   91:{
+        -:   92:	int r;
+        -:   93:
+    #####:   94:	if ((r = sshpkt_put_bignum2(ssh, value)) != 0)
+    #####:   95:		fatal("%s: %s", __func__, ssh_err(r));
+    #####:   96:}
+        -:   97:
+        -:   98:# ifdef OPENSSL_HAS_ECC
+        -:   99:void
+    #####:  100:ssh_packet_put_ecpoint(struct ssh *ssh, const EC_GROUP *curve,
+        -:  101:    const EC_POINT *point)
+        -:  102:{
+        -:  103:	int r;
+        -:  104:
+    #####:  105:	if ((r = sshpkt_put_ec(ssh, point, curve)) != 0)
+    #####:  106:		fatal("%s: %s", __func__, ssh_err(r));
+    #####:  107:}
+        -:  108:# endif
+        -:  109:#endif /* WITH_OPENSSL */
+        -:  110:
+        -:  111:void
+       14:  112:ssh_packet_send(struct ssh *ssh)
+        -:  113:{
+        -:  114:	int r;
+        -:  115:
+       14:  116:	if ((r = sshpkt_send(ssh)) != 0)
+    #####:  117:		fatal("%s: %s", __func__, ssh_err(r));
+       14:  118:}
+        -:  119:
+        -:  120:u_int
+        3:  121:ssh_packet_get_char(struct ssh *ssh)
+        -:  122:{
+        -:  123:	u_char ch;
+        -:  124:	int r;
+        -:  125:
+        3:  126:	if ((r = sshpkt_get_u8(ssh, &ch)) != 0)
+    #####:  127:		fatal("%s: %s", __func__, ssh_err(r));
+        3:  128:	return ch;
+        -:  129:}
+        -:  130:
+        -:  131:u_int
+       21:  132:ssh_packet_get_int(struct ssh *ssh)
+        -:  133:{
+        -:  134:	u_int val;
+        -:  135:	int r;
+        -:  136:
+       21:  137:	if ((r = sshpkt_get_u32(ssh, &val)) != 0)
+    #####:  138:		fatal("%s: %s", __func__, ssh_err(r));
+       21:  139:	return val;
+        -:  140:}
+        -:  141:
+        -:  142:u_int64_t
+    #####:  143:ssh_packet_get_int64(struct ssh *ssh)
+        -:  144:{
+        -:  145:	u_int64_t val;
+        -:  146:	int r;
+        -:  147:
+    #####:  148:	if ((r = sshpkt_get_u64(ssh, &val)) != 0)
+    #####:  149:		fatal("%s: %s", __func__, ssh_err(r));
+    #####:  150:	return val;
+        -:  151:}
+        -:  152:
+        -:  153:#ifdef WITH_SSH1
+        -:  154:void
+        -:  155:ssh_packet_get_bignum(struct ssh *ssh, BIGNUM * value)
+        -:  156:{
+        -:  157:	int r;
+        -:  158:
+        -:  159:	if ((r = sshpkt_get_bignum1(ssh, value)) != 0)
+        -:  160:		fatal("%s: %s", __func__, ssh_err(r));
+        -:  161:}
+        -:  162:#endif
+        -:  163:
+        -:  164:#ifdef WITH_OPENSSL
+        -:  165:void
+    #####:  166:ssh_packet_get_bignum2(struct ssh *ssh, BIGNUM * value)
+        -:  167:{
+        -:  168:	int r;
+        -:  169:
+    #####:  170:	if ((r = sshpkt_get_bignum2(ssh, value)) != 0)
+    #####:  171:		fatal("%s: %s", __func__, ssh_err(r));
+    #####:  172:}
+        -:  173:
+        -:  174:# ifdef OPENSSL_HAS_ECC
+        -:  175:void
+    #####:  176:ssh_packet_get_ecpoint(struct ssh *ssh, const EC_GROUP *curve, EC_POINT *point)
+        -:  177:{
+        -:  178:	int r;
+        -:  179:
+    #####:  180:	if ((r = sshpkt_get_ec(ssh, point, curve)) != 0)
+    #####:  181:		fatal("%s: %s", __func__, ssh_err(r));
+    #####:  182:}
+        -:  183:# endif
+        -:  184:#endif /* WITH_OPENSSL */
+        -:  185:
+        -:  186:void *
+        5:  187:ssh_packet_get_string(struct ssh *ssh, u_int *length_ptr)
+        -:  188:{
+        -:  189:	int r;
+        -:  190:	size_t len;
+        -:  191:	u_char *val;
+        -:  192:
+        5:  193:	if ((r = sshpkt_get_string(ssh, &val, &len)) != 0)
+    #####:  194:		fatal("%s: %s", __func__, ssh_err(r));
+        5:  195:	if (length_ptr != NULL)
+        2:  196:		*length_ptr = (u_int)len;
+        5:  197:	return val;
+        -:  198:}
+        -:  199:
+        -:  200:const void *
+        8:  201:ssh_packet_get_string_ptr(struct ssh *ssh, u_int *length_ptr)
+        -:  202:{
+        -:  203:	int r;
+        -:  204:	size_t len;
+        -:  205:	const u_char *val;
+        -:  206:
+        8:  207:	if ((r = sshpkt_get_string_direct(ssh, &val, &len)) != 0)
+    #####:  208:		fatal("%s: %s", __func__, ssh_err(r));
+        8:  209:	if (length_ptr != NULL)
+        8:  210:		*length_ptr = (u_int)len;
+        8:  211:	return val;
+        -:  212:}
+        -:  213:
+        -:  214:char *
+    #####:  215:ssh_packet_get_cstring(struct ssh *ssh, u_int *length_ptr)
+        -:  216:{
+        -:  217:	int r;
+        -:  218:	size_t len;
+        -:  219:	char *val;
+        -:  220:
+    #####:  221:	if ((r = sshpkt_get_cstring(ssh, &val, &len)) != 0)
+    #####:  222:		fatal("%s: %s", __func__, ssh_err(r));
+    #####:  223:	if (length_ptr != NULL)
+    #####:  224:		*length_ptr = (u_int)len;
+    #####:  225:	return val;
+        -:  226:}
+        -:  227:
+        -:  228:/* Old API, that had to be reimplemented */
+        -:  229:
+        -:  230:void
+        1:  231:packet_set_connection(int fd_in, int fd_out)
+        -:  232:{
+        1:  233:	active_state = ssh_packet_set_connection(active_state, fd_in, fd_out);
+        1:  234:	if (active_state == NULL)
+    #####:  235:		fatal("%s: ssh_packet_set_connection failed", __func__);
+        1:  236:}
+        -:  237:
+        -:  238:u_int
+        3:  239:packet_get_char(void)
+        -:  240:{
+        3:  241:	return (ssh_packet_get_char(active_state));
+        -:  242:}
+        -:  243:
+        -:  244:u_int
+       21:  245:packet_get_int(void)
+        -:  246:{
+       21:  247:	return (ssh_packet_get_int(active_state));
+        -:  248:}
+        -:  249:
+        -:  250:int
+    #####:  251:packet_read_seqnr(u_int32_t *seqnr)
+        -:  252:{
+        -:  253:	u_char type;
+        -:  254:	int r;
+        -:  255:
+    #####:  256:	if ((r = ssh_packet_read_seqnr(active_state, &type, seqnr)) != 0)
+    #####:  257:		sshpkt_fatal(active_state, __func__, r);
+    #####:  258:	return type;
+        -:  259:}
+        -:  260:
+        -:  261:int
+    #####:  262:packet_read_poll_seqnr(u_int32_t *seqnr)
+        -:  263:{
+        -:  264:	u_char type;
+        -:  265:	int r;
+        -:  266:
+    #####:  267:	if ((r = ssh_packet_read_poll_seqnr(active_state, &type, seqnr)))
+    #####:  268:		sshpkt_fatal(active_state, __func__, r);
+    #####:  269:	return type;
+        -:  270:}
+        -:  271:
+        -:  272:void
+        1:  273:packet_close(void)
+        -:  274:{
+        1:  275:	ssh_packet_close(active_state);
+        1:  276:	active_state = NULL;
+        1:  277:}
+        -:  278:
+        -:  279:void
+       10:  280:packet_process_incoming(const char *buf, u_int len)
+        -:  281:{
+        -:  282:	int r;
+        -:  283:
+       10:  284:	if ((r = ssh_packet_process_incoming(active_state, buf, len)) != 0)
+    #####:  285:		sshpkt_fatal(active_state, __func__, r);
+       10:  286:}
+        -:  287:
+        -:  288:void
+        1:  289:packet_write_wait(void)
+        -:  290:{
+        -:  291:	int r;
+        -:  292:
+        1:  293:	if ((r = ssh_packet_write_wait(active_state)) != 0)
+    #####:  294:		sshpkt_fatal(active_state, __func__, r);
+        1:  295:}
+        -:  296:
+        -:  297:void
+        8:  298:packet_write_poll(void)
+        -:  299:{
+        -:  300:	int r;
+        -:  301:
+        8:  302:	if ((r = ssh_packet_write_poll(active_state)) != 0)
+    #####:  303:		sshpkt_fatal(active_state, __func__, r);
+        8:  304:}
+        -:  305:
+        -:  306:void
+    #####:  307:packet_read_expect(int expected_type)
+        -:  308:{
+        -:  309:	int r;
+        -:  310:
+    #####:  311:	if ((r = ssh_packet_read_expect(active_state, expected_type)) != 0)
+    #####:  312:		sshpkt_fatal(active_state, __func__, r);
+    #####:  313:}
+        -:  314:
+        -:  315:void
+    #####:  316:packet_disconnect(const char *fmt, ...)
+        -:  317:{
+        -:  318:	char buf[1024];
+        -:  319:	va_list args;
+        -:  320:
+    #####:  321:	va_start(args, fmt);
+    #####:  322:	vsnprintf(buf, sizeof(buf), fmt, args);
+    #####:  323:	va_end(args);
+    #####:  324:	ssh_packet_disconnect(active_state, "%s", buf);
+        -:  325:}
+        -:  326:
+        -:  327:void
+    #####:  328:packet_send_debug(const char *fmt, ...)
+        -:  329:{
+        -:  330:	char buf[1024];
+        -:  331:	va_list args;
+        -:  332:
+    #####:  333:	va_start(args, fmt);
+    #####:  334:	vsnprintf(buf, sizeof(buf), fmt, args);
+    #####:  335:	va_end(args);
+    #####:  336:	ssh_packet_send_debug(active_state, "%s", buf);
+    #####:  337:}

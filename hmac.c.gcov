@@ -1,0 +1,199 @@
+        -:    0:Source:hmac.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: hmac.c,v 1.12 2015/03/24 20:03:44 markus Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2014 Markus Friedl.  All rights reserved.
+        -:    4: *
+        -:    5: * Permission to use, copy, modify, and distribute this software for any
+        -:    6: * purpose with or without fee is hereby granted, provided that the above
+        -:    7: * copyright notice and this permission notice appear in all copies.
+        -:    8: *
+        -:    9: * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        -:   10: * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        -:   11: * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        -:   12: * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        -:   13: * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        -:   14: * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        -:   15: * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+        -:   16: */
+        -:   17:
+        -:   18:#include "includes.h"
+        -:   19:
+        -:   20:#include <sys/types.h>
+        -:   21:#include <string.h>
+        -:   22:
+        -:   23:#include "sshbuf.h"
+        -:   24:#include "digest.h"
+        -:   25:#include "hmac.h"
+        -:   26:
+        -:   27:struct ssh_hmac_ctx {
+        -:   28:	int			 alg;
+        -:   29:	struct ssh_digest_ctx	*ictx;
+        -:   30:	struct ssh_digest_ctx	*octx;
+        -:   31:	struct ssh_digest_ctx	*digest;
+        -:   32:	u_char			*buf;
+        -:   33:	size_t			 buf_len;
+        -:   34:};
+        -:   35:
+        -:   36:size_t
+    #####:   37:ssh_hmac_bytes(int alg)
+        -:   38:{
+    #####:   39:	return ssh_digest_bytes(alg);
+        -:   40:}
+        -:   41:
+        -:   42:struct ssh_hmac_ctx *
+    #####:   43:ssh_hmac_start(int alg)
+        -:   44:{
+        -:   45:	struct ssh_hmac_ctx	*ret;
+        -:   46:
+    #####:   47:	if ((ret = calloc(1, sizeof(*ret))) == NULL)
+    #####:   48:		return NULL;
+    #####:   49:	ret->alg = alg;
+    #####:   50:	if ((ret->ictx = ssh_digest_start(alg)) == NULL ||
+    #####:   51:	    (ret->octx = ssh_digest_start(alg)) == NULL ||
+    #####:   52:	    (ret->digest = ssh_digest_start(alg)) == NULL)
+        -:   53:		goto fail;
+    #####:   54:	ret->buf_len = ssh_digest_blocksize(ret->ictx);
+    #####:   55:	if ((ret->buf = calloc(1, ret->buf_len)) == NULL)
+    #####:   56:		goto fail;
+    #####:   57:	return ret;
+        -:   58:fail:
+    #####:   59:	ssh_hmac_free(ret);
+    #####:   60:	return NULL;
+        -:   61:}
+        -:   62:
+        -:   63:int
+    #####:   64:ssh_hmac_init(struct ssh_hmac_ctx *ctx, const void *key, size_t klen)
+        -:   65:{
+        -:   66:	size_t i;
+        -:   67:
+        -:   68:	/* reset ictx and octx if no is key given */
+    #####:   69:	if (key != NULL) {
+        -:   70:		/* truncate long keys */
+    #####:   71:		if (klen <= ctx->buf_len)
+    #####:   72:			memcpy(ctx->buf, key, klen);
+    #####:   73:		else if (ssh_digest_memory(ctx->alg, key, klen, ctx->buf,
+        -:   74:		    ctx->buf_len) < 0)
+    #####:   75:			return -1;
+    #####:   76:		for (i = 0; i < ctx->buf_len; i++)
+    #####:   77:			ctx->buf[i] ^= 0x36;
+    #####:   78:		if (ssh_digest_update(ctx->ictx, ctx->buf, ctx->buf_len) < 0)
+    #####:   79:			return -1;
+    #####:   80:		for (i = 0; i < ctx->buf_len; i++)
+    #####:   81:			ctx->buf[i] ^= 0x36 ^ 0x5c;
+    #####:   82:		if (ssh_digest_update(ctx->octx, ctx->buf, ctx->buf_len) < 0)
+    #####:   83:			return -1;
+    #####:   84:		explicit_bzero(ctx->buf, ctx->buf_len);
+        -:   85:	}
+        -:   86:	/* start with ictx */
+    #####:   87:	if (ssh_digest_copy_state(ctx->ictx, ctx->digest) < 0)
+    #####:   88:		return -1;
+    #####:   89:	return 0;
+        -:   90:}
+        -:   91:
+        -:   92:int
+    #####:   93:ssh_hmac_update(struct ssh_hmac_ctx *ctx, const void *m, size_t mlen)
+        -:   94:{
+    #####:   95:	return ssh_digest_update(ctx->digest, m, mlen);
+        -:   96:}
+        -:   97:
+        -:   98:int
+    #####:   99:ssh_hmac_update_buffer(struct ssh_hmac_ctx *ctx, const struct sshbuf *b)
+        -:  100:{
+    #####:  101:	return ssh_digest_update_buffer(ctx->digest, b);
+        -:  102:}
+        -:  103:
+        -:  104:int
+    #####:  105:ssh_hmac_final(struct ssh_hmac_ctx *ctx, u_char *d, size_t dlen)
+        -:  106:{
+        -:  107:	size_t len;
+        -:  108:
+    #####:  109:	len = ssh_digest_bytes(ctx->alg);
+    #####:  110:	if (dlen < len ||
+    #####:  111:	    ssh_digest_final(ctx->digest, ctx->buf, len))
+    #####:  112:		return -1;
+        -:  113:	/* switch to octx */
+    #####:  114:	if (ssh_digest_copy_state(ctx->octx, ctx->digest) < 0 ||
+    #####:  115:	    ssh_digest_update(ctx->digest, ctx->buf, len) < 0 ||
+    #####:  116:	    ssh_digest_final(ctx->digest, d, dlen) < 0)
+    #####:  117:		return -1;
+    #####:  118:	return 0;
+        -:  119:}
+        -:  120:
+        -:  121:void
+    #####:  122:ssh_hmac_free(struct ssh_hmac_ctx *ctx)
+        -:  123:{
+    #####:  124:	if (ctx != NULL) {
+    #####:  125:		ssh_digest_free(ctx->ictx);
+    #####:  126:		ssh_digest_free(ctx->octx);
+    #####:  127:		ssh_digest_free(ctx->digest);
+    #####:  128:		if (ctx->buf) {
+    #####:  129:			explicit_bzero(ctx->buf, ctx->buf_len);
+    #####:  130:			free(ctx->buf);
+        -:  131:		}
+    #####:  132:		explicit_bzero(ctx, sizeof(*ctx));
+    #####:  133:		free(ctx);
+        -:  134:	}
+    #####:  135:}
+        -:  136:
+        -:  137:#ifdef TEST
+        -:  138:
+        -:  139:/* cc -DTEST hmac.c digest.c buffer.c cleanup.c fatal.c log.c xmalloc.c -lcrypto */
+        -:  140:static void
+        -:  141:hmac_test(void *key, size_t klen, void *m, size_t mlen, u_char *e, size_t elen)
+        -:  142:{
+        -:  143:	struct ssh_hmac_ctx	*ctx;
+        -:  144:	size_t			 i;
+        -:  145:	u_char			 digest[16];
+        -:  146:
+        -:  147:	if ((ctx = ssh_hmac_start(SSH_DIGEST_MD5)) == NULL)
+        -:  148:		printf("ssh_hmac_start failed");
+        -:  149:	if (ssh_hmac_init(ctx, key, klen) < 0 ||
+        -:  150:	    ssh_hmac_update(ctx, m, mlen) < 0 ||
+        -:  151:	    ssh_hmac_final(ctx, digest, sizeof(digest)) < 0)
+        -:  152:		printf("ssh_hmac_xxx failed");
+        -:  153:	ssh_hmac_free(ctx);
+        -:  154:
+        -:  155:	if (memcmp(e, digest, elen)) {
+        -:  156:		for (i = 0; i < elen; i++)
+        -:  157:			printf("[%zu] %2.2x %2.2x\n", i, e[i], digest[i]);
+        -:  158:		printf("mismatch\n");
+        -:  159:	} else
+        -:  160:		printf("ok\n");
+        -:  161:}
+        -:  162:
+        -:  163:int
+        -:  164:main(int argc, char **argv)
+        -:  165:{
+        -:  166:	/* try test vectors from RFC 2104 */
+        -:  167:
+        -:  168:	u_char key1[16] = {
+        -:  169:	    0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb,
+        -:  170:	    0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb };
+        -:  171:	u_char *data1 = "Hi There";
+        -:  172:	u_char dig1[16] = {
+        -:  173:	    0x92, 0x94, 0x72, 0x7a, 0x36, 0x38, 0xbb, 0x1c,
+        -:  174:	    0x13, 0xf4, 0x8e, 0xf8, 0x15, 0x8b, 0xfc, 0x9d };
+        -:  175:
+        -:  176:	u_char *key2 = "Jefe";
+        -:  177:	u_char *data2 = "what do ya want for nothing?";
+        -:  178:	u_char dig2[16] = {
+        -:  179:	    0x75, 0x0c, 0x78, 0x3e, 0x6a, 0xb0, 0xb5, 0x03,
+        -:  180:	    0xea, 0xa8, 0x6e, 0x31, 0x0a, 0x5d, 0xb7, 0x38 };
+        -:  181:
+        -:  182:	u_char key3[16];
+        -:  183:	u_char data3[50];
+        -:  184:	u_char dig3[16] = {
+        -:  185:	    0x56, 0xbe, 0x34, 0x52, 0x1d, 0x14, 0x4c, 0x88,
+        -:  186:	    0xdb, 0xb8, 0xc7, 0x33, 0xf0, 0xe8, 0xb3, 0xf6 };
+        -:  187:	memset(key3, 0xaa, sizeof(key3));
+        -:  188:	memset(data3, 0xdd, sizeof(data3));
+        -:  189:
+        -:  190:	hmac_test(key1, sizeof(key1), data1, strlen(data1), dig1, sizeof(dig1));
+        -:  191:	hmac_test(key2, strlen(key2), data2, strlen(data2), dig2, sizeof(dig2));
+        -:  192:	hmac_test(key3, sizeof(key3), data3, sizeof(data3), dig3, sizeof(dig3));
+        -:  193:
+        -:  194:	return 0;
+        -:  195:}
+        -:  196:
+        -:  197:#endif

@@ -1,0 +1,274 @@
+        -:    0:Source:kexgexc.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: kexgexc.c,v 1.23 2016/09/12 01:22:38 deraadt Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2000 Niels Provos.  All rights reserved.
+        -:    4: * Copyright (c) 2001 Markus Friedl.  All rights reserved.
+        -:    5: *
+        -:    6: * Redistribution and use in source and binary forms, with or without
+        -:    7: * modification, are permitted provided that the following conditions
+        -:    8: * are met:
+        -:    9: * 1. Redistributions of source code must retain the above copyright
+        -:   10: *    notice, this list of conditions and the following disclaimer.
+        -:   11: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   12: *    notice, this list of conditions and the following disclaimer in the
+        -:   13: *    documentation and/or other materials provided with the distribution.
+        -:   14: *
+        -:   15: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   16: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   17: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   18: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   19: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   20: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   21: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   22: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   23: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   24: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   25: */
+        -:   26:
+        -:   27:#include "includes.h"
+        -:   28:
+        -:   29:#ifdef WITH_OPENSSL
+        -:   30:
+        -:   31:#include <sys/types.h>
+        -:   32:
+        -:   33:#include <openssl/dh.h>
+        -:   34:
+        -:   35:#include <stdarg.h>
+        -:   36:#include <stdio.h>
+        -:   37:#include <string.h>
+        -:   38:#include <signal.h>
+        -:   39:
+        -:   40:#include "sshkey.h"
+        -:   41:#include "cipher.h"
+        -:   42:#include "digest.h"
+        -:   43:#include "kex.h"
+        -:   44:#include "log.h"
+        -:   45:#include "packet.h"
+        -:   46:#include "dh.h"
+        -:   47:#include "ssh2.h"
+        -:   48:#include "compat.h"
+        -:   49:#include "dispatch.h"
+        -:   50:#include "ssherr.h"
+        -:   51:#include "sshbuf.h"
+        -:   52:#include "misc.h"
+        -:   53:
+        -:   54:static int input_kex_dh_gex_group(int, u_int32_t, void *);
+        -:   55:static int input_kex_dh_gex_reply(int, u_int32_t, void *);
+        -:   56:
+        -:   57:int
+    #####:   58:kexgex_client(struct ssh *ssh)
+        -:   59:{
+    #####:   60:	struct kex *kex = ssh->kex;
+        -:   61:	int r;
+        -:   62:	u_int nbits;
+        -:   63:
+    #####:   64:	nbits = dh_estimate(kex->dh_need * 8);
+        -:   65:
+    #####:   66:	kex->min = DH_GRP_MIN;
+    #####:   67:	kex->max = DH_GRP_MAX;
+    #####:   68:	kex->nbits = nbits;
+    #####:   69:	if (datafellows & SSH_BUG_DHGEX_LARGE)
+    #####:   70:		kex->nbits = MINIMUM(kex->nbits, 4096);
+        -:   71:	/* New GEX request */
+    #####:   72:	if ((r = sshpkt_start(ssh, SSH2_MSG_KEX_DH_GEX_REQUEST)) != 0 ||
+    #####:   73:	    (r = sshpkt_put_u32(ssh, kex->min)) != 0 ||
+    #####:   74:	    (r = sshpkt_put_u32(ssh, kex->nbits)) != 0 ||
+    #####:   75:	    (r = sshpkt_put_u32(ssh, kex->max)) != 0 ||
+        -:   76:	    (r = sshpkt_send(ssh)) != 0)
+        -:   77:		goto out;
+    #####:   78:	debug("SSH2_MSG_KEX_DH_GEX_REQUEST(%u<%u<%u) sent",
+        -:   79:	    kex->min, kex->nbits, kex->max);
+        -:   80:#ifdef DEBUG_KEXDH
+        -:   81:	fprintf(stderr, "\nmin = %d, nbits = %d, max = %d\n",
+        -:   82:	    kex->min, kex->nbits, kex->max);
+        -:   83:#endif
+    #####:   84:	ssh_dispatch_set(ssh, SSH2_MSG_KEX_DH_GEX_GROUP,
+        -:   85:	    &input_kex_dh_gex_group);
+    #####:   86:	r = 0;
+        -:   87: out:
+    #####:   88:	return r;
+        -:   89:}
+        -:   90:
+        -:   91:static int
+    #####:   92:input_kex_dh_gex_group(int type, u_int32_t seq, void *ctxt)
+        -:   93:{
+    #####:   94:	struct ssh *ssh = ctxt;
+    #####:   95:	struct kex *kex = ssh->kex;
+    #####:   96:	BIGNUM *p = NULL, *g = NULL;
+        -:   97:	int r, bits;
+        -:   98:
+    #####:   99:	debug("got SSH2_MSG_KEX_DH_GEX_GROUP");
+        -:  100:
+    #####:  101:	if ((p = BN_new()) == NULL ||
+        -:  102:	    (g = BN_new()) == NULL) {
+    #####:  103:		r = SSH_ERR_ALLOC_FAIL;
+    #####:  104:		goto out;
+        -:  105:	}
+    #####:  106:	if ((r = sshpkt_get_bignum2(ssh, p)) != 0 ||
+    #####:  107:	    (r = sshpkt_get_bignum2(ssh, g)) != 0 ||
+        -:  108:	    (r = sshpkt_get_end(ssh)) != 0)
+        -:  109:		goto out;
+    #####:  110:	if ((bits = BN_num_bits(p)) < 0 ||
+    #####:  111:	    (u_int)bits < kex->min || (u_int)bits > kex->max) {
+    #####:  112:		r = SSH_ERR_DH_GEX_OUT_OF_RANGE;
+    #####:  113:		goto out;
+        -:  114:	}
+    #####:  115:	if ((kex->dh = dh_new_group(g, p)) == NULL) {
+    #####:  116:		r = SSH_ERR_ALLOC_FAIL;
+    #####:  117:		goto out;
+        -:  118:	}
+    #####:  119:	p = g = NULL; /* belong to kex->dh now */
+        -:  120:
+        -:  121:	/* generate and send 'e', client DH public key */
+    #####:  122:	if ((r = dh_gen_key(kex->dh, kex->we_need * 8)) != 0 ||
+    #####:  123:	    (r = sshpkt_start(ssh, SSH2_MSG_KEX_DH_GEX_INIT)) != 0 ||
+    #####:  124:	    (r = sshpkt_put_bignum2(ssh, kex->dh->pub_key)) != 0 ||
+        -:  125:	    (r = sshpkt_send(ssh)) != 0)
+        -:  126:		goto out;
+    #####:  127:	debug("SSH2_MSG_KEX_DH_GEX_INIT sent");
+        -:  128:#ifdef DEBUG_KEXDH
+        -:  129:	DHparams_print_fp(stderr, kex->dh);
+        -:  130:	fprintf(stderr, "pub= ");
+        -:  131:	BN_print_fp(stderr, kex->dh->pub_key);
+        -:  132:	fprintf(stderr, "\n");
+        -:  133:#endif
+    #####:  134:	ssh_dispatch_set(ssh, SSH2_MSG_KEX_DH_GEX_GROUP, NULL);
+    #####:  135:	ssh_dispatch_set(ssh, SSH2_MSG_KEX_DH_GEX_REPLY, &input_kex_dh_gex_reply);
+    #####:  136:	r = 0;
+        -:  137:out:
+    #####:  138:	if (p)
+    #####:  139:		BN_clear_free(p);
+    #####:  140:	if (g)
+    #####:  141:		BN_clear_free(g);
+    #####:  142:	return r;
+        -:  143:}
+        -:  144:
+        -:  145:static int
+    #####:  146:input_kex_dh_gex_reply(int type, u_int32_t seq, void *ctxt)
+        -:  147:{
+    #####:  148:	struct ssh *ssh = ctxt;
+    #####:  149:	struct kex *kex = ssh->kex;
+    #####:  150:	BIGNUM *dh_server_pub = NULL, *shared_secret = NULL;
+    #####:  151:	struct sshkey *server_host_key = NULL;
+    #####:  152:	u_char *kbuf = NULL, *signature = NULL, *server_host_key_blob = NULL;
+        -:  153:	u_char hash[SSH_DIGEST_MAX_LENGTH];
+    #####:  154:	size_t klen = 0, slen, sbloblen, hashlen;
+        -:  155:	int kout, r;
+        -:  156:
+    #####:  157:	debug("got SSH2_MSG_KEX_DH_GEX_REPLY");
+    #####:  158:	if (kex->verify_host_key == NULL) {
+    #####:  159:		r = SSH_ERR_INVALID_ARGUMENT;
+    #####:  160:		goto out;
+        -:  161:	}
+        -:  162:	/* key, cert */
+    #####:  163:	if ((r = sshpkt_get_string(ssh, &server_host_key_blob,
+    #####:  164:	    &sbloblen)) != 0 ||
+    #####:  165:	    (r = sshkey_from_blob(server_host_key_blob, sbloblen,
+        -:  166:	    &server_host_key)) != 0)
+        -:  167:		goto out;
+    #####:  168:	if (server_host_key->type != kex->hostkey_type) {
+    #####:  169:		r = SSH_ERR_KEY_TYPE_MISMATCH;
+    #####:  170:		goto out;
+        -:  171:	}
+    #####:  172:	if (server_host_key->type != kex->hostkey_type ||
+    #####:  173:	    (kex->hostkey_type == KEY_ECDSA &&
+    #####:  174:	    server_host_key->ecdsa_nid != kex->hostkey_nid)) {
+    #####:  175:		r = SSH_ERR_KEY_TYPE_MISMATCH;
+    #####:  176:		goto out;
+        -:  177:	}
+    #####:  178:	if (kex->verify_host_key(server_host_key, ssh) == -1) {
+    #####:  179:		r = SSH_ERR_SIGNATURE_INVALID;
+    #####:  180:		goto out;
+        -:  181:	}
+        -:  182:	/* DH parameter f, server public DH key */
+    #####:  183:	if ((dh_server_pub = BN_new()) == NULL) {
+    #####:  184:		r = SSH_ERR_ALLOC_FAIL;
+    #####:  185:		goto out;
+        -:  186:	}
+        -:  187:	/* signed H */
+    #####:  188:	if ((r = sshpkt_get_bignum2(ssh, dh_server_pub)) != 0 ||
+    #####:  189:	    (r = sshpkt_get_string(ssh, &signature, &slen)) != 0 ||
+        -:  190:	    (r = sshpkt_get_end(ssh)) != 0)
+        -:  191:		goto out;
+        -:  192:#ifdef DEBUG_KEXDH
+        -:  193:	fprintf(stderr, "dh_server_pub= ");
+        -:  194:	BN_print_fp(stderr, dh_server_pub);
+        -:  195:	fprintf(stderr, "\n");
+        -:  196:	debug("bits %d", BN_num_bits(dh_server_pub));
+        -:  197:#endif
+    #####:  198:	if (!dh_pub_is_valid(kex->dh, dh_server_pub)) {
+    #####:  199:		sshpkt_disconnect(ssh, "bad server public DH value");
+    #####:  200:		r = SSH_ERR_MESSAGE_INCOMPLETE;
+    #####:  201:		goto out;
+        -:  202:	}
+        -:  203:
+    #####:  204:	klen = DH_size(kex->dh);
+    #####:  205:	if ((kbuf = malloc(klen)) == NULL ||
+        -:  206:	    (shared_secret = BN_new()) == NULL) {
+    #####:  207:		r = SSH_ERR_ALLOC_FAIL;
+    #####:  208:		goto out;
+        -:  209:	}
+    #####:  210:	if ((kout = DH_compute_key(kbuf, dh_server_pub, kex->dh)) < 0 ||
+    #####:  211:	    BN_bin2bn(kbuf, kout, shared_secret) == NULL) {
+    #####:  212:		r = SSH_ERR_LIBCRYPTO_ERROR;
+    #####:  213:		goto out;
+        -:  214:	}
+        -:  215:#ifdef DEBUG_KEXDH
+        -:  216:	dump_digest("shared secret", kbuf, kout);
+        -:  217:#endif
+    #####:  218:	if (ssh->compat & SSH_OLD_DHGEX)
+    #####:  219:		kex->min = kex->max = -1;
+        -:  220:
+        -:  221:	/* calc and verify H */
+    #####:  222:	hashlen = sizeof(hash);
+    #####:  223:	if ((r = kexgex_hash(
+        -:  224:	    kex->hash_alg,
+    #####:  225:	    kex->client_version_string,
+    #####:  226:	    kex->server_version_string,
+    #####:  227:	    sshbuf_ptr(kex->my), sshbuf_len(kex->my),
+    #####:  228:	    sshbuf_ptr(kex->peer), sshbuf_len(kex->peer),
+        -:  229:	    server_host_key_blob, sbloblen,
+    #####:  230:	    kex->min, kex->nbits, kex->max,
+    #####:  231:	    kex->dh->p, kex->dh->g,
+    #####:  232:	    kex->dh->pub_key,
+        -:  233:	    dh_server_pub,
+        -:  234:	    shared_secret,
+        -:  235:	    hash, &hashlen)) != 0)
+    #####:  236:		goto out;
+        -:  237:
+    #####:  238:	if ((r = sshkey_verify(server_host_key, signature, slen, hash,
+    #####:  239:	    hashlen, ssh->compat)) != 0)
+    #####:  240:		goto out;
+        -:  241:
+        -:  242:	/* save session id */
+    #####:  243:	if (kex->session_id == NULL) {
+    #####:  244:		kex->session_id_len = hashlen;
+    #####:  245:		kex->session_id = malloc(kex->session_id_len);
+    #####:  246:		if (kex->session_id == NULL) {
+    #####:  247:			r = SSH_ERR_ALLOC_FAIL;
+    #####:  248:			goto out;
+        -:  249:		}
+    #####:  250:		memcpy(kex->session_id, hash, kex->session_id_len);
+        -:  251:	}
+        -:  252:
+    #####:  253:	if ((r = kex_derive_keys_bn(ssh, hash, hashlen, shared_secret)) == 0)
+    #####:  254:		r = kex_send_newkeys(ssh);
+        -:  255: out:
+    #####:  256:	explicit_bzero(hash, sizeof(hash));
+    #####:  257:	DH_free(kex->dh);
+    #####:  258:	kex->dh = NULL;
+    #####:  259:	if (dh_server_pub)
+    #####:  260:		BN_clear_free(dh_server_pub);
+    #####:  261:	if (kbuf) {
+    #####:  262:		explicit_bzero(kbuf, klen);
+    #####:  263:		free(kbuf);
+        -:  264:	}
+    #####:  265:	if (shared_secret)
+    #####:  266:		BN_clear_free(shared_secret);
+    #####:  267:	sshkey_free(server_host_key);
+    #####:  268:	free(server_host_key_blob);
+    #####:  269:	free(signature);
+    #####:  270:	return r;
+        -:  271:}
+        -:  272:#endif /* WITH_OPENSSL */

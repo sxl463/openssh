@@ -1,0 +1,96 @@
+        -:    0:Source:msg.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: msg.c,v 1.16 2015/01/15 09:40:00 djm Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2002 Markus Friedl.  All rights reserved.
+        -:    4: *
+        -:    5: * Redistribution and use in source and binary forms, with or without
+        -:    6: * modification, are permitted provided that the following conditions
+        -:    7: * are met:
+        -:    8: * 1. Redistributions of source code must retain the above copyright
+        -:    9: *    notice, this list of conditions and the following disclaimer.
+        -:   10: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   11: *    notice, this list of conditions and the following disclaimer in the
+        -:   12: *    documentation and/or other materials provided with the distribution.
+        -:   13: *
+        -:   14: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   15: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   16: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   17: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   18: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   19: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   20: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   21: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   22: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   23: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   24: */
+        -:   25:
+        -:   26:#include "includes.h"
+        -:   27:
+        -:   28:#include <sys/types.h>
+        -:   29:#include <sys/uio.h>
+        -:   30:
+        -:   31:#include <errno.h>
+        -:   32:#include <stdio.h>
+        -:   33:#include <string.h>
+        -:   34:#include <unistd.h>
+        -:   35:#include <stdarg.h>
+        -:   36:
+        -:   37:#include "sshbuf.h"
+        -:   38:#include "ssherr.h"
+        -:   39:#include "log.h"
+        -:   40:#include "atomicio.h"
+        -:   41:#include "msg.h"
+        -:   42:#include "misc.h"
+        -:   43:
+        -:   44:int
+    #####:   45:ssh_msg_send(int fd, u_char type, struct sshbuf *m)
+        -:   46:{
+        -:   47:	u_char buf[5];
+    #####:   48:	u_int mlen = sshbuf_len(m);
+        -:   49:
+    #####:   50:	debug3("ssh_msg_send: type %u", (unsigned int)type & 0xff);
+        -:   51:
+    #####:   52:	put_u32(buf, mlen + 1);
+    #####:   53:	buf[4] = type;		/* 1st byte of payload is mesg-type */
+    #####:   54:	if (atomicio(vwrite, fd, buf, sizeof(buf)) != sizeof(buf)) {
+    #####:   55:		error("ssh_msg_send: write");
+    #####:   56:		return (-1);
+        -:   57:	}
+    #####:   58:	if (atomicio(vwrite, fd, (u_char *)sshbuf_ptr(m), mlen) != mlen) {
+    #####:   59:		error("ssh_msg_send: write");
+    #####:   60:		return (-1);
+        -:   61:	}
+    #####:   62:	return (0);
+        -:   63:}
+        -:   64:
+        -:   65:int
+    #####:   66:ssh_msg_recv(int fd, struct sshbuf *m)
+        -:   67:{
+        -:   68:	u_char buf[4], *p;
+        -:   69:	u_int msg_len;
+        -:   70:	int r;
+        -:   71:
+    #####:   72:	debug3("ssh_msg_recv entering");
+        -:   73:
+    #####:   74:	if (atomicio(read, fd, buf, sizeof(buf)) != sizeof(buf)) {
+    #####:   75:		if (errno != EPIPE)
+    #####:   76:			error("ssh_msg_recv: read: header");
+    #####:   77:		return (-1);
+        -:   78:	}
+    #####:   79:	msg_len = get_u32(buf);
+    #####:   80:	if (msg_len > 256 * 1024) {
+    #####:   81:		error("ssh_msg_recv: read: bad msg_len %u", msg_len);
+    #####:   82:		return (-1);
+        -:   83:	}
+    #####:   84:	sshbuf_reset(m);
+    #####:   85:	if ((r = sshbuf_reserve(m, msg_len, &p)) != 0) {
+    #####:   86:		error("%s: buffer error: %s", __func__, ssh_err(r));
+    #####:   87:		return -1;
+        -:   88:	}
+    #####:   89:	if (atomicio(read, fd, p, msg_len) != msg_len) {
+    #####:   90:		error("ssh_msg_recv: read: %s", strerror(errno));
+    #####:   91:		return (-1);
+        -:   92:	}
+    #####:   93:	return (0);
+        -:   94:}

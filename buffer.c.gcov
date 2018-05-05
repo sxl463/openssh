@@ -1,0 +1,120 @@
+        -:    0:Source:buffer.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: buffer.c,v 1.36 2014/04/30 05:29:56 djm Exp $ */
+        -:    2:
+        -:    3:/*
+        -:    4: * Copyright (c) 2012 Damien Miller <djm@mindrot.org>
+        -:    5: *
+        -:    6: * Permission to use, copy, modify, and distribute this software for any
+        -:    7: * purpose with or without fee is hereby granted, provided that the above
+        -:    8: * copyright notice and this permission notice appear in all copies.
+        -:    9: *
+        -:   10: * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        -:   11: * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        -:   12: * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        -:   13: * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        -:   14: * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        -:   15: * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        -:   16: * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+        -:   17: */
+        -:   18:
+        -:   19:/* Emulation wrappers for legacy OpenSSH buffer API atop sshbuf */
+        -:   20:
+        -:   21:#include "includes.h"
+        -:   22:
+        -:   23:#include <sys/types.h>
+        -:   24:
+        -:   25:#include "buffer.h"
+        -:   26:#include "log.h"
+        -:   27:#include "ssherr.h"
+        -:   28:
+        -:   29:void
+       17:   30:buffer_append(Buffer *buffer, const void *data, u_int len)
+        -:   31:{
+        -:   32:	int ret;
+        -:   33:
+       17:   34:	if ((ret = sshbuf_put(buffer, data, len)) != 0)
+    #####:   35:		fatal("%s: %s", __func__, ssh_err(ret));
+       17:   36:}
+        -:   37:
+        -:   38:void *
+    #####:   39:buffer_append_space(Buffer *buffer, u_int len)
+        -:   40:{
+        -:   41:	int ret;
+        -:   42:	u_char *p;
+        -:   43:
+    #####:   44:	if ((ret = sshbuf_reserve(buffer, len, &p)) != 0)
+    #####:   45:		fatal("%s: %s", __func__, ssh_err(ret));
+    #####:   46:	return p;
+        -:   47:}
+        -:   48:
+        -:   49:int
+       26:   50:buffer_check_alloc(Buffer *buffer, u_int len)
+        -:   51:{
+       26:   52:	int ret = sshbuf_check_reserve(buffer, len);
+        -:   53:
+       26:   54:	if (ret == 0)
+       26:   55:		return 1;
+    #####:   56:	if (ret == SSH_ERR_NO_BUFFER_SPACE)
+    #####:   57:		return 0;
+    #####:   58:	fatal("%s: %s", __func__, ssh_err(ret));
+        -:   59:}
+        -:   60:
+        -:   61:int
+    #####:   62:buffer_get_ret(Buffer *buffer, void *buf, u_int len)
+        -:   63:{
+        -:   64:	int ret;
+        -:   65:
+    #####:   66:	if ((ret = sshbuf_get(buffer, buf, len)) != 0) {
+    #####:   67:		error("%s: %s", __func__, ssh_err(ret));
+    #####:   68:		return -1;
+        -:   69:	}
+    #####:   70:	return 0;
+        -:   71:}
+        -:   72:
+        -:   73:void
+    #####:   74:buffer_get(Buffer *buffer, void *buf, u_int len)
+        -:   75:{
+    #####:   76:	if (buffer_get_ret(buffer, buf, len) == -1)
+    #####:   77:		fatal("%s: buffer error", __func__);
+    #####:   78:}
+        -:   79:
+        -:   80:int
+       15:   81:buffer_consume_ret(Buffer *buffer, u_int bytes)
+        -:   82:{
+       15:   83:	int ret = sshbuf_consume(buffer, bytes);
+        -:   84:
+       15:   85:	if (ret == 0)
+       15:   86:		return 0;
+    #####:   87:	if (ret == SSH_ERR_MESSAGE_INCOMPLETE)
+    #####:   88:		return -1;
+    #####:   89:	fatal("%s: %s", __func__, ssh_err(ret));
+        -:   90:}
+        -:   91:
+        -:   92:void
+       15:   93:buffer_consume(Buffer *buffer, u_int bytes)
+        -:   94:{
+       15:   95:	if (buffer_consume_ret(buffer, bytes) == -1)
+    #####:   96:		fatal("%s: buffer error", __func__);
+       15:   97:}
+        -:   98:
+        -:   99:int
+    #####:  100:buffer_consume_end_ret(Buffer *buffer, u_int bytes)
+        -:  101:{
+    #####:  102:	int ret = sshbuf_consume_end(buffer, bytes);
+        -:  103:
+    #####:  104:	if (ret == 0)
+    #####:  105:		return 0;
+    #####:  106:	if (ret == SSH_ERR_MESSAGE_INCOMPLETE)
+    #####:  107:		return -1;
+    #####:  108:	fatal("%s: %s", __func__, ssh_err(ret));
+        -:  109:}
+        -:  110:
+        -:  111:void
+    #####:  112:buffer_consume_end(Buffer *buffer, u_int bytes)
+        -:  113:{
+    #####:  114:	if (buffer_consume_end_ret(buffer, bytes) == -1)
+    #####:  115:		fatal("%s: buffer error", __func__);
+    #####:  116:}
+        -:  117:
+        -:  118:

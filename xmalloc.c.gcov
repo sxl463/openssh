@@ -1,0 +1,108 @@
+        -:    0:Source:xmalloc.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: xmalloc.c,v 1.33 2016/02/15 09:47:49 dtucker Exp $ */
+        -:    2:/*
+        -:    3: * Author: Tatu Ylonen <ylo@cs.hut.fi>
+        -:    4: * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
+        -:    5: *                    All rights reserved
+        -:    6: * Versions of malloc and friends that check their results, and never return
+        -:    7: * failure (they call fatal if they encounter an error).
+        -:    8: *
+        -:    9: * As far as I am concerned, the code I have written for this software
+        -:   10: * can be used freely for any purpose.  Any derived versions of this
+        -:   11: * software must be clearly marked as such, and if the derived work is
+        -:   12: * incompatible with the protocol description in the RFC file, it must be
+        -:   13: * called by a name other than "ssh" or "Secure Shell".
+        -:   14: */
+        -:   15:
+        -:   16:#include "includes.h"
+        -:   17:
+        -:   18:#include <stdarg.h>
+        -:   19:#ifdef HAVE_STDINT_H
+        -:   20:#include <stdint.h>
+        -:   21:#endif
+        -:   22:#include <stdio.h>
+        -:   23:#include <stdlib.h>
+        -:   24:#include <string.h>
+        -:   25:
+        -:   26:#include "xmalloc.h"
+        -:   27:#include "log.h"
+        -:   28:
+        -:   29:void
+        1:   30:ssh_malloc_init(void)
+        -:   31:{
+        -:   32:#if defined(__OpenBSD__)
+        -:   33:	extern char *malloc_options;
+        -:   34:
+        -:   35:	malloc_options = "S";
+        -:   36:#endif /* __OpenBSD__ */
+        1:   37:}
+        -:   38:
+        -:   39:void *
+       68:   40:xmalloc(size_t size)
+        -:   41:{
+        -:   42:	void *ptr;
+        -:   43:
+       68:   44:	if (size == 0)
+    #####:   45:		fatal("xmalloc: zero size");
+       68:   46:	ptr = malloc(size);
+       68:   47:	if (ptr == NULL)
+    #####:   48:		fatal("xmalloc: out of memory (allocating %zu bytes)", size);
+       68:   49:	return ptr;
+        -:   50:}
+        -:   51:
+        -:   52:void *
+       17:   53:xcalloc(size_t nmemb, size_t size)
+        -:   54:{
+        -:   55:	void *ptr;
+        -:   56:
+       17:   57:	if (size == 0 || nmemb == 0)
+    #####:   58:		fatal("xcalloc: zero size");
+       17:   59:	if (SIZE_MAX / nmemb < size)
+    #####:   60:		fatal("xcalloc: nmemb * size > SIZE_MAX");
+       17:   61:	ptr = calloc(nmemb, size);
+       17:   62:	if (ptr == NULL)
+    #####:   63:		fatal("xcalloc: out of memory (allocating %zu bytes)",
+        -:   64:		    size * nmemb);
+       17:   65:	return ptr;
+        -:   66:}
+        -:   67:
+        -:   68:void *
+        2:   69:xreallocarray(void *ptr, size_t nmemb, size_t size)
+        -:   70:{
+        -:   71:	void *new_ptr;
+        -:   72:
+        2:   73:	new_ptr = reallocarray(ptr, nmemb, size);
+        2:   74:	if (new_ptr == NULL)
+    #####:   75:		fatal("xreallocarray: out of memory (%zu elements of %zu bytes)",
+        -:   76:		    nmemb, size);
+        2:   77:	return new_ptr;
+        -:   78:}
+        -:   79:
+        -:   80:char *
+       66:   81:xstrdup(const char *str)
+        -:   82:{
+        -:   83:	size_t len;
+        -:   84:	char *cp;
+        -:   85:
+       66:   86:	len = strlen(str) + 1;
+       66:   87:	cp = xmalloc(len);
+       66:   88:	strlcpy(cp, str, len);
+       66:   89:	return cp;
+        -:   90:}
+        -:   91:
+        -:   92:int
+       16:   93:xasprintf(char **ret, const char *fmt, ...)
+        -:   94:{
+        -:   95:	va_list ap;
+        -:   96:	int i;
+        -:   97:
+       16:   98:	va_start(ap, fmt);
+       16:   99:	i = vasprintf(ret, fmt, ap);
+       16:  100:	va_end(ap);
+        -:  101:
+       16:  102:	if (i < 0 || *ret == NULL)
+    #####:  103:		fatal("xasprintf: could not allocate memory");
+        -:  104:
+       16:  105:	return (i);
+        -:  106:}

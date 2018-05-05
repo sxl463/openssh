@@ -1,0 +1,428 @@
+        -:    0:Source:key.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: key.c,v 1.130 2016/05/02 09:36:42 djm Exp $ */
+        -:    2:/*
+        -:    3: * placed in the public domain
+        -:    4: */
+        -:    5:
+        -:    6:#include "includes.h"
+        -:    7:
+        -:    8:#include <sys/types.h>
+        -:    9:#include <errno.h>
+        -:   10:#include <stdarg.h>
+        -:   11:#include <stdio.h>
+        -:   12:#include <limits.h>
+        -:   13:
+        -:   14:#define SSH_KEY_NO_DEFINE
+        -:   15:#include "key.h"
+        -:   16:
+        -:   17:#include "compat.h"
+        -:   18:#include "sshkey.h"
+        -:   19:#include "ssherr.h"
+        -:   20:#include "log.h"
+        -:   21:#include "authfile.h"
+        -:   22:
+        -:   23:void
+    #####:   24:key_add_private(Key *k)
+        -:   25:{
+        -:   26:	int r;
+        -:   27:
+    #####:   28:	if ((r = sshkey_add_private(k)) != 0)
+    #####:   29:		fatal("%s: %s", __func__, ssh_err(r));
+    #####:   30:}
+        -:   31:
+        -:   32:Key *
+    #####:   33:key_new_private(int type)
+        -:   34:{
+    #####:   35:	Key *ret = NULL;
+        -:   36:
+    #####:   37:	if ((ret = sshkey_new_private(type)) == NULL)
+    #####:   38:		fatal("%s: failed", __func__);
+    #####:   39:	return ret;
+        -:   40:}
+        -:   41:
+        -:   42:int
+    #####:   43:key_read(Key *ret, char **cpp)
+        -:   44:{
+    #####:   45:	return sshkey_read(ret, cpp) == 0 ? 1 : -1;
+        -:   46:}
+        -:   47:
+        -:   48:int
+    #####:   49:key_write(const Key *key, FILE *f)
+        -:   50:{
+    #####:   51:	return sshkey_write(key, f) == 0 ? 1 : 0;
+        -:   52:}
+        -:   53:
+        -:   54:Key *
+    #####:   55:key_generate(int type, u_int bits)
+        -:   56:{
+        -:   57:	int r;
+    #####:   58:	Key *ret = NULL;
+        -:   59:
+    #####:   60:	if ((r = sshkey_generate(type, bits, &ret)) != 0)
+    #####:   61:		fatal("%s: %s", __func__, ssh_err(r));
+    #####:   62:	return ret;
+        -:   63:}
+        -:   64:
+        -:   65:void
+    #####:   66:key_cert_copy(const Key *from_key, Key *to_key)
+        -:   67:{
+        -:   68:	int r;
+        -:   69:
+    #####:   70:	if ((r = sshkey_cert_copy(from_key, to_key)) != 0)
+    #####:   71:		fatal("%s: %s", __func__, ssh_err(r));
+    #####:   72:}
+        -:   73:
+        -:   74:Key *
+        1:   75:key_from_private(const Key *k)
+        -:   76:{
+        -:   77:	int r;
+        1:   78:	Key *ret = NULL;
+        -:   79:
+        1:   80:	if ((r = sshkey_from_private(k, &ret)) != 0)
+    #####:   81:		fatal("%s: %s", __func__, ssh_err(r));
+        1:   82:	return ret;
+        -:   83:}
+        -:   84:
+        -:   85:static void
+        7:   86:fatal_on_fatal_errors(int r, const char *func, int extra_fatal)
+        -:   87:{
+        7:   88:	if (r == SSH_ERR_INTERNAL_ERROR ||
+        7:   89:	    r == SSH_ERR_ALLOC_FAIL ||
+        7:   90:	    (extra_fatal != 0 && r == extra_fatal))
+    #####:   91:		fatal("%s: %s", func, ssh_err(r));
+        7:   92:}
+        -:   93:
+        -:   94:Key *
+        1:   95:key_from_blob(const u_char *blob, u_int blen)
+        -:   96:{
+        -:   97:	int r;
+        1:   98:	Key *ret = NULL;
+        -:   99:
+        1:  100:	if ((r = sshkey_from_blob(blob, blen, &ret)) != 0) {
+    #####:  101:		fatal_on_fatal_errors(r, __func__, 0);
+    #####:  102:		error("%s: %s", __func__, ssh_err(r));
+    #####:  103:		return NULL;
+        -:  104:	}
+        1:  105:	return ret;
+        -:  106:}
+        -:  107:
+        -:  108:int
+        2:  109:key_to_blob(const Key *key, u_char **blobp, u_int *lenp)
+        -:  110:{
+        -:  111:	u_char *blob;
+        -:  112:	size_t blen;
+        -:  113:	int r;
+        -:  114:
+        2:  115:	if (blobp != NULL)
+        2:  116:		*blobp = NULL;
+        2:  117:	if (lenp != NULL)
+        2:  118:		*lenp = 0;
+        2:  119:	if ((r = sshkey_to_blob(key, &blob, &blen)) != 0) {
+    #####:  120:		fatal_on_fatal_errors(r, __func__, 0);
+    #####:  121:		error("%s: %s", __func__, ssh_err(r));
+    #####:  122:		return 0;
+        -:  123:	}
+        2:  124:	if (blen > INT_MAX)
+    #####:  125:		fatal("%s: giant len %zu", __func__, blen);
+        2:  126:	if (blobp != NULL)
+        2:  127:		*blobp = blob;
+        2:  128:	if (lenp != NULL)
+        2:  129:		*lenp = blen;
+        2:  130:	return blen;
+        -:  131:}
+        -:  132:
+        -:  133:int
+    #####:  134:key_sign(const Key *key, u_char **sigp, u_int *lenp,
+        -:  135:    const u_char *data, u_int datalen, const char *alg)
+        -:  136:{
+        -:  137:	int r;
+        -:  138:	u_char *sig;
+        -:  139:	size_t siglen;
+        -:  140:
+    #####:  141:	if (sigp != NULL)
+    #####:  142:		*sigp = NULL;
+    #####:  143:	if (lenp != NULL)
+    #####:  144:		*lenp = 0;
+    #####:  145:	if ((r = sshkey_sign(key, &sig, &siglen,
+        -:  146:	    data, datalen, alg, datafellows)) != 0) {
+    #####:  147:		fatal_on_fatal_errors(r, __func__, 0);
+    #####:  148:		error("%s: %s", __func__, ssh_err(r));
+    #####:  149:		return -1;
+        -:  150:	}
+    #####:  151:	if (siglen > INT_MAX)
+    #####:  152:		fatal("%s: giant len %zu", __func__, siglen);
+    #####:  153:	if (sigp != NULL)
+    #####:  154:		*sigp = sig;
+    #####:  155:	if (lenp != NULL)
+    #####:  156:		*lenp = siglen;
+    #####:  157:	return 0;
+        -:  158:}
+        -:  159:
+        -:  160:int
+    #####:  161:key_verify(const Key *key, const u_char *signature, u_int signaturelen,
+        -:  162:    const u_char *data, u_int datalen)
+        -:  163:{
+        -:  164:	int r;
+        -:  165:
+    #####:  166:	if ((r = sshkey_verify(key, signature, signaturelen,
+        -:  167:	    data, datalen, datafellows)) != 0) {
+    #####:  168:		fatal_on_fatal_errors(r, __func__, 0);
+    #####:  169:		error("%s: %s", __func__, ssh_err(r));
+    #####:  170:		return r == SSH_ERR_SIGNATURE_INVALID ? 0 : -1;
+        -:  171:	}
+    #####:  172:	return 1;
+        -:  173:}
+        -:  174:
+        -:  175:Key *
+    #####:  176:key_demote(const Key *k)
+        -:  177:{
+        -:  178:	int r;
+    #####:  179:	Key *ret = NULL;
+        -:  180:
+    #####:  181:	if ((r = sshkey_demote(k, &ret)) != 0)
+    #####:  182:		fatal("%s: %s", __func__, ssh_err(r));
+    #####:  183:	return ret;
+        -:  184:}
+        -:  185:
+        -:  186:int
+    #####:  187:key_to_certified(Key *k)
+        -:  188:{
+        -:  189:	int r;
+        -:  190:
+    #####:  191:	if ((r = sshkey_to_certified(k)) != 0) {
+    #####:  192:		fatal_on_fatal_errors(r, __func__, 0);
+    #####:  193:		error("%s: %s", __func__, ssh_err(r));
+    #####:  194:		return -1;
+        -:  195:	}
+    #####:  196:	return 0;
+        -:  197:}
+        -:  198:
+        -:  199:int
+    #####:  200:key_drop_cert(Key *k)
+        -:  201:{
+        -:  202:	int r;
+        -:  203:
+    #####:  204:	if ((r = sshkey_drop_cert(k)) != 0) {
+    #####:  205:		fatal_on_fatal_errors(r, __func__, 0);
+    #####:  206:		error("%s: %s", __func__, ssh_err(r));
+    #####:  207:		return -1;
+        -:  208:	}
+    #####:  209:	return 0;
+        -:  210:}
+        -:  211:
+        -:  212:int
+    #####:  213:key_certify(Key *k, Key *ca)
+        -:  214:{
+        -:  215:	int r;
+        -:  216:
+    #####:  217:	if ((r = sshkey_certify(k, ca, NULL)) != 0) {
+    #####:  218:		fatal_on_fatal_errors(r, __func__, 0);
+    #####:  219:		error("%s: %s", __func__, ssh_err(r));
+    #####:  220:		return -1;
+        -:  221:	}
+    #####:  222:	return 0;
+        -:  223:}
+        -:  224:
+        -:  225:int
+    #####:  226:key_cert_check_authority(const Key *k, int want_host, int require_principal,
+        -:  227:    const char *name, const char **reason)
+        -:  228:{
+        -:  229:	int r;
+        -:  230:
+    #####:  231:	if ((r = sshkey_cert_check_authority(k, want_host, require_principal,
+        -:  232:	    name, reason)) != 0) {
+    #####:  233:		fatal_on_fatal_errors(r, __func__, 0);
+    #####:  234:		error("%s: %s", __func__, ssh_err(r));
+    #####:  235:		return -1;
+        -:  236:	}
+    #####:  237:	return 0;
+        -:  238:}
+        -:  239:
+        -:  240:#if defined(WITH_OPENSSL) && defined(OPENSSL_HAS_ECC)
+        -:  241:int
+    #####:  242:key_ec_validate_public(const EC_GROUP *group, const EC_POINT *public)
+        -:  243:{
+        -:  244:	int r;
+        -:  245:
+    #####:  246:	if ((r = sshkey_ec_validate_public(group, public)) != 0) {
+    #####:  247:		fatal_on_fatal_errors(r, __func__, SSH_ERR_LIBCRYPTO_ERROR);
+    #####:  248:		error("%s: %s", __func__, ssh_err(r));
+    #####:  249:		return -1;
+        -:  250:	}
+    #####:  251:	return 0;
+        -:  252:}
+        -:  253:
+        -:  254:int
+    #####:  255:key_ec_validate_private(const EC_KEY *key)
+        -:  256:{
+        -:  257:	int r;
+        -:  258:
+    #####:  259:	if ((r = sshkey_ec_validate_private(key)) != 0) {
+    #####:  260:		fatal_on_fatal_errors(r, __func__, SSH_ERR_LIBCRYPTO_ERROR);
+    #####:  261:		error("%s: %s", __func__, ssh_err(r));
+    #####:  262:		return -1;
+        -:  263:	}
+    #####:  264:	return 0;
+        -:  265:}
+        -:  266:#endif /* WITH_OPENSSL */
+        -:  267:
+        -:  268:void
+    #####:  269:key_private_serialize(const Key *key, struct sshbuf *b)
+        -:  270:{
+        -:  271:	int r;
+        -:  272:
+    #####:  273:	if ((r = sshkey_private_serialize(key, b)) != 0)
+    #####:  274:		fatal("%s: %s", __func__, ssh_err(r));
+    #####:  275:}
+        -:  276:
+        -:  277:Key *
+    #####:  278:key_private_deserialize(struct sshbuf *blob)
+        -:  279:{
+        -:  280:	int r;
+    #####:  281:	Key *ret = NULL;
+        -:  282:
+    #####:  283:	if ((r = sshkey_private_deserialize(blob, &ret)) != 0) {
+    #####:  284:		fatal_on_fatal_errors(r, __func__, SSH_ERR_LIBCRYPTO_ERROR);
+    #####:  285:		error("%s: %s", __func__, ssh_err(r));
+    #####:  286:		return NULL;
+        -:  287:	}
+    #####:  288:	return ret;
+        -:  289:}
+        -:  290:
+        -:  291:/* authfile.c */
+        -:  292:
+        -:  293:int
+    #####:  294:key_save_private(Key *key, const char *filename, const char *passphrase,
+        -:  295:    const char *comment, int force_new_format, const char *new_format_cipher,
+        -:  296:    int new_format_rounds)
+        -:  297:{
+        -:  298:	int r;
+        -:  299:
+    #####:  300:	if ((r = sshkey_save_private(key, filename, passphrase, comment,
+        -:  301:	    force_new_format, new_format_cipher, new_format_rounds)) != 0) {
+    #####:  302:		fatal_on_fatal_errors(r, __func__, SSH_ERR_LIBCRYPTO_ERROR);
+    #####:  303:		error("%s: %s", __func__, ssh_err(r));
+    #####:  304:		return 0;
+        -:  305:	}
+    #####:  306:	return 1;
+        -:  307:}
+        -:  308:
+        -:  309:int
+    #####:  310:key_load_file(int fd, const char *filename, struct sshbuf *blob)
+        -:  311:{
+        -:  312:	int r;
+        -:  313:
+    #####:  314:	if ((r = sshkey_load_file(fd, blob)) != 0) {
+    #####:  315:		fatal_on_fatal_errors(r, __func__, SSH_ERR_LIBCRYPTO_ERROR);
+    #####:  316:		error("%s: %s", __func__, ssh_err(r));
+    #####:  317:		return 0;
+        -:  318:	}
+    #####:  319:	return 1;
+        -:  320:}
+        -:  321:
+        -:  322:Key *
+    #####:  323:key_load_cert(const char *filename)
+        -:  324:{
+        -:  325:	int r;
+    #####:  326:	Key *ret = NULL;
+        -:  327:
+    #####:  328:	if ((r = sshkey_load_cert(filename, &ret)) != 0) {
+    #####:  329:		fatal_on_fatal_errors(r, __func__, SSH_ERR_LIBCRYPTO_ERROR);
+        -:  330:		/* Old authfile.c ignored all file errors. */
+    #####:  331:		if (r == SSH_ERR_SYSTEM_ERROR)
+    #####:  332:			debug("%s: %s", __func__, ssh_err(r));
+        -:  333:		else
+    #####:  334:			error("%s: %s", __func__, ssh_err(r));
+    #####:  335:		return NULL;
+        -:  336:	}
+    #####:  337:	return ret;
+        -:  338:
+        -:  339:}
+        -:  340:
+        -:  341:Key *
+        8:  342:key_load_public(const char *filename, char **commentp)
+        -:  343:{
+        -:  344:	int r;
+        8:  345:	Key *ret = NULL;
+        -:  346:
+        8:  347:	if ((r = sshkey_load_public(filename, &ret, commentp)) != 0) {
+        7:  348:		fatal_on_fatal_errors(r, __func__, SSH_ERR_LIBCRYPTO_ERROR);
+        -:  349:		/* Old authfile.c ignored all file errors. */
+        7:  350:		if (r == SSH_ERR_SYSTEM_ERROR)
+        7:  351:			debug("%s: %s", __func__, ssh_err(r));
+        -:  352:		else
+    #####:  353:			error("%s: %s", __func__, ssh_err(r));
+        7:  354:		return NULL;
+        -:  355:	}
+        1:  356:	return ret;
+        -:  357:}
+        -:  358:
+        -:  359:Key *
+    #####:  360:key_load_private(const char *path, const char *passphrase,
+        -:  361:    char **commentp)
+        -:  362:{
+        -:  363:	int r;
+    #####:  364:	Key *ret = NULL;
+        -:  365:
+    #####:  366:	if ((r = sshkey_load_private(path, passphrase, &ret, commentp)) != 0) {
+    #####:  367:		fatal_on_fatal_errors(r, __func__, SSH_ERR_LIBCRYPTO_ERROR);
+        -:  368:		/* Old authfile.c ignored all file errors. */
+    #####:  369:		if (r == SSH_ERR_SYSTEM_ERROR ||
+        -:  370:		    r == SSH_ERR_KEY_WRONG_PASSPHRASE)
+    #####:  371:			debug("%s: %s", __func__, ssh_err(r));
+        -:  372:		else
+    #####:  373:			error("%s: %s", __func__, ssh_err(r));
+    #####:  374:		return NULL;
+        -:  375:	}
+    #####:  376:	return ret;
+        -:  377:}
+        -:  378:
+        -:  379:Key *
+    #####:  380:key_load_private_cert(int type, const char *filename, const char *passphrase,
+        -:  381:    int *perm_ok)
+        -:  382:{
+        -:  383:	int r;
+    #####:  384:	Key *ret = NULL;
+        -:  385:
+    #####:  386:	if ((r = sshkey_load_private_cert(type, filename, passphrase,
+        -:  387:	    &ret, perm_ok)) != 0) {
+    #####:  388:		fatal_on_fatal_errors(r, __func__, SSH_ERR_LIBCRYPTO_ERROR);
+        -:  389:		/* Old authfile.c ignored all file errors. */
+    #####:  390:		if (r == SSH_ERR_SYSTEM_ERROR ||
+        -:  391:		    r == SSH_ERR_KEY_WRONG_PASSPHRASE)
+    #####:  392:			debug("%s: %s", __func__, ssh_err(r));
+        -:  393:		else
+    #####:  394:			error("%s: %s", __func__, ssh_err(r));
+    #####:  395:		return NULL;
+        -:  396:	}
+    #####:  397:	return ret;
+        -:  398:}
+        -:  399:
+        -:  400:Key *
+    #####:  401:key_load_private_type(int type, const char *filename, const char *passphrase,
+        -:  402:    char **commentp, int *perm_ok)
+        -:  403:{
+        -:  404:	int r;
+    #####:  405:	Key *ret = NULL;
+        -:  406:
+    #####:  407:	if ((r = sshkey_load_private_type(type, filename, passphrase,
+        -:  408:	    &ret, commentp, perm_ok)) != 0) {
+    #####:  409:		fatal_on_fatal_errors(r, __func__, SSH_ERR_LIBCRYPTO_ERROR);
+        -:  410:		/* Old authfile.c ignored all file errors. */
+    #####:  411:		if (r == SSH_ERR_SYSTEM_ERROR ||
+        -:  412:		    (r == SSH_ERR_KEY_WRONG_PASSPHRASE))
+    #####:  413:			debug("%s: %s", __func__, ssh_err(r));
+        -:  414:		else
+    #####:  415:			error("%s: %s", __func__, ssh_err(r));
+    #####:  416:		return NULL;
+        -:  417:	}
+    #####:  418:	return ret;
+        -:  419:}
+        -:  420:
+        -:  421:int
+    #####:  422:key_perm_ok(int fd, const char *filename)
+        -:  423:{
+    #####:  424:	return sshkey_perm_ok(fd, filename) == 0 ? 1 : 0;
+        -:  425:}
+        -:  426:

@@ -1,0 +1,274 @@
+        -:    0:Source:mac.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: mac.c,v 1.33 2016/07/08 03:44:42 djm Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2001 Markus Friedl.  All rights reserved.
+        -:    4: *
+        -:    5: * Redistribution and use in source and binary forms, with or without
+        -:    6: * modification, are permitted provided that the following conditions
+        -:    7: * are met:
+        -:    8: * 1. Redistributions of source code must retain the above copyright
+        -:    9: *    notice, this list of conditions and the following disclaimer.
+        -:   10: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   11: *    notice, this list of conditions and the following disclaimer in the
+        -:   12: *    documentation and/or other materials provided with the distribution.
+        -:   13: *
+        -:   14: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   15: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   16: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   17: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   18: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   19: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   20: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   21: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   22: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   23: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   24: */
+        -:   25:
+        -:   26:#include "includes.h"
+        -:   27:
+        -:   28:#include <sys/types.h>
+        -:   29:
+        -:   30:#include <string.h>
+        -:   31:#include <stdio.h>
+        -:   32:
+        -:   33:#include "digest.h"
+        -:   34:#include "hmac.h"
+        -:   35:#include "umac.h"
+        -:   36:#include "mac.h"
+        -:   37:#include "misc.h"
+        -:   38:#include "ssherr.h"
+        -:   39:#include "sshbuf.h"
+        -:   40:
+        -:   41:#include "openbsd-compat/openssl-compat.h"
+        -:   42:
+        -:   43:#define SSH_DIGEST	1	/* SSH_DIGEST_XXX */
+        -:   44:#define SSH_UMAC	2	/* UMAC (not integrated with OpenSSL) */
+        -:   45:#define SSH_UMAC128	3
+        -:   46:
+        -:   47:struct macalg {
+        -:   48:	char		*name;
+        -:   49:	int		type;
+        -:   50:	int		alg;
+        -:   51:	int		truncatebits;	/* truncate digest if != 0 */
+        -:   52:	int		key_len;	/* just for UMAC */
+        -:   53:	int		len;		/* just for UMAC */
+        -:   54:	int		etm;		/* Encrypt-then-MAC */
+        -:   55:};
+        -:   56:
+        -:   57:static const struct macalg macs[] = {
+        -:   58:	/* Encrypt-and-MAC (encrypt-and-authenticate) variants */
+        -:   59:	{ "hmac-sha1",				SSH_DIGEST, SSH_DIGEST_SHA1, 0, 0, 0, 0 },
+        -:   60:	{ "hmac-sha1-96",			SSH_DIGEST, SSH_DIGEST_SHA1, 96, 0, 0, 0 },
+        -:   61:#ifdef HAVE_EVP_SHA256
+        -:   62:	{ "hmac-sha2-256",			SSH_DIGEST, SSH_DIGEST_SHA256, 0, 0, 0, 0 },
+        -:   63:	{ "hmac-sha2-512",			SSH_DIGEST, SSH_DIGEST_SHA512, 0, 0, 0, 0 },
+        -:   64:#endif
+        -:   65:	{ "hmac-md5",				SSH_DIGEST, SSH_DIGEST_MD5, 0, 0, 0, 0 },
+        -:   66:	{ "hmac-md5-96",			SSH_DIGEST, SSH_DIGEST_MD5, 96, 0, 0, 0 },
+        -:   67:#ifdef HAVE_EVP_RIPEMD160
+        -:   68:	{ "hmac-ripemd160",			SSH_DIGEST, SSH_DIGEST_RIPEMD160, 0, 0, 0, 0 },
+        -:   69:	{ "hmac-ripemd160@openssh.com",		SSH_DIGEST, SSH_DIGEST_RIPEMD160, 0, 0, 0, 0 },
+        -:   70:#endif
+        -:   71:	{ "umac-64@openssh.com",		SSH_UMAC, 0, 0, 128, 64, 0 },
+        -:   72:	{ "umac-128@openssh.com",		SSH_UMAC128, 0, 0, 128, 128, 0 },
+        -:   73:
+        -:   74:	/* Encrypt-then-MAC variants */
+        -:   75:	{ "hmac-sha1-etm@openssh.com",		SSH_DIGEST, SSH_DIGEST_SHA1, 0, 0, 0, 1 },
+        -:   76:	{ "hmac-sha1-96-etm@openssh.com",	SSH_DIGEST, SSH_DIGEST_SHA1, 96, 0, 0, 1 },
+        -:   77:#ifdef HAVE_EVP_SHA256
+        -:   78:	{ "hmac-sha2-256-etm@openssh.com",	SSH_DIGEST, SSH_DIGEST_SHA256, 0, 0, 0, 1 },
+        -:   79:	{ "hmac-sha2-512-etm@openssh.com",	SSH_DIGEST, SSH_DIGEST_SHA512, 0, 0, 0, 1 },
+        -:   80:#endif
+        -:   81:	{ "hmac-md5-etm@openssh.com",		SSH_DIGEST, SSH_DIGEST_MD5, 0, 0, 0, 1 },
+        -:   82:	{ "hmac-md5-96-etm@openssh.com",	SSH_DIGEST, SSH_DIGEST_MD5, 96, 0, 0, 1 },
+        -:   83:#ifdef HAVE_EVP_RIPEMD160
+        -:   84:	{ "hmac-ripemd160-etm@openssh.com",	SSH_DIGEST, SSH_DIGEST_RIPEMD160, 0, 0, 0, 1 },
+        -:   85:#endif
+        -:   86:	{ "umac-64-etm@openssh.com",		SSH_UMAC, 0, 0, 128, 64, 1 },
+        -:   87:	{ "umac-128-etm@openssh.com",		SSH_UMAC128, 0, 0, 128, 128, 1 },
+        -:   88:
+        -:   89:	{ NULL,					0, 0, 0, 0, 0, 0 }
+        -:   90:};
+        -:   91:
+        -:   92:/* Returns a list of supported MACs separated by the specified char. */
+        -:   93:char *
+    #####:   94:mac_alg_list(char sep)
+        -:   95:{
+    #####:   96:	char *ret = NULL, *tmp;
+    #####:   97:	size_t nlen, rlen = 0;
+        -:   98:	const struct macalg *m;
+        -:   99:
+    #####:  100:	for (m = macs; m->name != NULL; m++) {
+    #####:  101:		if (ret != NULL)
+    #####:  102:			ret[rlen++] = sep;
+    #####:  103:		nlen = strlen(m->name);
+    #####:  104:		if ((tmp = realloc(ret, rlen + nlen + 2)) == NULL) {
+    #####:  105:			free(ret);
+    #####:  106:			return NULL;
+        -:  107:		}
+    #####:  108:		ret = tmp;
+    #####:  109:		memcpy(ret + rlen, m->name, nlen + 1);
+    #####:  110:		rlen += nlen;
+        -:  111:	}
+    #####:  112:	return ret;
+        -:  113:}
+        -:  114:
+        -:  115:static int
+    #####:  116:mac_setup_by_alg(struct sshmac *mac, const struct macalg *macalg)
+        -:  117:{
+    #####:  118:	mac->type = macalg->type;
+    #####:  119:	if (mac->type == SSH_DIGEST) {
+    #####:  120:		if ((mac->hmac_ctx = ssh_hmac_start(macalg->alg)) == NULL)
+    #####:  121:			return SSH_ERR_ALLOC_FAIL;
+    #####:  122:		mac->key_len = mac->mac_len = ssh_hmac_bytes(macalg->alg);
+        -:  123:	} else {
+    #####:  124:		mac->mac_len = macalg->len / 8;
+    #####:  125:		mac->key_len = macalg->key_len / 8;
+    #####:  126:		mac->umac_ctx = NULL;
+        -:  127:	}
+    #####:  128:	if (macalg->truncatebits != 0)
+    #####:  129:		mac->mac_len = macalg->truncatebits / 8;
+    #####:  130:	mac->etm = macalg->etm;
+    #####:  131:	return 0;
+        -:  132:}
+        -:  133:
+        -:  134:int
+    #####:  135:mac_setup(struct sshmac *mac, char *name)
+        -:  136:{
+        -:  137:	const struct macalg *m;
+        -:  138:
+    #####:  139:	for (m = macs; m->name != NULL; m++) {
+    #####:  140:		if (strcmp(name, m->name) != 0)
+    #####:  141:			continue;
+    #####:  142:		if (mac != NULL)
+    #####:  143:			return mac_setup_by_alg(mac, m);
+    #####:  144:		return 0;
+        -:  145:	}
+    #####:  146:	return SSH_ERR_INVALID_ARGUMENT;
+        -:  147:}
+        -:  148:
+        -:  149:int
+    #####:  150:mac_init(struct sshmac *mac)
+        -:  151:{
+    #####:  152:	if (mac->key == NULL)
+    #####:  153:		return SSH_ERR_INVALID_ARGUMENT;
+    #####:  154:	switch (mac->type) {
+        -:  155:	case SSH_DIGEST:
+    #####:  156:		if (mac->hmac_ctx == NULL ||
+    #####:  157:		    ssh_hmac_init(mac->hmac_ctx, mac->key, mac->key_len) < 0)
+    #####:  158:			return SSH_ERR_INVALID_ARGUMENT;
+    #####:  159:		return 0;
+        -:  160:	case SSH_UMAC:
+    #####:  161:		if ((mac->umac_ctx = umac_new(mac->key)) == NULL)
+    #####:  162:			return SSH_ERR_ALLOC_FAIL;
+    #####:  163:		return 0;
+        -:  164:	case SSH_UMAC128:
+    #####:  165:		if ((mac->umac_ctx = umac128_new(mac->key)) == NULL)
+    #####:  166:			return SSH_ERR_ALLOC_FAIL;
+    #####:  167:		return 0;
+        -:  168:	default:
+    #####:  169:		return SSH_ERR_INVALID_ARGUMENT;
+        -:  170:	}
+        -:  171:}
+        -:  172:
+        -:  173:int
+    #####:  174:mac_compute(struct sshmac *mac, u_int32_t seqno,
+        -:  175:    const u_char *data, int datalen,
+        -:  176:    u_char *digest, size_t dlen)
+        -:  177:{
+        -:  178:	static union {
+        -:  179:		u_char m[SSH_DIGEST_MAX_LENGTH];
+        -:  180:		u_int64_t for_align;
+        -:  181:	} u;
+        -:  182:	u_char b[4];
+        -:  183:	u_char nonce[8];
+        -:  184:
+    #####:  185:	if (mac->mac_len > sizeof(u))
+    #####:  186:		return SSH_ERR_INTERNAL_ERROR;
+        -:  187:
+    #####:  188:	switch (mac->type) {
+        -:  189:	case SSH_DIGEST:
+    #####:  190:		put_u32(b, seqno);
+        -:  191:		/* reset HMAC context */
+    #####:  192:		if (ssh_hmac_init(mac->hmac_ctx, NULL, 0) < 0 ||
+    #####:  193:		    ssh_hmac_update(mac->hmac_ctx, b, sizeof(b)) < 0 ||
+    #####:  194:		    ssh_hmac_update(mac->hmac_ctx, data, datalen) < 0 ||
+    #####:  195:		    ssh_hmac_final(mac->hmac_ctx, u.m, sizeof(u.m)) < 0)
+    #####:  196:			return SSH_ERR_LIBCRYPTO_ERROR;
+    #####:  197:		break;
+        -:  198:	case SSH_UMAC:
+    #####:  199:		POKE_U64(nonce, seqno);
+    #####:  200:		umac_update(mac->umac_ctx, data, datalen);
+    #####:  201:		umac_final(mac->umac_ctx, u.m, nonce);
+    #####:  202:		break;
+        -:  203:	case SSH_UMAC128:
+    #####:  204:		put_u64(nonce, seqno);
+    #####:  205:		umac128_update(mac->umac_ctx, data, datalen);
+    #####:  206:		umac128_final(mac->umac_ctx, u.m, nonce);
+    #####:  207:		break;
+        -:  208:	default:
+    #####:  209:		return SSH_ERR_INVALID_ARGUMENT;
+        -:  210:	}
+    #####:  211:	if (digest != NULL) {
+    #####:  212:		if (dlen > mac->mac_len)
+    #####:  213:			dlen = mac->mac_len;
+    #####:  214:		memcpy(digest, u.m, dlen);
+        -:  215:	}
+    #####:  216:	return 0;
+        -:  217:}
+        -:  218:
+        -:  219:int
+    #####:  220:mac_check(struct sshmac *mac, u_int32_t seqno,
+        -:  221:    const u_char *data, size_t dlen,
+        -:  222:    const u_char *theirmac, size_t mlen)
+        -:  223:{
+        -:  224:	u_char ourmac[SSH_DIGEST_MAX_LENGTH];
+        -:  225:	int r;
+        -:  226:
+    #####:  227:	if (mac->mac_len > mlen)
+    #####:  228:		return SSH_ERR_INVALID_ARGUMENT;
+    #####:  229:	if ((r = mac_compute(mac, seqno, data, dlen,
+        -:  230:	    ourmac, sizeof(ourmac))) != 0)
+    #####:  231:		return r;
+    #####:  232:	if (timingsafe_bcmp(ourmac, theirmac, mac->mac_len) != 0)
+    #####:  233:		return SSH_ERR_MAC_INVALID;
+    #####:  234:	return 0;
+        -:  235:}
+        -:  236:
+        -:  237:void
+        2:  238:mac_clear(struct sshmac *mac)
+        -:  239:{
+        2:  240:	if (mac->type == SSH_UMAC) {
+    #####:  241:		if (mac->umac_ctx != NULL)
+    #####:  242:			umac_delete(mac->umac_ctx);
+        2:  243:	} else if (mac->type == SSH_UMAC128) {
+    #####:  244:		if (mac->umac_ctx != NULL)
+    #####:  245:			umac128_delete(mac->umac_ctx);
+        2:  246:	} else if (mac->hmac_ctx != NULL)
+    #####:  247:		ssh_hmac_free(mac->hmac_ctx);
+        2:  248:	mac->hmac_ctx = NULL;
+        2:  249:	mac->umac_ctx = NULL;
+        2:  250:}
+        -:  251:
+        -:  252:/* XXX copied from ciphers_valid */
+        -:  253:#define	MAC_SEP	","
+        -:  254:int
+    #####:  255:mac_valid(const char *names)
+        -:  256:{
+        -:  257:	char *maclist, *cp, *p;
+        -:  258:
+    #####:  259:	if (names == NULL || strcmp(names, "") == 0)
+    #####:  260:		return 0;
+    #####:  261:	if ((maclist = cp = strdup(names)) == NULL)
+    #####:  262:		return 0;
+    #####:  263:	for ((p = strsep(&cp, MAC_SEP)); p && *p != '\0';
+    #####:  264:	    (p = strsep(&cp, MAC_SEP))) {
+    #####:  265:		if (mac_setup(NULL, p) < 0) {
+    #####:  266:			free(maclist);
+    #####:  267:			return 0;
+        -:  268:		}
+        -:  269:	}
+    #####:  270:	free(maclist);
+    #####:  271:	return 1;
+        -:  272:}

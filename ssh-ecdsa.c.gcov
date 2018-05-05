@@ -1,0 +1,191 @@
+        -:    0:Source:ssh-ecdsa.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: ssh-ecdsa.c,v 1.13 2016/04/21 06:08:02 djm Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2000 Markus Friedl.  All rights reserved.
+        -:    4: * Copyright (c) 2010 Damien Miller.  All rights reserved.
+        -:    5: *
+        -:    6: * Redistribution and use in source and binary forms, with or without
+        -:    7: * modification, are permitted provided that the following conditions
+        -:    8: * are met:
+        -:    9: * 1. Redistributions of source code must retain the above copyright
+        -:   10: *    notice, this list of conditions and the following disclaimer.
+        -:   11: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   12: *    notice, this list of conditions and the following disclaimer in the
+        -:   13: *    documentation and/or other materials provided with the distribution.
+        -:   14: *
+        -:   15: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   16: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   17: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   18: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   19: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   20: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   21: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   22: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   23: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   24: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   25: */
+        -:   26:
+        -:   27:#include "includes.h"
+        -:   28:
+        -:   29:#if defined(WITH_OPENSSL) && defined(OPENSSL_HAS_ECC)
+        -:   30:
+        -:   31:#include <sys/types.h>
+        -:   32:
+        -:   33:#include <openssl/bn.h>
+        -:   34:#include <openssl/ec.h>
+        -:   35:#include <openssl/ecdsa.h>
+        -:   36:#include <openssl/evp.h>
+        -:   37:
+        -:   38:#include <string.h>
+        -:   39:
+        -:   40:#include "sshbuf.h"
+        -:   41:#include "ssherr.h"
+        -:   42:#include "digest.h"
+        -:   43:#define SSHKEY_INTERNAL
+        -:   44:#include "sshkey.h"
+        -:   45:
+        -:   46:/* ARGSUSED */
+        -:   47:int
+    #####:   48:ssh_ecdsa_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
+        -:   49:    const u_char *data, size_t datalen, u_int compat)
+        -:   50:{
+    #####:   51:	ECDSA_SIG *sig = NULL;
+        -:   52:	int hash_alg;
+        -:   53:	u_char digest[SSH_DIGEST_MAX_LENGTH];
+        -:   54:	size_t len, dlen;
+    #####:   55:	struct sshbuf *b = NULL, *bb = NULL;
+    #####:   56:	int ret = SSH_ERR_INTERNAL_ERROR;
+        -:   57:
+    #####:   58:	if (lenp != NULL)
+    #####:   59:		*lenp = 0;
+    #####:   60:	if (sigp != NULL)
+    #####:   61:		*sigp = NULL;
+        -:   62:
+    #####:   63:	if (key == NULL || key->ecdsa == NULL ||
+    #####:   64:	    sshkey_type_plain(key->type) != KEY_ECDSA)
+    #####:   65:		return SSH_ERR_INVALID_ARGUMENT;
+        -:   66:
+    #####:   67:	if ((hash_alg = sshkey_ec_nid_to_hash_alg(key->ecdsa_nid)) == -1 ||
+        -:   68:	    (dlen = ssh_digest_bytes(hash_alg)) == 0)
+    #####:   69:		return SSH_ERR_INTERNAL_ERROR;
+    #####:   70:	if ((ret = ssh_digest_memory(hash_alg, data, datalen,
+        -:   71:	    digest, sizeof(digest))) != 0)
+    #####:   72:		goto out;
+        -:   73:
+    #####:   74:	if ((sig = ECDSA_do_sign(digest, dlen, key->ecdsa)) == NULL) {
+    #####:   75:		ret = SSH_ERR_LIBCRYPTO_ERROR;
+    #####:   76:		goto out;
+        -:   77:	}
+        -:   78:
+    #####:   79:	if ((bb = sshbuf_new()) == NULL || (b = sshbuf_new()) == NULL) {
+    #####:   80:		ret = SSH_ERR_ALLOC_FAIL;
+    #####:   81:		goto out;
+        -:   82:	}
+    #####:   83:	if ((ret = sshbuf_put_bignum2(bb, sig->r)) != 0 ||
+    #####:   84:	    (ret = sshbuf_put_bignum2(bb, sig->s)) != 0)
+        -:   85:		goto out;
+    #####:   86:	if ((ret = sshbuf_put_cstring(b, sshkey_ssh_name_plain(key))) != 0 ||
+        -:   87:	    (ret = sshbuf_put_stringb(b, bb)) != 0)
+        -:   88:		goto out;
+    #####:   89:	len = sshbuf_len(b);
+    #####:   90:	if (sigp != NULL) {
+    #####:   91:		if ((*sigp = malloc(len)) == NULL) {
+    #####:   92:			ret = SSH_ERR_ALLOC_FAIL;
+    #####:   93:			goto out;
+        -:   94:		}
+    #####:   95:		memcpy(*sigp, sshbuf_ptr(b), len);
+        -:   96:	}
+    #####:   97:	if (lenp != NULL)
+    #####:   98:		*lenp = len;
+    #####:   99:	ret = 0;
+        -:  100: out:
+    #####:  101:	explicit_bzero(digest, sizeof(digest));
+    #####:  102:	sshbuf_free(b);
+    #####:  103:	sshbuf_free(bb);
+    #####:  104:	if (sig != NULL)
+    #####:  105:		ECDSA_SIG_free(sig);
+    #####:  106:	return ret;
+        -:  107:}
+        -:  108:
+        -:  109:/* ARGSUSED */
+        -:  110:int
+        1:  111:ssh_ecdsa_verify(const struct sshkey *key,
+        -:  112:    const u_char *signature, size_t signaturelen,
+        -:  113:    const u_char *data, size_t datalen, u_int compat)
+        -:  114:{
+        1:  115:	ECDSA_SIG *sig = NULL;
+        -:  116:	int hash_alg;
+        -:  117:	u_char digest[SSH_DIGEST_MAX_LENGTH];
+        -:  118:	size_t dlen;
+        1:  119:	int ret = SSH_ERR_INTERNAL_ERROR;
+        1:  120:	struct sshbuf *b = NULL, *sigbuf = NULL;
+        1:  121:	char *ktype = NULL;
+        -:  122:
+        2:  123:	if (key == NULL || key->ecdsa == NULL ||
+        2:  124:	    sshkey_type_plain(key->type) != KEY_ECDSA ||
+        1:  125:	    signature == NULL || signaturelen == 0)
+    #####:  126:		return SSH_ERR_INVALID_ARGUMENT;
+        -:  127:
+        1:  128:	if ((hash_alg = sshkey_ec_nid_to_hash_alg(key->ecdsa_nid)) == -1 ||
+        -:  129:	    (dlen = ssh_digest_bytes(hash_alg)) == 0)
+    #####:  130:		return SSH_ERR_INTERNAL_ERROR;
+        -:  131:
+        -:  132:	/* fetch signature */
+        1:  133:	if ((b = sshbuf_from(signature, signaturelen)) == NULL)
+    #####:  134:		return SSH_ERR_ALLOC_FAIL;
+        2:  135:	if (sshbuf_get_cstring(b, &ktype, NULL) != 0 ||
+        1:  136:	    sshbuf_froms(b, &sigbuf) != 0) {
+    #####:  137:		ret = SSH_ERR_INVALID_FORMAT;
+    #####:  138:		goto out;
+        -:  139:	}
+        1:  140:	if (strcmp(sshkey_ssh_name_plain(key), ktype) != 0) {
+    #####:  141:		ret = SSH_ERR_KEY_TYPE_MISMATCH;
+    #####:  142:		goto out;
+        -:  143:	}
+        1:  144:	if (sshbuf_len(b) != 0) {
+    #####:  145:		ret = SSH_ERR_UNEXPECTED_TRAILING_DATA;
+    #####:  146:		goto out;
+        -:  147:	}
+        -:  148:
+        -:  149:	/* parse signature */
+        1:  150:	if ((sig = ECDSA_SIG_new()) == NULL) {
+    #####:  151:		ret = SSH_ERR_ALLOC_FAIL;
+    #####:  152:		goto out;
+        -:  153:	}
+        2:  154:	if (sshbuf_get_bignum2(sigbuf, sig->r) != 0 ||
+        1:  155:	    sshbuf_get_bignum2(sigbuf, sig->s) != 0) {
+    #####:  156:		ret = SSH_ERR_INVALID_FORMAT;
+    #####:  157:		goto out;
+        -:  158:	}
+        1:  159:	if (sshbuf_len(sigbuf) != 0) {
+    #####:  160:		ret = SSH_ERR_UNEXPECTED_TRAILING_DATA;
+    #####:  161:		goto out;
+        -:  162:	}
+        1:  163:	if ((ret = ssh_digest_memory(hash_alg, data, datalen,
+        -:  164:	    digest, sizeof(digest))) != 0)
+    #####:  165:		goto out;
+        -:  166:
+        1:  167:	switch (ECDSA_do_verify(digest, dlen, sig, key->ecdsa)) {
+        -:  168:	case 1:
+        1:  169:		ret = 0;
+        1:  170:		break;
+        -:  171:	case 0:
+    #####:  172:		ret = SSH_ERR_SIGNATURE_INVALID;
+    #####:  173:		goto out;
+        -:  174:	default:
+    #####:  175:		ret = SSH_ERR_LIBCRYPTO_ERROR;
+    #####:  176:		goto out;
+        -:  177:	}
+        -:  178:
+        -:  179: out:
+        1:  180:	explicit_bzero(digest, sizeof(digest));
+        1:  181:	sshbuf_free(sigbuf);
+        1:  182:	sshbuf_free(b);
+        1:  183:	if (sig != NULL)
+        1:  184:		ECDSA_SIG_free(sig);
+        1:  185:	free(ktype);
+        1:  186:	return ret;
+        -:  187:}
+        -:  188:
+        -:  189:#endif /* WITH_OPENSSL && OPENSSL_HAS_ECC */

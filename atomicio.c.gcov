@@ -1,0 +1,172 @@
+        -:    0:Source:atomicio.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: atomicio.c,v 1.28 2016/07/27 23:18:12 djm Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2006 Damien Miller. All rights reserved.
+        -:    4: * Copyright (c) 2005 Anil Madhavapeddy. All rights reserved.
+        -:    5: * Copyright (c) 1995,1999 Theo de Raadt.  All rights reserved.
+        -:    6: * All rights reserved.
+        -:    7: *
+        -:    8: * Redistribution and use in source and binary forms, with or without
+        -:    9: * modification, are permitted provided that the following conditions
+        -:   10: * are met:
+        -:   11: * 1. Redistributions of source code must retain the above copyright
+        -:   12: *    notice, this list of conditions and the following disclaimer.
+        -:   13: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   14: *    notice, this list of conditions and the following disclaimer in the
+        -:   15: *    documentation and/or other materials provided with the distribution.
+        -:   16: *
+        -:   17: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   18: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   19: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   20: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   21: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   22: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   23: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   24: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   25: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   26: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   27: */
+        -:   28:
+        -:   29:#include "includes.h"
+        -:   30:
+        -:   31:#include <sys/param.h>
+        -:   32:#include <sys/uio.h>
+        -:   33:
+        -:   34:#include <errno.h>
+        -:   35:#ifdef HAVE_POLL_H
+        -:   36:#include <poll.h>
+        -:   37:#else
+        -:   38:# ifdef HAVE_SYS_POLL_H
+        -:   39:#  include <sys/poll.h>
+        -:   40:# endif
+        -:   41:#endif
+        -:   42:#include <string.h>
+        -:   43:#include <unistd.h>
+        -:   44:#include <limits.h>
+        -:   45:
+        -:   46:#include "atomicio.h"
+        -:   47:
+        -:   48:/*
+        -:   49: * ensure all of data on socket comes through. f==read || f==vwrite
+        -:   50: */
+        -:   51:size_t
+       49:   52:atomicio6(ssize_t (*f) (int, void *, size_t), int fd, void *_s, size_t n,
+        -:   53:    int (*cb)(void *, size_t), void *cb_arg)
+        -:   54:{
+       49:   55:	char *s = _s;
+       49:   56:	size_t pos = 0;
+        -:   57:	ssize_t res;
+        -:   58:	struct pollfd pfd;
+        -:   59:
+        -:   60:#ifndef BROKEN_READ_COMPARISON
+       49:   61:	pfd.fd = fd;
+       49:   62:	pfd.events = f == read ? POLLIN : POLLOUT;
+        -:   63:#endif
+      146:   64:	while (n > pos) {
+       50:   65:		res = (f) (fd, s + pos, n - pos);
+       50:   66:		switch (res) {
+        -:   67:		case -1:
+    #####:   68:			if (errno == EINTR)
+    #####:   69:				continue;
+    #####:   70:			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        -:   71:#ifndef BROKEN_READ_COMPARISON
+    #####:   72:				(void)poll(&pfd, 1, -1);
+        -:   73:#endif
+    #####:   74:				continue;
+        -:   75:			}
+    #####:   76:			return 0;
+        -:   77:		case 0:
+        2:   78:			errno = EPIPE;
+        2:   79:			return pos;
+        -:   80:		default:
+       48:   81:			pos += (size_t)res;
+       48:   82:			if (cb != NULL && cb(cb_arg, (size_t)res) == -1) {
+    #####:   83:				errno = EINTR;
+    #####:   84:				return pos;
+        -:   85:			}
+        -:   86:		}
+        -:   87:	}
+       47:   88:	return pos;
+        -:   89:}
+        -:   90:
+        -:   91:size_t
+       49:   92:atomicio(ssize_t (*f) (int, void *, size_t), int fd, void *_s, size_t n)
+        -:   93:{
+       49:   94:	return atomicio6(f, fd, _s, n, NULL, NULL);
+        -:   95:}
+        -:   96:
+        -:   97:/*
+        -:   98: * ensure all of data on socket comes through. f==readv || f==writev
+        -:   99: */
+        -:  100:size_t
+    #####:  101:atomiciov6(ssize_t (*f) (int, const struct iovec *, int), int fd,
+        -:  102:    const struct iovec *_iov, int iovcnt,
+        -:  103:    int (*cb)(void *, size_t), void *cb_arg)
+        -:  104:{
+    #####:  105:	size_t pos = 0, rem;
+        -:  106:	ssize_t res;
+    #####:  107:	struct iovec iov_array[IOV_MAX], *iov = iov_array;
+        -:  108:	struct pollfd pfd;
+        -:  109:
+    #####:  110:	if (iovcnt < 0 || iovcnt > IOV_MAX) {
+    #####:  111:		errno = EINVAL;
+    #####:  112:		return 0;
+        -:  113:	}
+        -:  114:	/* Make a copy of the iov array because we may modify it below */
+    #####:  115:	memcpy(iov, _iov, (size_t)iovcnt * sizeof(*_iov));
+        -:  116:
+        -:  117:#ifndef BROKEN_READV_COMPARISON
+    #####:  118:	pfd.fd = fd;
+    #####:  119:	pfd.events = f == readv ? POLLIN : POLLOUT;
+        -:  120:#endif
+    #####:  121:	for (; iovcnt > 0 && iov[0].iov_len > 0;) {
+    #####:  122:		res = (f) (fd, iov, iovcnt);
+    #####:  123:		switch (res) {
+        -:  124:		case -1:
+    #####:  125:			if (errno == EINTR)
+    #####:  126:				continue;
+    #####:  127:			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        -:  128:#ifndef BROKEN_READV_COMPARISON
+    #####:  129:				(void)poll(&pfd, 1, -1);
+        -:  130:#endif
+    #####:  131:				continue;
+        -:  132:			}
+    #####:  133:			return 0;
+        -:  134:		case 0:
+    #####:  135:			errno = EPIPE;
+    #####:  136:			return pos;
+        -:  137:		default:
+    #####:  138:			rem = (size_t)res;
+    #####:  139:			pos += rem;
+        -:  140:			/* skip completed iov entries */
+    #####:  141:			while (iovcnt > 0 && rem >= iov[0].iov_len) {
+    #####:  142:				rem -= iov[0].iov_len;
+    #####:  143:				iov++;
+    #####:  144:				iovcnt--;
+        -:  145:			}
+        -:  146:			/* This shouldn't happen... */
+    #####:  147:			if (rem > 0 && (iovcnt <= 0 || rem > iov[0].iov_len)) {
+    #####:  148:				errno = EFAULT;
+    #####:  149:				return 0;
+        -:  150:			}
+    #####:  151:			if (iovcnt == 0)
+    #####:  152:				break;
+        -:  153:			/* update pointer in partially complete iov */
+    #####:  154:			iov[0].iov_base = ((char *)iov[0].iov_base) + rem;
+    #####:  155:			iov[0].iov_len -= rem;
+        -:  156:		}
+    #####:  157:		if (cb != NULL && cb(cb_arg, (size_t)res) == -1) {
+    #####:  158:			errno = EINTR;
+    #####:  159:			return pos;
+        -:  160:		}
+        -:  161:	}
+    #####:  162:	return pos;
+        -:  163:}
+        -:  164:
+        -:  165:size_t
+    #####:  166:atomiciov(ssize_t (*f) (int, const struct iovec *, int), int fd,
+        -:  167:    const struct iovec *_iov, int iovcnt)
+        -:  168:{
+    #####:  169:	return atomiciov6(f, fd, _iov, iovcnt, NULL, NULL);
+        -:  170:}

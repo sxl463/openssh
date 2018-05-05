@@ -1,0 +1,246 @@
+        -:    0:Source:entropy.c
+        -:    0:Programs:78
+        -:    1:/*
+        -:    2: * Copyright (c) 2001 Damien Miller.  All rights reserved.
+        -:    3: *
+        -:    4: * Redistribution and use in source and binary forms, with or without
+        -:    5: * modification, are permitted provided that the following conditions
+        -:    6: * are met:
+        -:    7: * 1. Redistributions of source code must retain the above copyright
+        -:    8: *    notice, this list of conditions and the following disclaimer.
+        -:    9: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   10: *    notice, this list of conditions and the following disclaimer in the
+        -:   11: *    documentation and/or other materials provided with the distribution.
+        -:   12: *
+        -:   13: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   14: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   15: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   16: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   17: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   18: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   19: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   20: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   21: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   22: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   23: */
+        -:   24:
+        -:   25:#include "includes.h"
+        -:   26:
+        -:   27:#ifdef WITH_OPENSSL
+        -:   28:
+        -:   29:#include <sys/types.h>
+        -:   30:#include <sys/socket.h>
+        -:   31:#ifdef HAVE_SYS_UN_H
+        -:   32:# include <sys/un.h>
+        -:   33:#endif
+        -:   34:
+        -:   35:#include <netinet/in.h>
+        -:   36:#include <arpa/inet.h>
+        -:   37:
+        -:   38:#include <errno.h>
+        -:   39:#include <signal.h>
+        -:   40:#include <string.h>
+        -:   41:#include <unistd.h>
+        -:   42:#include <stddef.h> /* for offsetof */
+        -:   43:
+        -:   44:#include <openssl/rand.h>
+        -:   45:#include <openssl/crypto.h>
+        -:   46:#include <openssl/err.h>
+        -:   47:
+        -:   48:#include "openbsd-compat/openssl-compat.h"
+        -:   49:
+        -:   50:#include "ssh.h"
+        -:   51:#include "misc.h"
+        -:   52:#include "xmalloc.h"
+        -:   53:#include "atomicio.h"
+        -:   54:#include "pathnames.h"
+        -:   55:#include "log.h"
+        -:   56:#include "buffer.h"
+        -:   57:
+        -:   58:/*
+        -:   59: * Portable OpenSSH PRNG seeding:
+        -:   60: * If OpenSSL has not "internally seeded" itself (e.g. pulled data from
+        -:   61: * /dev/random), then collect RANDOM_SEED_SIZE bytes of randomness from
+        -:   62: * PRNGd.
+        -:   63: */
+        -:   64:#ifndef OPENSSL_PRNG_ONLY
+        -:   65:
+        -:   66:#define RANDOM_SEED_SIZE 48
+        -:   67:
+        -:   68:/*
+        -:   69: * Collect 'len' bytes of entropy into 'buf' from PRNGD/EGD daemon
+        -:   70: * listening either on 'tcp_port', or via Unix domain socket at *
+        -:   71: * 'socket_path'.
+        -:   72: * Either a non-zero tcp_port or a non-null socket_path must be
+        -:   73: * supplied.
+        -:   74: * Returns 0 on success, -1 on error
+        -:   75: */
+        -:   76:int
+        -:   77:get_random_bytes_prngd(unsigned char *buf, int len,
+        -:   78:    unsigned short tcp_port, char *socket_path)
+        -:   79:{
+        -:   80:	int fd, addr_len, rval, errors;
+        -:   81:	u_char msg[2];
+        -:   82:	struct sockaddr_storage addr;
+        -:   83:	struct sockaddr_in *addr_in = (struct sockaddr_in *)&addr;
+        -:   84:	struct sockaddr_un *addr_un = (struct sockaddr_un *)&addr;
+        -:   85:	mysig_t old_sigpipe;
+        -:   86:
+        -:   87:	/* Sanity checks */
+        -:   88:	if (socket_path == NULL && tcp_port == 0)
+        -:   89:		fatal("You must specify a port or a socket");
+        -:   90:	if (socket_path != NULL &&
+        -:   91:	    strlen(socket_path) >= sizeof(addr_un->sun_path))
+        -:   92:		fatal("Random pool path is too long");
+        -:   93:	if (len <= 0 || len > 255)
+        -:   94:		fatal("Too many bytes (%d) to read from PRNGD", len);
+        -:   95:
+        -:   96:	memset(&addr, '\0', sizeof(addr));
+        -:   97:
+        -:   98:	if (tcp_port != 0) {
+        -:   99:		addr_in->sin_family = AF_INET;
+        -:  100:		addr_in->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        -:  101:		addr_in->sin_port = htons(tcp_port);
+        -:  102:		addr_len = sizeof(*addr_in);
+        -:  103:	} else {
+        -:  104:		addr_un->sun_family = AF_UNIX;
+        -:  105:		strlcpy(addr_un->sun_path, socket_path,
+        -:  106:		    sizeof(addr_un->sun_path));
+        -:  107:		addr_len = offsetof(struct sockaddr_un, sun_path) +
+        -:  108:		    strlen(socket_path) + 1;
+        -:  109:	}
+        -:  110:
+        -:  111:	old_sigpipe = mysignal(SIGPIPE, SIG_IGN);
+        -:  112:
+        -:  113:	errors = 0;
+        -:  114:	rval = -1;
+        -:  115:reopen:
+        -:  116:	fd = socket(addr.ss_family, SOCK_STREAM, 0);
+        -:  117:	if (fd == -1) {
+        -:  118:		error("Couldn't create socket: %s", strerror(errno));
+        -:  119:		goto done;
+        -:  120:	}
+        -:  121:
+        -:  122:	if (connect(fd, (struct sockaddr*)&addr, addr_len) == -1) {
+        -:  123:		if (tcp_port != 0) {
+        -:  124:			error("Couldn't connect to PRNGD port %d: %s",
+        -:  125:			    tcp_port, strerror(errno));
+        -:  126:		} else {
+        -:  127:			error("Couldn't connect to PRNGD socket \"%s\": %s",
+        -:  128:			    addr_un->sun_path, strerror(errno));
+        -:  129:		}
+        -:  130:		goto done;
+        -:  131:	}
+        -:  132:
+        -:  133:	/* Send blocking read request to PRNGD */
+        -:  134:	msg[0] = 0x02;
+        -:  135:	msg[1] = len;
+        -:  136:
+        -:  137:	if (atomicio(vwrite, fd, msg, sizeof(msg)) != sizeof(msg)) {
+        -:  138:		if (errno == EPIPE && errors < 10) {
+        -:  139:			close(fd);
+        -:  140:			errors++;
+        -:  141:			goto reopen;
+        -:  142:		}
+        -:  143:		error("Couldn't write to PRNGD socket: %s",
+        -:  144:		    strerror(errno));
+        -:  145:		goto done;
+        -:  146:	}
+        -:  147:
+        -:  148:	if (atomicio(read, fd, buf, len) != (size_t)len) {
+        -:  149:		if (errno == EPIPE && errors < 10) {
+        -:  150:			close(fd);
+        -:  151:			errors++;
+        -:  152:			goto reopen;
+        -:  153:		}
+        -:  154:		error("Couldn't read from PRNGD socket: %s",
+        -:  155:		    strerror(errno));
+        -:  156:		goto done;
+        -:  157:	}
+        -:  158:
+        -:  159:	rval = 0;
+        -:  160:done:
+        -:  161:	mysignal(SIGPIPE, old_sigpipe);
+        -:  162:	if (fd != -1)
+        -:  163:		close(fd);
+        -:  164:	return rval;
+        -:  165:}
+        -:  166:
+        -:  167:static int
+        -:  168:seed_from_prngd(unsigned char *buf, size_t bytes)
+        -:  169:{
+        -:  170:#ifdef PRNGD_PORT
+        -:  171:	debug("trying egd/prngd port %d", PRNGD_PORT);
+        -:  172:	if (get_random_bytes_prngd(buf, bytes, PRNGD_PORT, NULL) == 0)
+        -:  173:		return 0;
+        -:  174:#endif
+        -:  175:#ifdef PRNGD_SOCKET
+        -:  176:	debug("trying egd/prngd socket %s", PRNGD_SOCKET);
+        -:  177:	if (get_random_bytes_prngd(buf, bytes, 0, PRNGD_SOCKET) == 0)
+        -:  178:		return 0;
+        -:  179:#endif
+        -:  180:	return -1;
+        -:  181:}
+        -:  182:
+        -:  183:void
+        -:  184:rexec_send_rng_seed(Buffer *m)
+        -:  185:{
+        -:  186:	u_char buf[RANDOM_SEED_SIZE];
+        -:  187:
+        -:  188:	if (RAND_bytes(buf, sizeof(buf)) <= 0) {
+        -:  189:		error("Couldn't obtain random bytes (error %ld)",
+        -:  190:		    ERR_get_error());
+        -:  191:		buffer_put_string(m, "", 0);
+        -:  192:	} else 
+        -:  193:		buffer_put_string(m, buf, sizeof(buf));
+        -:  194:}
+        -:  195:
+        -:  196:void
+        -:  197:rexec_recv_rng_seed(Buffer *m)
+        -:  198:{
+        -:  199:	u_char *buf;
+        -:  200:	u_int len;
+        -:  201:
+        -:  202:	buf = buffer_get_string_ret(m, &len);
+        -:  203:	if (buf != NULL) {
+        -:  204:		debug3("rexec_recv_rng_seed: seeding rng with %u bytes", len);
+        -:  205:		RAND_add(buf, len, len);
+        -:  206:	}
+        -:  207:}
+        -:  208:#endif /* OPENSSL_PRNG_ONLY */
+        -:  209:
+        -:  210:void
+        1:  211:seed_rng(void)
+        -:  212:{
+        -:  213:#ifndef OPENSSL_PRNG_ONLY
+        -:  214:	unsigned char buf[RANDOM_SEED_SIZE];
+        -:  215:#endif
+        1:  216:	if (!ssh_compatible_openssl(OPENSSL_VERSION_NUMBER, SSLeay()))
+    #####:  217:		fatal("OpenSSL version mismatch. Built against %lx, you "
+        -:  218:		    "have %lx", (u_long)OPENSSL_VERSION_NUMBER, SSLeay());
+        -:  219:
+        -:  220:#ifndef OPENSSL_PRNG_ONLY
+        -:  221:	if (RAND_status() == 1) {
+        -:  222:		debug3("RNG is ready, skipping seeding");
+        -:  223:		return;
+        -:  224:	}
+        -:  225:
+        -:  226:	if (seed_from_prngd(buf, sizeof(buf)) == -1)
+        -:  227:		fatal("Could not obtain seed from PRNGd");
+        -:  228:	RAND_add(buf, sizeof(buf), sizeof(buf));
+        -:  229:	memset(buf, '\0', sizeof(buf));
+        -:  230:
+        -:  231:#endif /* OPENSSL_PRNG_ONLY */
+        1:  232:	if (RAND_status() != 1)
+    #####:  233:		fatal("PRNG is not seeded");
+        1:  234:}
+        -:  235:
+        -:  236:#else /* WITH_OPENSSL */
+        -:  237:
+        -:  238:/* Handled in arc4random() */
+        -:  239:void
+        -:  240:seed_rng(void)
+        -:  241:{
+        -:  242:}
+        -:  243:
+        -:  244:#endif /* WITH_OPENSSL */

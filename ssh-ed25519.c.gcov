@@ -1,0 +1,169 @@
+        -:    0:Source:ssh-ed25519.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: ssh-ed25519.c,v 1.7 2016/04/21 06:08:02 djm Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2013 Markus Friedl <markus@openbsd.org>
+        -:    4: *
+        -:    5: * Permission to use, copy, modify, and distribute this software for any
+        -:    6: * purpose with or without fee is hereby granted, provided that the above
+        -:    7: * copyright notice and this permission notice appear in all copies.
+        -:    8: *
+        -:    9: * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        -:   10: * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        -:   11: * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        -:   12: * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        -:   13: * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        -:   14: * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        -:   15: * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+        -:   16: */
+        -:   17:
+        -:   18:#include "includes.h"
+        -:   19:
+        -:   20:#include <sys/types.h>
+        -:   21:#include <limits.h>
+        -:   22:
+        -:   23:#include "crypto_api.h"
+        -:   24:
+        -:   25:#include <string.h>
+        -:   26:#include <stdarg.h>
+        -:   27:
+        -:   28:#include "log.h"
+        -:   29:#include "sshbuf.h"
+        -:   30:#define SSHKEY_INTERNAL
+        -:   31:#include "sshkey.h"
+        -:   32:#include "ssherr.h"
+        -:   33:#include "ssh.h"
+        -:   34:
+        -:   35:int
+    #####:   36:ssh_ed25519_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
+        -:   37:    const u_char *data, size_t datalen, u_int compat)
+        -:   38:{
+    #####:   39:	u_char *sig = NULL;
+    #####:   40:	size_t slen = 0, len;
+        -:   41:	unsigned long long smlen;
+        -:   42:	int r, ret;
+    #####:   43:	struct sshbuf *b = NULL;
+        -:   44:
+    #####:   45:	if (lenp != NULL)
+    #####:   46:		*lenp = 0;
+    #####:   47:	if (sigp != NULL)
+    #####:   48:		*sigp = NULL;
+        -:   49:
+    #####:   50:	if (key == NULL ||
+    #####:   51:	    sshkey_type_plain(key->type) != KEY_ED25519 ||
+    #####:   52:	    key->ed25519_sk == NULL ||
+        -:   53:	    datalen >= INT_MAX - crypto_sign_ed25519_BYTES)
+    #####:   54:		return SSH_ERR_INVALID_ARGUMENT;
+    #####:   55:	smlen = slen = datalen + crypto_sign_ed25519_BYTES;
+    #####:   56:	if ((sig = malloc(slen)) == NULL)
+    #####:   57:		return SSH_ERR_ALLOC_FAIL;
+        -:   58:
+    #####:   59:	if ((ret = crypto_sign_ed25519(sig, &smlen, data, datalen,
+    #####:   60:	    key->ed25519_sk)) != 0 || smlen <= datalen) {
+    #####:   61:		r = SSH_ERR_INVALID_ARGUMENT; /* XXX better error? */
+    #####:   62:		goto out;
+        -:   63:	}
+        -:   64:	/* encode signature */
+    #####:   65:	if ((b = sshbuf_new()) == NULL) {
+    #####:   66:		r = SSH_ERR_ALLOC_FAIL;
+    #####:   67:		goto out;
+        -:   68:	}
+    #####:   69:	if ((r = sshbuf_put_cstring(b, "ssh-ed25519")) != 0 ||
+    #####:   70:	    (r = sshbuf_put_string(b, sig, smlen - datalen)) != 0)
+        -:   71:		goto out;
+    #####:   72:	len = sshbuf_len(b);
+    #####:   73:	if (sigp != NULL) {
+    #####:   74:		if ((*sigp = malloc(len)) == NULL) {
+    #####:   75:			r = SSH_ERR_ALLOC_FAIL;
+    #####:   76:			goto out;
+        -:   77:		}
+    #####:   78:		memcpy(*sigp, sshbuf_ptr(b), len);
+        -:   79:	}
+    #####:   80:	if (lenp != NULL)
+    #####:   81:		*lenp = len;
+        -:   82:	/* success */
+    #####:   83:	r = 0;
+        -:   84: out:
+    #####:   85:	sshbuf_free(b);
+    #####:   86:	if (sig != NULL) {
+    #####:   87:		explicit_bzero(sig, slen);
+    #####:   88:		free(sig);
+        -:   89:	}
+        -:   90:
+    #####:   91:	return r;
+        -:   92:}
+        -:   93:
+        -:   94:int
+    #####:   95:ssh_ed25519_verify(const struct sshkey *key,
+        -:   96:    const u_char *signature, size_t signaturelen,
+        -:   97:    const u_char *data, size_t datalen, u_int compat)
+        -:   98:{
+    #####:   99:	struct sshbuf *b = NULL;
+    #####:  100:	char *ktype = NULL;
+        -:  101:	const u_char *sigblob;
+    #####:  102:	u_char *sm = NULL, *m = NULL;
+        -:  103:	size_t len;
+    #####:  104:	unsigned long long smlen = 0, mlen = 0;
+        -:  105:	int r, ret;
+        -:  106:
+    #####:  107:	if (key == NULL ||
+    #####:  108:	    sshkey_type_plain(key->type) != KEY_ED25519 ||
+    #####:  109:	    key->ed25519_pk == NULL ||
+    #####:  110:	    datalen >= INT_MAX - crypto_sign_ed25519_BYTES ||
+    #####:  111:	    signature == NULL || signaturelen == 0)
+    #####:  112:		return SSH_ERR_INVALID_ARGUMENT;
+        -:  113:
+    #####:  114:	if ((b = sshbuf_from(signature, signaturelen)) == NULL)
+    #####:  115:		return SSH_ERR_ALLOC_FAIL;
+    #####:  116:	if ((r = sshbuf_get_cstring(b, &ktype, NULL)) != 0 ||
+        -:  117:	    (r = sshbuf_get_string_direct(b, &sigblob, &len)) != 0)
+        -:  118:		goto out;
+    #####:  119:	if (strcmp("ssh-ed25519", ktype) != 0) {
+    #####:  120:		r = SSH_ERR_KEY_TYPE_MISMATCH;
+    #####:  121:		goto out;
+        -:  122:	}
+    #####:  123:	if (sshbuf_len(b) != 0) {
+    #####:  124:		r = SSH_ERR_UNEXPECTED_TRAILING_DATA;
+    #####:  125:		goto out;
+        -:  126:	}
+    #####:  127:	if (len > crypto_sign_ed25519_BYTES) {
+    #####:  128:		r = SSH_ERR_INVALID_FORMAT;
+    #####:  129:		goto out;
+        -:  130:	}
+    #####:  131:	if (datalen >= SIZE_MAX - len) {
+    #####:  132:		r = SSH_ERR_INVALID_ARGUMENT;
+    #####:  133:		goto out;
+        -:  134:	}
+    #####:  135:	smlen = len + datalen;
+    #####:  136:	mlen = smlen;
+    #####:  137:	if ((sm = malloc(smlen)) == NULL || (m = malloc(mlen)) == NULL) {
+    #####:  138:		r = SSH_ERR_ALLOC_FAIL;
+    #####:  139:		goto out;
+        -:  140:	}
+    #####:  141:	memcpy(sm, sigblob, len);
+    #####:  142:	memcpy(sm+len, data, datalen);
+    #####:  143:	if ((ret = crypto_sign_ed25519_open(m, &mlen, sm, smlen,
+    #####:  144:	    key->ed25519_pk)) != 0) {
+    #####:  145:		debug2("%s: crypto_sign_ed25519_open failed: %d",
+        -:  146:		    __func__, ret);
+        -:  147:	}
+    #####:  148:	if (ret != 0 || mlen != datalen) {
+    #####:  149:		r = SSH_ERR_SIGNATURE_INVALID;
+    #####:  150:		goto out;
+        -:  151:	}
+        -:  152:	/* XXX compare 'm' and 'data' ? */
+        -:  153:	/* success */
+    #####:  154:	r = 0;
+        -:  155: out:
+    #####:  156:	if (sm != NULL) {
+    #####:  157:		explicit_bzero(sm, smlen);
+    #####:  158:		free(sm);
+        -:  159:	}
+    #####:  160:	if (m != NULL) {
+    #####:  161:		explicit_bzero(m, smlen); /* NB mlen may be invalid if r != 0 */
+    #####:  162:		free(m);
+        -:  163:	}
+    #####:  164:	sshbuf_free(b);
+    #####:  165:	free(ktype);
+    #####:  166:	return r;
+        -:  167:}

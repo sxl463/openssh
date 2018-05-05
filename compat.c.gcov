@@ -1,0 +1,327 @@
+        -:    0:Source:compat.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: compat.c,v 1.99 2016/05/24 02:31:57 dtucker Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 1999, 2000, 2001, 2002 Markus Friedl.  All rights reserved.
+        -:    4: *
+        -:    5: * Redistribution and use in source and binary forms, with or without
+        -:    6: * modification, are permitted provided that the following conditions
+        -:    7: * are met:
+        -:    8: * 1. Redistributions of source code must retain the above copyright
+        -:    9: *    notice, this list of conditions and the following disclaimer.
+        -:   10: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   11: *    notice, this list of conditions and the following disclaimer in the
+        -:   12: *    documentation and/or other materials provided with the distribution.
+        -:   13: *
+        -:   14: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   15: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   16: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   17: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   18: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   19: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   20: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   21: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   22: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   23: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   24: */
+        -:   25:
+        -:   26:#include "includes.h"
+        -:   27:
+        -:   28:#include <sys/types.h>
+        -:   29:
+        -:   30:#include <stdlib.h>
+        -:   31:#include <string.h>
+        -:   32:#include <stdarg.h>
+        -:   33:
+        -:   34:#include "xmalloc.h"
+        -:   35:#include "buffer.h"
+        -:   36:#include "packet.h"
+        -:   37:#include "compat.h"
+        -:   38:#include "log.h"
+        -:   39:#include "match.h"
+        -:   40:
+        -:   41:int compat13 = 0;
+        -:   42:int compat20 = 0;
+        -:   43:int datafellows = 0;
+        -:   44:
+        -:   45:void
+        2:   46:enable_compat20(void)
+        -:   47:{
+        2:   48:	if (compat20)
+        3:   49:		return;
+        1:   50:	debug("Enabling compatibility mode for protocol 2.0");
+        1:   51:	compat20 = 1;
+        -:   52:}
+        -:   53:void
+    #####:   54:enable_compat13(void)
+        -:   55:{
+    #####:   56:	debug("Enabling compatibility mode for protocol 1.3");
+    #####:   57:	compat13 = 1;
+    #####:   58:}
+        -:   59:/* datafellows bug compatibility */
+        -:   60:u_int
+        1:   61:compat_datafellows(const char *version)
+        -:   62:{
+        -:   63:	int i;
+        -:   64:	static struct {
+        -:   65:		char	*pat;
+        -:   66:		int	bugs;
+        -:   67:	} check[] = {
+        -:   68:		{ "OpenSSH-2.0*,"
+        -:   69:		  "OpenSSH-2.1*,"
+        -:   70:		  "OpenSSH_2.1*,"
+        -:   71:		  "OpenSSH_2.2*",	SSH_OLD_SESSIONID|SSH_BUG_BANNER|
+        -:   72:					SSH_OLD_DHGEX|SSH_BUG_NOREKEY|
+        -:   73:					SSH_BUG_EXTEOF|SSH_OLD_FORWARD_ADDR},
+        -:   74:		{ "OpenSSH_2.3.0*",	SSH_BUG_BANNER|SSH_BUG_BIGENDIANAES|
+        -:   75:					SSH_OLD_DHGEX|SSH_BUG_NOREKEY|
+        -:   76:					SSH_BUG_EXTEOF|SSH_OLD_FORWARD_ADDR},
+        -:   77:		{ "OpenSSH_2.3.*",	SSH_BUG_BIGENDIANAES|SSH_OLD_DHGEX|
+        -:   78:					SSH_BUG_NOREKEY|SSH_BUG_EXTEOF|
+        -:   79:					SSH_OLD_FORWARD_ADDR},
+        -:   80:		{ "OpenSSH_2.5.0p1*,"
+        -:   81:		  "OpenSSH_2.5.1p1*",
+        -:   82:					SSH_BUG_BIGENDIANAES|SSH_OLD_DHGEX|
+        -:   83:					SSH_BUG_NOREKEY|SSH_BUG_EXTEOF|
+        -:   84:					SSH_OLD_FORWARD_ADDR},
+        -:   85:		{ "OpenSSH_2.5.0*,"
+        -:   86:		  "OpenSSH_2.5.1*,"
+        -:   87:		  "OpenSSH_2.5.2*",	SSH_OLD_DHGEX|SSH_BUG_NOREKEY|
+        -:   88:					SSH_BUG_EXTEOF|SSH_OLD_FORWARD_ADDR},
+        -:   89:		{ "OpenSSH_2.5.3*",	SSH_BUG_NOREKEY|SSH_BUG_EXTEOF|
+        -:   90:					SSH_OLD_FORWARD_ADDR},
+        -:   91:		{ "OpenSSH_2.*,"
+        -:   92:		  "OpenSSH_3.0*,"
+        -:   93:		  "OpenSSH_3.1*",	SSH_BUG_EXTEOF|SSH_OLD_FORWARD_ADDR},
+        -:   94:		{ "OpenSSH_3.*",	SSH_OLD_FORWARD_ADDR },
+        -:   95:		{ "Sun_SSH_1.0*",	SSH_BUG_NOREKEY|SSH_BUG_EXTEOF},
+        -:   96:		{ "OpenSSH_4*",		0 },
+        -:   97:		{ "OpenSSH_5*",		SSH_NEW_OPENSSH|SSH_BUG_DYNAMIC_RPORT},
+        -:   98:		{ "OpenSSH_6.6.1*",	SSH_NEW_OPENSSH},
+        -:   99:		{ "OpenSSH_6.5*,"
+        -:  100:		  "OpenSSH_6.6*",	SSH_NEW_OPENSSH|SSH_BUG_CURVE25519PAD},
+        -:  101:		{ "OpenSSH*",		SSH_NEW_OPENSSH },
+        -:  102:		{ "*MindTerm*",		0 },
+        -:  103:		{ "2.1.0*",		SSH_BUG_SIGBLOB|SSH_BUG_HMAC|
+        -:  104:					SSH_OLD_SESSIONID|SSH_BUG_DEBUG|
+        -:  105:					SSH_BUG_RSASIGMD5|SSH_BUG_HBSERVICE|
+        -:  106:					SSH_BUG_FIRSTKEX },
+        -:  107:		{ "2.1 *",		SSH_BUG_SIGBLOB|SSH_BUG_HMAC|
+        -:  108:					SSH_OLD_SESSIONID|SSH_BUG_DEBUG|
+        -:  109:					SSH_BUG_RSASIGMD5|SSH_BUG_HBSERVICE|
+        -:  110:					SSH_BUG_FIRSTKEX },
+        -:  111:		{ "2.0.13*,"
+        -:  112:		  "2.0.14*,"
+        -:  113:		  "2.0.15*,"
+        -:  114:		  "2.0.16*,"
+        -:  115:		  "2.0.17*,"
+        -:  116:		  "2.0.18*,"
+        -:  117:		  "2.0.19*",		SSH_BUG_SIGBLOB|SSH_BUG_HMAC|
+        -:  118:					SSH_OLD_SESSIONID|SSH_BUG_DEBUG|
+        -:  119:					SSH_BUG_PKSERVICE|SSH_BUG_X11FWD|
+        -:  120:					SSH_BUG_PKOK|SSH_BUG_RSASIGMD5|
+        -:  121:					SSH_BUG_HBSERVICE|SSH_BUG_OPENFAILURE|
+        -:  122:					SSH_BUG_DUMMYCHAN|SSH_BUG_FIRSTKEX },
+        -:  123:		{ "2.0.11*,"
+        -:  124:		  "2.0.12*",		SSH_BUG_SIGBLOB|SSH_BUG_HMAC|
+        -:  125:					SSH_OLD_SESSIONID|SSH_BUG_DEBUG|
+        -:  126:					SSH_BUG_PKSERVICE|SSH_BUG_X11FWD|
+        -:  127:					SSH_BUG_PKAUTH|SSH_BUG_PKOK|
+        -:  128:					SSH_BUG_RSASIGMD5|SSH_BUG_OPENFAILURE|
+        -:  129:					SSH_BUG_DUMMYCHAN|SSH_BUG_FIRSTKEX },
+        -:  130:		{ "2.0.*",		SSH_BUG_SIGBLOB|SSH_BUG_HMAC|
+        -:  131:					SSH_OLD_SESSIONID|SSH_BUG_DEBUG|
+        -:  132:					SSH_BUG_PKSERVICE|SSH_BUG_X11FWD|
+        -:  133:					SSH_BUG_PKAUTH|SSH_BUG_PKOK|
+        -:  134:					SSH_BUG_RSASIGMD5|SSH_BUG_OPENFAILURE|
+        -:  135:					SSH_BUG_DERIVEKEY|SSH_BUG_DUMMYCHAN|
+        -:  136:					SSH_BUG_FIRSTKEX },
+        -:  137:		{ "2.2.0*,"
+        -:  138:		  "2.3.0*",		SSH_BUG_HMAC|SSH_BUG_DEBUG|
+        -:  139:					SSH_BUG_RSASIGMD5|SSH_BUG_FIRSTKEX },
+        -:  140:		{ "2.3.*",		SSH_BUG_DEBUG|SSH_BUG_RSASIGMD5|
+        -:  141:					SSH_BUG_FIRSTKEX },
+        -:  142:		{ "2.4",		SSH_OLD_SESSIONID },	/* Van Dyke */
+        -:  143:		{ "2.*",		SSH_BUG_DEBUG|SSH_BUG_FIRSTKEX|
+        -:  144:					SSH_BUG_RFWD_ADDR },
+        -:  145:		{ "3.0.*",		SSH_BUG_DEBUG },
+        -:  146:		{ "3.0 SecureCRT*",	SSH_OLD_SESSIONID },
+        -:  147:		{ "1.7 SecureFX*",	SSH_OLD_SESSIONID },
+        -:  148:		{ "1.2.18*,"
+        -:  149:		  "1.2.19*,"
+        -:  150:		  "1.2.20*,"
+        -:  151:		  "1.2.21*,"
+        -:  152:		  "1.2.22*",		SSH_BUG_IGNOREMSG },
+        -:  153:		{ "1.3.2*",		/* F-Secure */
+        -:  154:					SSH_BUG_IGNOREMSG },
+        -:  155:		{ "Cisco-1.*",		SSH_BUG_DHGEX_LARGE|
+        -:  156:					SSH_BUG_HOSTKEYS },
+        -:  157:		{ "*SSH Compatible Server*",			/* Netscreen */
+        -:  158:					SSH_BUG_PASSWORDPAD },
+        -:  159:		{ "*OSU_0*,"
+        -:  160:		  "OSU_1.0*,"
+        -:  161:		  "OSU_1.1*,"
+        -:  162:		  "OSU_1.2*,"
+        -:  163:		  "OSU_1.3*,"
+        -:  164:		  "OSU_1.4*,"
+        -:  165:		  "OSU_1.5alpha1*,"
+        -:  166:		  "OSU_1.5alpha2*,"
+        -:  167:		  "OSU_1.5alpha3*",	SSH_BUG_PASSWORDPAD },
+        -:  168:		{ "*SSH_Version_Mapper*",
+        -:  169:					SSH_BUG_SCANNER },
+        -:  170:		{ "PuTTY_Local:*,"	/* dev versions < Sep 2014 */
+        -:  171:		  "PuTTY-Release-0.5*," /* 0.50-0.57, DH-GEX in >=0.52 */
+        -:  172:		  "PuTTY_Release_0.5*,"	/* 0.58-0.59 */
+        -:  173:		  "PuTTY_Release_0.60*,"
+        -:  174:		  "PuTTY_Release_0.61*,"
+        -:  175:		  "PuTTY_Release_0.62*,"
+        -:  176:		  "PuTTY_Release_0.63*,"
+        -:  177:		  "PuTTY_Release_0.64*",
+        -:  178:					SSH_OLD_DHGEX },
+        -:  179:		{ "FuTTY*",		SSH_OLD_DHGEX }, /* Putty Fork */
+        -:  180:		{ "Probe-*",
+        -:  181:					SSH_BUG_PROBE },
+        -:  182:		{ "TeraTerm SSH*,"
+        -:  183:		  "TTSSH/1.5.*,"
+        -:  184:		  "TTSSH/2.1*,"
+        -:  185:		  "TTSSH/2.2*,"
+        -:  186:		  "TTSSH/2.3*,"
+        -:  187:		  "TTSSH/2.4*,"
+        -:  188:		  "TTSSH/2.5*,"
+        -:  189:		  "TTSSH/2.6*,"
+        -:  190:		  "TTSSH/2.70*,"
+        -:  191:		  "TTSSH/2.71*,"
+        -:  192:		  "TTSSH/2.72*",	SSH_BUG_HOSTKEYS },
+        -:  193:		{ "WinSCP_release_4*,"
+        -:  194:		  "WinSCP_release_5.0*,"
+        -:  195:		  "WinSCP_release_5.1*,"
+        -:  196:		  "WinSCP_release_5.5*,"
+        -:  197:		  "WinSCP_release_5.6*,"
+        -:  198:		  "WinSCP_release_5.7,"
+        -:  199:		  "WinSCP_release_5.7.1,"
+        -:  200:		  "WinSCP_release_5.7.2,"
+        -:  201:		  "WinSCP_release_5.7.3,"
+        -:  202:		  "WinSCP_release_5.7.4",
+        -:  203:					SSH_OLD_DHGEX },
+        -:  204:		{ NULL,			0 }
+        -:  205:	};
+        -:  206:
+        -:  207:	/* process table, return first match */
+       12:  208:	for (i = 0; check[i].pat; i++) {
+       12:  209:		if (match_pattern_list(version, check[i].pat, 0) == 1) {
+        1:  210:			debug("match: %s pat %s compat 0x%08x",
+        -:  211:			    version, check[i].pat, check[i].bugs);
+        1:  212:			datafellows = check[i].bugs;	/* XXX for now */
+        1:  213:			return check[i].bugs;
+        -:  214:		}
+        -:  215:	}
+    #####:  216:	debug("no match: %s", version);
+    #####:  217:	return 0;
+        -:  218:}
+        -:  219:
+        -:  220:#define	SEP	","
+        -:  221:int
+    #####:  222:proto_spec(const char *spec)
+        -:  223:{
+        -:  224:	char *s, *p, *q;
+    #####:  225:	int ret = SSH_PROTO_UNKNOWN;
+        -:  226:
+    #####:  227:	if (spec == NULL)
+    #####:  228:		return ret;
+    #####:  229:	q = s = strdup(spec);
+    #####:  230:	if (s == NULL)
+    #####:  231:		return ret;
+    #####:  232:	for ((p = strsep(&q, SEP)); p && *p != '\0'; (p = strsep(&q, SEP))) {
+    #####:  233:		switch (atoi(p)) {
+        -:  234:		case 1:
+        -:  235:#ifdef WITH_SSH1
+        -:  236:			if (ret == SSH_PROTO_UNKNOWN)
+        -:  237:				ret |= SSH_PROTO_1_PREFERRED;
+        -:  238:			ret |= SSH_PROTO_1;
+        -:  239:#endif
+    #####:  240:			break;
+        -:  241:		case 2:
+    #####:  242:			ret |= SSH_PROTO_2;
+    #####:  243:			break;
+        -:  244:		default:
+    #####:  245:			logit("ignoring bad proto spec: '%s'.", p);
+    #####:  246:			break;
+        -:  247:		}
+        -:  248:	}
+    #####:  249:	free(s);
+    #####:  250:	return ret;
+        -:  251:}
+        -:  252:
+        -:  253:/*
+        -:  254: * Filters a proposal string, excluding any algorithm matching the 'filter'
+        -:  255: * pattern list.
+        -:  256: */
+        -:  257:static char *
+    #####:  258:filter_proposal(char *proposal, const char *filter)
+        -:  259:{
+        -:  260:	Buffer b;
+        -:  261:	char *orig_prop, *fix_prop;
+        -:  262:	char *cp, *tmp;
+        -:  263:
+    #####:  264:	buffer_init(&b);
+    #####:  265:	tmp = orig_prop = xstrdup(proposal);
+    #####:  266:	while ((cp = strsep(&tmp, ",")) != NULL) {
+    #####:  267:		if (match_pattern_list(cp, filter, 0) != 1) {
+    #####:  268:			if (buffer_len(&b) > 0)
+    #####:  269:				buffer_append(&b, ",", 1);
+    #####:  270:			buffer_append(&b, cp, strlen(cp));
+        -:  271:		} else
+    #####:  272:			debug2("Compat: skipping algorithm \"%s\"", cp);
+        -:  273:	}
+    #####:  274:	buffer_append(&b, "\0", 1);
+    #####:  275:	fix_prop = xstrdup((char *)buffer_ptr(&b));
+    #####:  276:	buffer_free(&b);
+    #####:  277:	free(orig_prop);
+        -:  278:
+    #####:  279:	return fix_prop;
+        -:  280:}
+        -:  281:
+        -:  282:char *
+        2:  283:compat_cipher_proposal(char *cipher_prop)
+        -:  284:{
+        2:  285:	if (!(datafellows & SSH_BUG_BIGENDIANAES))
+        2:  286:		return cipher_prop;
+    #####:  287:	debug2("%s: original cipher proposal: %s", __func__, cipher_prop);
+    #####:  288:	cipher_prop = filter_proposal(cipher_prop, "aes*");
+    #####:  289:	debug2("%s: compat cipher proposal: %s", __func__, cipher_prop);
+    #####:  290:	if (*cipher_prop == '\0')
+    #####:  291:		fatal("No supported ciphers found");
+    #####:  292:	return cipher_prop;
+        -:  293:}
+        -:  294:
+        -:  295:char *
+        1:  296:compat_pkalg_proposal(char *pkalg_prop)
+        -:  297:{
+        1:  298:	if (!(datafellows & SSH_BUG_RSASIGMD5))
+        1:  299:		return pkalg_prop;
+    #####:  300:	debug2("%s: original public key proposal: %s", __func__, pkalg_prop);
+    #####:  301:	pkalg_prop = filter_proposal(pkalg_prop, "ssh-rsa");
+    #####:  302:	debug2("%s: compat public key proposal: %s", __func__, pkalg_prop);
+    #####:  303:	if (*pkalg_prop == '\0')
+    #####:  304:		fatal("No supported PK algorithms found");
+    #####:  305:	return pkalg_prop;
+        -:  306:}
+        -:  307:
+        -:  308:char *
+        2:  309:compat_kex_proposal(char *p)
+        -:  310:{
+        2:  311:	if ((datafellows & (SSH_BUG_CURVE25519PAD|SSH_OLD_DHGEX)) == 0)
+        2:  312:		return p;
+    #####:  313:	debug2("%s: original KEX proposal: %s", __func__, p);
+    #####:  314:	if ((datafellows & SSH_BUG_CURVE25519PAD) != 0)
+    #####:  315:		p = filter_proposal(p, "curve25519-sha256@libssh.org");
+    #####:  316:	if ((datafellows & SSH_OLD_DHGEX) != 0) {
+    #####:  317:		p = filter_proposal(p, "diffie-hellman-group-exchange-sha256");
+    #####:  318:		p = filter_proposal(p, "diffie-hellman-group-exchange-sha1");
+        -:  319:	}
+    #####:  320:	debug2("%s: compat KEX proposal: %s", __func__, p);
+    #####:  321:	if (*p == '\0')
+    #####:  322:		fatal("No supported key exchange algorithms found");
+    #####:  323:	return p;
+        -:  324:}
+        -:  325:

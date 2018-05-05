@@ -1,0 +1,261 @@
+        -:    0:Source:bufaux.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: bufaux.c,v 1.60 2014/04/30 05:29:56 djm Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2012 Damien Miller <djm@mindrot.org>
+        -:    4: *
+        -:    5: * Permission to use, copy, modify, and distribute this software for any
+        -:    6: * purpose with or without fee is hereby granted, provided that the above
+        -:    7: * copyright notice and this permission notice appear in all copies.
+        -:    8: *
+        -:    9: * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        -:   10: * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        -:   11: * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        -:   12: * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        -:   13: * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        -:   14: * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        -:   15: * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+        -:   16: */
+        -:   17:
+        -:   18:/* Emulation wrappers for legacy OpenSSH buffer API atop sshbuf */
+        -:   19:
+        -:   20:#include "includes.h"
+        -:   21:
+        -:   22:#include <sys/types.h>
+        -:   23:
+        -:   24:#include "buffer.h"
+        -:   25:#include "log.h"
+        -:   26:#include "ssherr.h"
+        -:   27:
+        -:   28:int
+    #####:   29:buffer_get_short_ret(u_short *v, Buffer *buffer)
+        -:   30:{
+        -:   31:	int ret;
+        -:   32:
+    #####:   33:	if ((ret = sshbuf_get_u16(buffer, v)) != 0) {
+    #####:   34:		error("%s: %s", __func__, ssh_err(ret));
+    #####:   35:		return -1;
+        -:   36:	}
+    #####:   37:	return 0;
+        -:   38:}
+        -:   39:
+        -:   40:u_short
+    #####:   41:buffer_get_short(Buffer *buffer)
+        -:   42:{
+        -:   43:	u_short ret;
+        -:   44:
+    #####:   45:	if (buffer_get_short_ret(&ret, buffer) == -1)
+    #####:   46:		fatal("%s: buffer error", __func__);
+        -:   47:
+    #####:   48:	return (ret);
+        -:   49:}
+        -:   50:
+        -:   51:int
+    #####:   52:buffer_get_int_ret(u_int *v, Buffer *buffer)
+        -:   53:{
+        -:   54:	int ret;
+        -:   55:
+    #####:   56:	if ((ret = sshbuf_get_u32(buffer, v)) != 0) {
+    #####:   57:		error("%s: %s", __func__, ssh_err(ret));
+    #####:   58:		return -1;
+        -:   59:	}
+    #####:   60:	return 0;
+        -:   61:}
+        -:   62:
+        -:   63:u_int
+    #####:   64:buffer_get_int(Buffer *buffer)
+        -:   65:{
+        -:   66:	u_int ret;
+        -:   67:
+    #####:   68:	if (buffer_get_int_ret(&ret, buffer) == -1)
+    #####:   69:		fatal("%s: buffer error", __func__);
+        -:   70:
+    #####:   71:	return (ret);
+        -:   72:}
+        -:   73:
+        -:   74:int
+    #####:   75:buffer_get_int64_ret(u_int64_t *v, Buffer *buffer)
+        -:   76:{
+        -:   77:	int ret;
+        -:   78:
+    #####:   79:	if ((ret = sshbuf_get_u64(buffer, v)) != 0) {
+    #####:   80:		error("%s: %s", __func__, ssh_err(ret));
+    #####:   81:		return -1;
+        -:   82:	}
+    #####:   83:	return 0;
+        -:   84:}
+        -:   85:
+        -:   86:u_int64_t
+    #####:   87:buffer_get_int64(Buffer *buffer)
+        -:   88:{
+        -:   89:	u_int64_t ret;
+        -:   90:
+    #####:   91:	if (buffer_get_int64_ret(&ret, buffer) == -1)
+    #####:   92:		fatal("%s: buffer error", __func__);
+        -:   93:
+    #####:   94:	return (ret);
+        -:   95:}
+        -:   96:
+        -:   97:void
+    #####:   98:buffer_put_short(Buffer *buffer, u_short value)
+        -:   99:{
+        -:  100:	int ret;
+        -:  101:
+    #####:  102:	if ((ret = sshbuf_put_u16(buffer, value)) != 0)
+    #####:  103:		fatal("%s: %s", __func__, ssh_err(ret));
+    #####:  104:}
+        -:  105:
+        -:  106:void
+       52:  107:buffer_put_int(Buffer *buffer, u_int value)
+        -:  108:{
+        -:  109:	int ret;
+        -:  110:
+       52:  111:	if ((ret = sshbuf_put_u32(buffer, value)) != 0)
+    #####:  112:		fatal("%s: %s", __func__, ssh_err(ret));
+       52:  113:}
+        -:  114:
+        -:  115:void
+    #####:  116:buffer_put_int64(Buffer *buffer, u_int64_t value)
+        -:  117:{
+        -:  118:	int ret;
+        -:  119:
+    #####:  120:	if ((ret = sshbuf_put_u64(buffer, value)) != 0)
+    #####:  121:		fatal("%s: %s", __func__, ssh_err(ret));
+    #####:  122:}
+        -:  123:
+        -:  124:void *
+    #####:  125:buffer_get_string_ret(Buffer *buffer, u_int *length_ptr)
+        -:  126:{
+        -:  127:	size_t len;
+        -:  128:	int ret;
+        -:  129:	u_char *value;
+        -:  130:
+    #####:  131:	if ((ret = sshbuf_get_string(buffer, &value, &len)) != 0) {
+    #####:  132:		error("%s: %s", __func__, ssh_err(ret));
+    #####:  133:		return NULL;
+        -:  134:	}
+    #####:  135:	if (length_ptr != NULL)
+    #####:  136:		*length_ptr = len;  /* Safe: sshbuf never stores len > 2^31 */
+    #####:  137:	return value;
+        -:  138:}
+        -:  139:
+        -:  140:void *
+    #####:  141:buffer_get_string(Buffer *buffer, u_int *length_ptr)
+        -:  142:{
+        -:  143:	void *ret;
+        -:  144:
+    #####:  145:	if ((ret = buffer_get_string_ret(buffer, length_ptr)) == NULL)
+    #####:  146:		fatal("%s: buffer error", __func__);
+    #####:  147:	return (ret);
+        -:  148:}
+        -:  149:
+        -:  150:char *
+    #####:  151:buffer_get_cstring_ret(Buffer *buffer, u_int *length_ptr)
+        -:  152:{
+        -:  153:	size_t len;
+        -:  154:	int ret;
+        -:  155:	char *value;
+        -:  156:
+    #####:  157:	if ((ret = sshbuf_get_cstring(buffer, &value, &len)) != 0) {
+    #####:  158:		error("%s: %s", __func__, ssh_err(ret));
+    #####:  159:		return NULL;
+        -:  160:	}
+    #####:  161:	if (length_ptr != NULL)
+    #####:  162:		*length_ptr = len;  /* Safe: sshbuf never stores len > 2^31 */
+    #####:  163:	return value;
+        -:  164:}
+        -:  165:
+        -:  166:char *
+    #####:  167:buffer_get_cstring(Buffer *buffer, u_int *length_ptr)
+        -:  168:{
+        -:  169:	char *ret;
+        -:  170:
+    #####:  171:	if ((ret = buffer_get_cstring_ret(buffer, length_ptr)) == NULL)
+    #####:  172:		fatal("%s: buffer error", __func__);
+    #####:  173:	return ret;
+        -:  174:}
+        -:  175:
+        -:  176:const void *
+    #####:  177:buffer_get_string_ptr_ret(Buffer *buffer, u_int *length_ptr)
+        -:  178:{
+        -:  179:	size_t len;
+        -:  180:	int ret;
+        -:  181:	const u_char *value;
+        -:  182:
+    #####:  183:	if ((ret = sshbuf_get_string_direct(buffer, &value, &len)) != 0) {
+    #####:  184:		error("%s: %s", __func__, ssh_err(ret));
+    #####:  185:		return NULL;
+        -:  186:	}
+    #####:  187:	if (length_ptr != NULL)
+    #####:  188:		*length_ptr = len;  /* Safe: sshbuf never stores len > 2^31 */
+    #####:  189:	return value;
+        -:  190:}
+        -:  191:
+        -:  192:const void *
+    #####:  193:buffer_get_string_ptr(Buffer *buffer, u_int *length_ptr)
+        -:  194:{
+        -:  195:	const void *ret;
+        -:  196:
+    #####:  197:	if ((ret = buffer_get_string_ptr_ret(buffer, length_ptr)) == NULL)
+    #####:  198:		fatal("%s: buffer error", __func__);
+    #####:  199:	return (ret);
+        -:  200:}
+        -:  201:
+        -:  202:void
+        3:  203:buffer_put_string(Buffer *buffer, const void *buf, u_int len)
+        -:  204:{
+        -:  205:	int ret;
+        -:  206:
+        3:  207:	if ((ret = sshbuf_put_string(buffer, buf, len)) != 0)
+    #####:  208:		fatal("%s: %s", __func__, ssh_err(ret));
+        3:  209:}
+        -:  210:
+        -:  211:void
+        4:  212:buffer_put_cstring(Buffer *buffer, const char *s)
+        -:  213:{
+        -:  214:	int ret;
+        -:  215:
+        4:  216:	if ((ret = sshbuf_put_cstring(buffer, s)) != 0)
+    #####:  217:		fatal("%s: %s", __func__, ssh_err(ret));
+        4:  218:}
+        -:  219:
+        -:  220:int
+    #####:  221:buffer_get_char_ret(char *v, Buffer *buffer)
+        -:  222:{
+        -:  223:	int ret;
+        -:  224:
+    #####:  225:	if ((ret = sshbuf_get_u8(buffer, (u_char *)v)) != 0) {
+    #####:  226:		error("%s: %s", __func__, ssh_err(ret));
+    #####:  227:		return -1;
+        -:  228:	}
+    #####:  229:	return 0;
+        -:  230:}
+        -:  231:
+        -:  232:int
+    #####:  233:buffer_get_char(Buffer *buffer)
+        -:  234:{
+        -:  235:	char ch;
+        -:  236:
+    #####:  237:	if (buffer_get_char_ret(&ch, buffer) == -1)
+    #####:  238:		fatal("%s: buffer error", __func__);
+    #####:  239:	return (u_char) ch;
+        -:  240:}
+        -:  241:
+        -:  242:void
+       60:  243:buffer_put_char(Buffer *buffer, int value)
+        -:  244:{
+        -:  245:	int ret;
+        -:  246:
+       60:  247:	if ((ret = sshbuf_put_u8(buffer, value)) != 0)
+    #####:  248:		fatal("%s: %s", __func__, ssh_err(ret));
+       60:  249:}
+        -:  250:
+        -:  251:void
+    #####:  252:buffer_put_bignum2_from_string(Buffer *buffer, const u_char *s, u_int l)
+        -:  253:{
+        -:  254:	int ret;
+        -:  255:
+    #####:  256:	if ((ret = sshbuf_put_bignum2_bytes(buffer, s, l)) != 0)
+    #####:  257:		fatal("%s: %s", __func__, ssh_err(ret));
+    #####:  258:}
+        -:  259:

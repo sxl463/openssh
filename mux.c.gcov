@@ -1,0 +1,2272 @@
+        -:    0:Source:mux.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: mux.c,v 1.63 2016/10/19 23:21:56 dtucker Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2002-2008 Damien Miller <djm@openbsd.org>
+        -:    4: *
+        -:    5: * Permission to use, copy, modify, and distribute this software for any
+        -:    6: * purpose with or without fee is hereby granted, provided that the above
+        -:    7: * copyright notice and this permission notice appear in all copies.
+        -:    8: *
+        -:    9: * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        -:   10: * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        -:   11: * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        -:   12: * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        -:   13: * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        -:   14: * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        -:   15: * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+        -:   16: */
+        -:   17:
+        -:   18:/* ssh session multiplexing support */
+        -:   19:
+        -:   20:/*
+        -:   21: * TODO:
+        -:   22: *   - Better signalling from master to slave, especially passing of
+        -:   23: *      error messages
+        -:   24: *   - Better fall-back from mux slave error to new connection.
+        -:   25: *   - ExitOnForwardingFailure
+        -:   26: *   - Maybe extension mechanisms for multi-X11/multi-agent forwarding
+        -:   27: *   - Support ~^Z in mux slaves.
+        -:   28: *   - Inspect or control sessions in master.
+        -:   29: *   - If we ever support the "signal" channel request, send signals on
+        -:   30: *     sessions in master.
+        -:   31: */
+        -:   32:
+        -:   33:#include "includes.h"
+        -:   34:
+        -:   35:#include <sys/types.h>
+        -:   36:#include <sys/stat.h>
+        -:   37:#include <sys/socket.h>
+        -:   38:#include <sys/un.h>
+        -:   39:
+        -:   40:#include <errno.h>
+        -:   41:#include <fcntl.h>
+        -:   42:#include <signal.h>
+        -:   43:#include <stdarg.h>
+        -:   44:#include <stddef.h>
+        -:   45:#include <stdlib.h>
+        -:   46:#include <stdio.h>
+        -:   47:#include <string.h>
+        -:   48:#include <unistd.h>
+        -:   49:#ifdef HAVE_PATHS_H
+        -:   50:#include <paths.h>
+        -:   51:#endif
+        -:   52:
+        -:   53:#ifdef HAVE_POLL_H
+        -:   54:#include <poll.h>
+        -:   55:#else
+        -:   56:# ifdef HAVE_SYS_POLL_H
+        -:   57:#  include <sys/poll.h>
+        -:   58:# endif
+        -:   59:#endif
+        -:   60:
+        -:   61:#ifdef HAVE_UTIL_H
+        -:   62:# include <util.h>
+        -:   63:#endif
+        -:   64:
+        -:   65:#include "openbsd-compat/sys-queue.h"
+        -:   66:#include "xmalloc.h"
+        -:   67:#include "log.h"
+        -:   68:#include "ssh.h"
+        -:   69:#include "ssh2.h"
+        -:   70:#include "pathnames.h"
+        -:   71:#include "misc.h"
+        -:   72:#include "match.h"
+        -:   73:#include "buffer.h"
+        -:   74:#include "channels.h"
+        -:   75:#include "msg.h"
+        -:   76:#include "packet.h"
+        -:   77:#include "monitor_fdpass.h"
+        -:   78:#include "sshpty.h"
+        -:   79:#include "key.h"
+        -:   80:#include "readconf.h"
+        -:   81:#include "clientloop.h"
+        -:   82:#include "ssherr.h"
+        -:   83:
+        -:   84:/* from ssh.c */
+        -:   85:extern int tty_flag;
+        -:   86:extern Options options;
+        -:   87:extern int stdin_null_flag;
+        -:   88:extern char *host;
+        -:   89:extern int subsystem_flag;
+        -:   90:extern Buffer command;
+        -:   91:extern volatile sig_atomic_t quit_pending;
+        -:   92:
+        -:   93:/* Context for session open confirmation callback */
+        -:   94:struct mux_session_confirm_ctx {
+        -:   95:	u_int want_tty;
+        -:   96:	u_int want_subsys;
+        -:   97:	u_int want_x_fwd;
+        -:   98:	u_int want_agent_fwd;
+        -:   99:	Buffer cmd;
+        -:  100:	char *term;
+        -:  101:	struct termios tio;
+        -:  102:	char **env;
+        -:  103:	u_int rid;
+        -:  104:};
+        -:  105:
+        -:  106:/* Context for stdio fwd open confirmation callback */
+        -:  107:struct mux_stdio_confirm_ctx {
+        -:  108:	u_int rid;
+        -:  109:};
+        -:  110:
+        -:  111:/* Context for global channel callback */
+        -:  112:struct mux_channel_confirm_ctx {
+        -:  113:	u_int cid;	/* channel id */
+        -:  114:	u_int rid;	/* request id */
+        -:  115:	int fid;	/* forward id */
+        -:  116:};
+        -:  117:
+        -:  118:/* fd to control socket */
+        -:  119:int muxserver_sock = -1;
+        -:  120:
+        -:  121:/* client request id */
+        -:  122:u_int muxclient_request_id = 0;
+        -:  123:
+        -:  124:/* Multiplexing control command */
+        -:  125:u_int muxclient_command = 0;
+        -:  126:
+        -:  127:/* Set when signalled. */
+        -:  128:static volatile sig_atomic_t muxclient_terminate = 0;
+        -:  129:
+        -:  130:/* PID of multiplex server */
+        -:  131:static u_int muxserver_pid = 0;
+        -:  132:
+        -:  133:static Channel *mux_listener_channel = NULL;
+        -:  134:
+        -:  135:struct mux_master_state {
+        -:  136:	int hello_rcvd;
+        -:  137:};
+        -:  138:
+        -:  139:/* mux protocol messages */
+        -:  140:#define MUX_MSG_HELLO		0x00000001
+        -:  141:#define MUX_C_NEW_SESSION	0x10000002
+        -:  142:#define MUX_C_ALIVE_CHECK	0x10000004
+        -:  143:#define MUX_C_TERMINATE		0x10000005
+        -:  144:#define MUX_C_OPEN_FWD		0x10000006
+        -:  145:#define MUX_C_CLOSE_FWD		0x10000007
+        -:  146:#define MUX_C_NEW_STDIO_FWD	0x10000008
+        -:  147:#define MUX_C_STOP_LISTENING	0x10000009
+        -:  148:#define MUX_C_PROXY		0x1000000f
+        -:  149:#define MUX_S_OK		0x80000001
+        -:  150:#define MUX_S_PERMISSION_DENIED	0x80000002
+        -:  151:#define MUX_S_FAILURE		0x80000003
+        -:  152:#define MUX_S_EXIT_MESSAGE	0x80000004
+        -:  153:#define MUX_S_ALIVE		0x80000005
+        -:  154:#define MUX_S_SESSION_OPENED	0x80000006
+        -:  155:#define MUX_S_REMOTE_PORT	0x80000007
+        -:  156:#define MUX_S_TTY_ALLOC_FAIL	0x80000008
+        -:  157:#define MUX_S_PROXY		0x8000000f
+        -:  158:
+        -:  159:/* type codes for MUX_C_OPEN_FWD and MUX_C_CLOSE_FWD */
+        -:  160:#define MUX_FWD_LOCAL   1
+        -:  161:#define MUX_FWD_REMOTE  2
+        -:  162:#define MUX_FWD_DYNAMIC 3
+        -:  163:
+        -:  164:static void mux_session_confirm(int, int, void *);
+        -:  165:static void mux_stdio_confirm(int, int, void *);
+        -:  166:
+        -:  167:static int process_mux_master_hello(u_int, Channel *, Buffer *, Buffer *);
+        -:  168:static int process_mux_new_session(u_int, Channel *, Buffer *, Buffer *);
+        -:  169:static int process_mux_alive_check(u_int, Channel *, Buffer *, Buffer *);
+        -:  170:static int process_mux_terminate(u_int, Channel *, Buffer *, Buffer *);
+        -:  171:static int process_mux_open_fwd(u_int, Channel *, Buffer *, Buffer *);
+        -:  172:static int process_mux_close_fwd(u_int, Channel *, Buffer *, Buffer *);
+        -:  173:static int process_mux_stdio_fwd(u_int, Channel *, Buffer *, Buffer *);
+        -:  174:static int process_mux_stop_listening(u_int, Channel *, Buffer *, Buffer *);
+        -:  175:static int process_mux_proxy(u_int, Channel *, Buffer *, Buffer *);
+        -:  176:
+        -:  177:static const struct {
+        -:  178:	u_int type;
+        -:  179:	int (*handler)(u_int, Channel *, Buffer *, Buffer *);
+        -:  180:} mux_master_handlers[] = {
+        -:  181:	{ MUX_MSG_HELLO, process_mux_master_hello },
+        -:  182:	{ MUX_C_NEW_SESSION, process_mux_new_session },
+        -:  183:	{ MUX_C_ALIVE_CHECK, process_mux_alive_check },
+        -:  184:	{ MUX_C_TERMINATE, process_mux_terminate },
+        -:  185:	{ MUX_C_OPEN_FWD, process_mux_open_fwd },
+        -:  186:	{ MUX_C_CLOSE_FWD, process_mux_close_fwd },
+        -:  187:	{ MUX_C_NEW_STDIO_FWD, process_mux_stdio_fwd },
+        -:  188:	{ MUX_C_STOP_LISTENING, process_mux_stop_listening },
+        -:  189:	{ MUX_C_PROXY, process_mux_proxy },
+        -:  190:	{ 0, NULL }
+        -:  191:};
+        -:  192:
+        -:  193:/* Cleanup callback fired on closure of mux slave _session_ channel */
+        -:  194:/* ARGSUSED */
+        -:  195:static void
+    #####:  196:mux_master_session_cleanup_cb(int cid, void *unused)
+        -:  197:{
+    #####:  198:	Channel *cc, *c = channel_by_id(cid);
+        -:  199:
+    #####:  200:	debug3("%s: entering for channel %d", __func__, cid);
+    #####:  201:	if (c == NULL)
+    #####:  202:		fatal("%s: channel_by_id(%i) == NULL", __func__, cid);
+    #####:  203:	if (c->ctl_chan != -1) {
+    #####:  204:		if ((cc = channel_by_id(c->ctl_chan)) == NULL)
+    #####:  205:			fatal("%s: channel %d missing control channel %d",
+        -:  206:			    __func__, c->self, c->ctl_chan);
+    #####:  207:		c->ctl_chan = -1;
+    #####:  208:		cc->remote_id = -1;
+    #####:  209:		chan_rcvd_oclose(cc);
+        -:  210:	}
+    #####:  211:	channel_cancel_cleanup(c->self);
+    #####:  212:}
+        -:  213:
+        -:  214:/* Cleanup callback fired on closure of mux slave _control_ channel */
+        -:  215:/* ARGSUSED */
+        -:  216:static void
+    #####:  217:mux_master_control_cleanup_cb(int cid, void *unused)
+        -:  218:{
+    #####:  219:	Channel *sc, *c = channel_by_id(cid);
+        -:  220:
+    #####:  221:	debug3("%s: entering for channel %d", __func__, cid);
+    #####:  222:	if (c == NULL)
+    #####:  223:		fatal("%s: channel_by_id(%i) == NULL", __func__, cid);
+    #####:  224:	if (c->remote_id != -1) {
+    #####:  225:		if ((sc = channel_by_id(c->remote_id)) == NULL)
+    #####:  226:			fatal("%s: channel %d missing session channel %d",
+        -:  227:			    __func__, c->self, c->remote_id);
+    #####:  228:		c->remote_id = -1;
+    #####:  229:		sc->ctl_chan = -1;
+    #####:  230:		if (sc->type != SSH_CHANNEL_OPEN &&
+    #####:  231:		    sc->type != SSH_CHANNEL_OPENING) {
+    #####:  232:			debug2("%s: channel %d: not open", __func__, sc->self);
+    #####:  233:			chan_mark_dead(sc);
+        -:  234:		} else {
+    #####:  235:			if (sc->istate == CHAN_INPUT_OPEN)
+    #####:  236:				chan_read_failed(sc);
+    #####:  237:			if (sc->ostate == CHAN_OUTPUT_OPEN)
+    #####:  238:				chan_write_failed(sc);
+        -:  239:		}
+        -:  240:	}
+    #####:  241:	channel_cancel_cleanup(c->self);
+    #####:  242:}
+        -:  243:
+        -:  244:/* Check mux client environment variables before passing them to mux master. */
+        -:  245:static int
+    #####:  246:env_permitted(char *env)
+        -:  247:{
+        -:  248:	int i, ret;
+        -:  249:	char name[1024], *cp;
+        -:  250:
+    #####:  251:	if ((cp = strchr(env, '=')) == NULL || cp == env)
+    #####:  252:		return 0;
+    #####:  253:	ret = snprintf(name, sizeof(name), "%.*s", (int)(cp - env), env);
+    #####:  254:	if (ret <= 0 || (size_t)ret >= sizeof(name)) {
+    #####:  255:		error("env_permitted: name '%.100s...' too long", env);
+    #####:  256:		return 0;
+        -:  257:	}
+        -:  258:
+    #####:  259:	for (i = 0; i < options.num_send_env; i++)
+    #####:  260:		if (match_pattern(name, options.send_env[i]))
+    #####:  261:			return 1;
+        -:  262:
+    #####:  263:	return 0;
+        -:  264:}
+        -:  265:
+        -:  266:/* Mux master protocol message handlers */
+        -:  267:
+        -:  268:static int
+    #####:  269:process_mux_master_hello(u_int rid, Channel *c, Buffer *m, Buffer *r)
+        -:  270:{
+        -:  271:	u_int ver;
+    #####:  272:	struct mux_master_state *state = (struct mux_master_state *)c->mux_ctx;
+        -:  273:
+    #####:  274:	if (state == NULL)
+    #####:  275:		fatal("%s: channel %d: c->mux_ctx == NULL", __func__, c->self);
+    #####:  276:	if (state->hello_rcvd) {
+    #####:  277:		error("%s: HELLO received twice", __func__);
+    #####:  278:		return -1;
+        -:  279:	}
+    #####:  280:	if (buffer_get_int_ret(&ver, m) != 0) {
+        -:  281: malf:
+    #####:  282:		error("%s: malformed message", __func__);
+    #####:  283:		return -1;
+        -:  284:	}
+    #####:  285:	if (ver != SSHMUX_VER) {
+    #####:  286:		error("Unsupported multiplexing protocol version %d "
+        -:  287:		    "(expected %d)", ver, SSHMUX_VER);
+    #####:  288:		return -1;
+        -:  289:	}
+    #####:  290:	debug2("%s: channel %d slave version %u", __func__, c->self, ver);
+        -:  291:
+        -:  292:	/* No extensions are presently defined */
+    #####:  293:	while (buffer_len(m) > 0) {
+    #####:  294:		char *name = buffer_get_string_ret(m, NULL);
+    #####:  295:		char *value = buffer_get_string_ret(m, NULL);
+        -:  296:
+    #####:  297:		if (name == NULL || value == NULL) {
+    #####:  298:			free(name);
+    #####:  299:			free(value);
+    #####:  300:			goto malf;
+        -:  301:		}
+    #####:  302:		debug2("Unrecognised slave extension \"%s\"", name);
+    #####:  303:		free(name);
+    #####:  304:		free(value);
+        -:  305:	}
+    #####:  306:	state->hello_rcvd = 1;
+    #####:  307:	return 0;
+        -:  308:}
+        -:  309:
+        -:  310:static int
+    #####:  311:process_mux_new_session(u_int rid, Channel *c, Buffer *m, Buffer *r)
+        -:  312:{
+        -:  313:	Channel *nc;
+        -:  314:	struct mux_session_confirm_ctx *cctx;
+        -:  315:	char *reserved, *cmd, *cp;
+        -:  316:	u_int i, j, len, env_len, escape_char, window, packetmax;
+        -:  317:	int new_fd[3];
+        -:  318:
+        -:  319:	/* Reply for SSHMUX_COMMAND_OPEN */
+    #####:  320:	cctx = xcalloc(1, sizeof(*cctx));
+    #####:  321:	cctx->term = NULL;
+    #####:  322:	cctx->rid = rid;
+    #####:  323:	cmd = reserved = NULL;
+    #####:  324:	cctx->env = NULL;
+    #####:  325:	env_len = 0;
+    #####:  326:	if ((reserved = buffer_get_string_ret(m, NULL)) == NULL ||
+    #####:  327:	    buffer_get_int_ret(&cctx->want_tty, m) != 0 ||
+    #####:  328:	    buffer_get_int_ret(&cctx->want_x_fwd, m) != 0 ||
+    #####:  329:	    buffer_get_int_ret(&cctx->want_agent_fwd, m) != 0 ||
+    #####:  330:	    buffer_get_int_ret(&cctx->want_subsys, m) != 0 ||
+    #####:  331:	    buffer_get_int_ret(&escape_char, m) != 0 ||
+    #####:  332:	    (cctx->term = buffer_get_string_ret(m, &len)) == NULL ||
+        -:  333:	    (cmd = buffer_get_string_ret(m, &len)) == NULL) {
+        -:  334: malf:
+    #####:  335:		free(cmd);
+    #####:  336:		free(reserved);
+    #####:  337:		for (j = 0; j < env_len; j++)
+    #####:  338:			free(cctx->env[j]);
+    #####:  339:		free(cctx->env);
+    #####:  340:		free(cctx->term);
+    #####:  341:		free(cctx);
+    #####:  342:		error("%s: malformed message", __func__);
+    #####:  343:		return -1;
+        -:  344:	}
+    #####:  345:	free(reserved);
+    #####:  346:	reserved = NULL;
+        -:  347:
+    #####:  348:	while (buffer_len(m) > 0) {
+        -:  349:#define MUX_MAX_ENV_VARS	4096
+    #####:  350:		if ((cp = buffer_get_string_ret(m, &len)) == NULL)
+    #####:  351:			goto malf;
+    #####:  352:		if (!env_permitted(cp)) {
+    #####:  353:			free(cp);
+    #####:  354:			continue;
+        -:  355:		}
+    #####:  356:		cctx->env = xreallocarray(cctx->env, env_len + 2,
+        -:  357:		    sizeof(*cctx->env));
+    #####:  358:		cctx->env[env_len++] = cp;
+    #####:  359:		cctx->env[env_len] = NULL;
+    #####:  360:		if (env_len > MUX_MAX_ENV_VARS) {
+    #####:  361:			error(">%d environment variables received, ignoring "
+        -:  362:			    "additional", MUX_MAX_ENV_VARS);
+    #####:  363:			break;
+        -:  364:		}
+        -:  365:	}
+        -:  366:
+    #####:  367:	debug2("%s: channel %d: request tty %d, X %d, agent %d, subsys %d, "
+        -:  368:	    "term \"%s\", cmd \"%s\", env %u", __func__, c->self,
+        -:  369:	    cctx->want_tty, cctx->want_x_fwd, cctx->want_agent_fwd,
+        -:  370:	    cctx->want_subsys, cctx->term, cmd, env_len);
+        -:  371:
+    #####:  372:	buffer_init(&cctx->cmd);
+    #####:  373:	buffer_append(&cctx->cmd, cmd, strlen(cmd));
+    #####:  374:	free(cmd);
+    #####:  375:	cmd = NULL;
+        -:  376:
+        -:  377:	/* Gather fds from client */
+    #####:  378:	for(i = 0; i < 3; i++) {
+    #####:  379:		if ((new_fd[i] = mm_receive_fd(c->sock)) == -1) {
+    #####:  380:			error("%s: failed to receive fd %d from slave",
+        -:  381:			    __func__, i);
+    #####:  382:			for (j = 0; j < i; j++)
+    #####:  383:				close(new_fd[j]);
+    #####:  384:			for (j = 0; j < env_len; j++)
+    #####:  385:				free(cctx->env[j]);
+    #####:  386:			free(cctx->env);
+    #####:  387:			free(cctx->term);
+    #####:  388:			buffer_free(&cctx->cmd);
+    #####:  389:			free(cctx);
+        -:  390:
+        -:  391:			/* prepare reply */
+    #####:  392:			buffer_put_int(r, MUX_S_FAILURE);
+    #####:  393:			buffer_put_int(r, rid);
+    #####:  394:			buffer_put_cstring(r,
+        -:  395:			    "did not receive file descriptors");
+    #####:  396:			return -1;
+        -:  397:		}
+        -:  398:	}
+        -:  399:
+    #####:  400:	debug3("%s: got fds stdin %d, stdout %d, stderr %d", __func__,
+        -:  401:	    new_fd[0], new_fd[1], new_fd[2]);
+        -:  402:
+        -:  403:	/* XXX support multiple child sessions in future */
+    #####:  404:	if (c->remote_id != -1) {
+    #####:  405:		debug2("%s: session already open", __func__);
+        -:  406:		/* prepare reply */
+    #####:  407:		buffer_put_int(r, MUX_S_FAILURE);
+    #####:  408:		buffer_put_int(r, rid);
+    #####:  409:		buffer_put_cstring(r, "Multiple sessions not supported");
+        -:  410: cleanup:
+    #####:  411:		close(new_fd[0]);
+    #####:  412:		close(new_fd[1]);
+    #####:  413:		close(new_fd[2]);
+    #####:  414:		free(cctx->term);
+    #####:  415:		if (env_len != 0) {
+    #####:  416:			for (i = 0; i < env_len; i++)
+    #####:  417:				free(cctx->env[i]);
+    #####:  418:			free(cctx->env);
+        -:  419:		}
+    #####:  420:		buffer_free(&cctx->cmd);
+    #####:  421:		free(cctx);
+    #####:  422:		return 0;
+        -:  423:	}
+        -:  424:
+    #####:  425:	if (options.control_master == SSHCTL_MASTER_ASK ||
+    #####:  426:	    options.control_master == SSHCTL_MASTER_AUTO_ASK) {
+    #####:  427:		if (!ask_permission("Allow shared connection to %s? ", host)) {
+    #####:  428:			debug2("%s: session refused by user", __func__);
+        -:  429:			/* prepare reply */
+    #####:  430:			buffer_put_int(r, MUX_S_PERMISSION_DENIED);
+    #####:  431:			buffer_put_int(r, rid);
+    #####:  432:			buffer_put_cstring(r, "Permission denied");
+    #####:  433:			goto cleanup;
+        -:  434:		}
+        -:  435:	}
+        -:  436:
+        -:  437:	/* Try to pick up ttymodes from client before it goes raw */
+    #####:  438:	if (cctx->want_tty && tcgetattr(new_fd[0], &cctx->tio) == -1)
+    #####:  439:		error("%s: tcgetattr: %s", __func__, strerror(errno));
+        -:  440:
+        -:  441:	/* enable nonblocking unless tty */
+    #####:  442:	if (!isatty(new_fd[0]))
+    #####:  443:		set_nonblock(new_fd[0]);
+    #####:  444:	if (!isatty(new_fd[1]))
+    #####:  445:		set_nonblock(new_fd[1]);
+    #####:  446:	if (!isatty(new_fd[2]))
+    #####:  447:		set_nonblock(new_fd[2]);
+        -:  448:
+    #####:  449:	window = CHAN_SES_WINDOW_DEFAULT;
+    #####:  450:	packetmax = CHAN_SES_PACKET_DEFAULT;
+    #####:  451:	if (cctx->want_tty) {
+    #####:  452:		window >>= 1;
+    #####:  453:		packetmax >>= 1;
+        -:  454:	}
+        -:  455:
+    #####:  456:	nc = channel_new("session", SSH_CHANNEL_OPENING,
+        -:  457:	    new_fd[0], new_fd[1], new_fd[2], window, packetmax,
+        -:  458:	    CHAN_EXTENDED_WRITE, "client-session", /*nonblock*/0);
+        -:  459:
+    #####:  460:	nc->ctl_chan = c->self;		/* link session -> control channel */
+    #####:  461:	c->remote_id = nc->self; 	/* link control -> session channel */
+        -:  462:
+    #####:  463:	if (cctx->want_tty && escape_char != 0xffffffff) {
+    #####:  464:		channel_register_filter(nc->self,
+        -:  465:		    client_simple_escape_filter, NULL,
+        -:  466:		    client_filter_cleanup,
+        -:  467:		    client_new_escape_filter_ctx((int)escape_char));
+        -:  468:	}
+        -:  469:
+    #####:  470:	debug2("%s: channel_new: %d linked to control channel %d",
+        -:  471:	    __func__, nc->self, nc->ctl_chan);
+        -:  472:
+    #####:  473:	channel_send_open(nc->self);
+    #####:  474:	channel_register_open_confirm(nc->self, mux_session_confirm, cctx);
+    #####:  475:	c->mux_pause = 1; /* stop handling messages until open_confirm done */
+    #####:  476:	channel_register_cleanup(nc->self, mux_master_session_cleanup_cb, 1);
+        -:  477:
+        -:  478:	/* reply is deferred, sent by mux_session_confirm */
+    #####:  479:	return 0;
+        -:  480:}
+        -:  481:
+        -:  482:static int
+    #####:  483:process_mux_alive_check(u_int rid, Channel *c, Buffer *m, Buffer *r)
+        -:  484:{
+    #####:  485:	debug2("%s: channel %d: alive check", __func__, c->self);
+        -:  486:
+        -:  487:	/* prepare reply */
+    #####:  488:	buffer_put_int(r, MUX_S_ALIVE);
+    #####:  489:	buffer_put_int(r, rid);
+    #####:  490:	buffer_put_int(r, (u_int)getpid());
+        -:  491:
+    #####:  492:	return 0;
+        -:  493:}
+        -:  494:
+        -:  495:static int
+    #####:  496:process_mux_terminate(u_int rid, Channel *c, Buffer *m, Buffer *r)
+        -:  497:{
+    #####:  498:	debug2("%s: channel %d: terminate request", __func__, c->self);
+        -:  499:
+    #####:  500:	if (options.control_master == SSHCTL_MASTER_ASK ||
+    #####:  501:	    options.control_master == SSHCTL_MASTER_AUTO_ASK) {
+    #####:  502:		if (!ask_permission("Terminate shared connection to %s? ",
+        -:  503:		    host)) {
+    #####:  504:			debug2("%s: termination refused by user", __func__);
+    #####:  505:			buffer_put_int(r, MUX_S_PERMISSION_DENIED);
+    #####:  506:			buffer_put_int(r, rid);
+    #####:  507:			buffer_put_cstring(r, "Permission denied");
+    #####:  508:			return 0;
+        -:  509:		}
+        -:  510:	}
+        -:  511:
+    #####:  512:	quit_pending = 1;
+    #####:  513:	buffer_put_int(r, MUX_S_OK);
+    #####:  514:	buffer_put_int(r, rid);
+        -:  515:	/* XXX exit happens too soon - message never makes it to client */
+    #####:  516:	return 0;
+        -:  517:}
+        -:  518:
+        -:  519:static char *
+    #####:  520:format_forward(u_int ftype, struct Forward *fwd)
+        -:  521:{
+        -:  522:	char *ret;
+        -:  523:
+    #####:  524:	switch (ftype) {
+        -:  525:	case MUX_FWD_LOCAL:
+    #####:  526:		xasprintf(&ret, "local forward %.200s:%d -> %.200s:%d",
+    #####:  527:		    (fwd->listen_path != NULL) ? fwd->listen_path :
+    #####:  528:		    (fwd->listen_host == NULL) ?
+    #####:  529:		    (options.fwd_opts.gateway_ports ? "*" : "LOCALHOST") :
+        -:  530:		    fwd->listen_host, fwd->listen_port,
+    #####:  531:		    (fwd->connect_path != NULL) ? fwd->connect_path :
+        -:  532:		    fwd->connect_host, fwd->connect_port);
+    #####:  533:		break;
+        -:  534:	case MUX_FWD_DYNAMIC:
+    #####:  535:		xasprintf(&ret, "dynamic forward %.200s:%d -> *",
+    #####:  536:		    (fwd->listen_host == NULL) ?
+    #####:  537:		    (options.fwd_opts.gateway_ports ? "*" : "LOCALHOST") :
+        -:  538:		     fwd->listen_host, fwd->listen_port);
+    #####:  539:		break;
+        -:  540:	case MUX_FWD_REMOTE:
+    #####:  541:		xasprintf(&ret, "remote forward %.200s:%d -> %.200s:%d",
+    #####:  542:		    (fwd->listen_path != NULL) ? fwd->listen_path :
+    #####:  543:		    (fwd->listen_host == NULL) ?
+    #####:  544:		    "LOCALHOST" : fwd->listen_host,
+        -:  545:		    fwd->listen_port,
+    #####:  546:		    (fwd->connect_path != NULL) ? fwd->connect_path :
+        -:  547:		    fwd->connect_host, fwd->connect_port);
+    #####:  548:		break;
+        -:  549:	default:
+    #####:  550:		fatal("%s: unknown forward type %u", __func__, ftype);
+        -:  551:	}
+    #####:  552:	return ret;
+        -:  553:}
+        -:  554:
+        -:  555:static int
+    #####:  556:compare_host(const char *a, const char *b)
+        -:  557:{
+    #####:  558:	if (a == NULL && b == NULL)
+    #####:  559:		return 1;
+    #####:  560:	if (a == NULL || b == NULL)
+    #####:  561:		return 0;
+    #####:  562:	return strcmp(a, b) == 0;
+        -:  563:}
+        -:  564:
+        -:  565:static int
+    #####:  566:compare_forward(struct Forward *a, struct Forward *b)
+        -:  567:{
+    #####:  568:	if (!compare_host(a->listen_host, b->listen_host))
+    #####:  569:		return 0;
+    #####:  570:	if (!compare_host(a->listen_path, b->listen_path))
+    #####:  571:		return 0;
+    #####:  572:	if (a->listen_port != b->listen_port)
+    #####:  573:		return 0;
+    #####:  574:	if (!compare_host(a->connect_host, b->connect_host))
+    #####:  575:		return 0;
+    #####:  576:	if (!compare_host(a->connect_path, b->connect_path))
+    #####:  577:		return 0;
+    #####:  578:	if (a->connect_port != b->connect_port)
+    #####:  579:		return 0;
+        -:  580:
+    #####:  581:	return 1;
+        -:  582:}
+        -:  583:
+        -:  584:static void
+    #####:  585:mux_confirm_remote_forward(int type, u_int32_t seq, void *ctxt)
+        -:  586:{
+    #####:  587:	struct mux_channel_confirm_ctx *fctx = ctxt;
+    #####:  588:	char *failmsg = NULL;
+        -:  589:	struct Forward *rfwd;
+        -:  590:	Channel *c;
+        -:  591:	Buffer out;
+        -:  592:
+    #####:  593:	if ((c = channel_by_id(fctx->cid)) == NULL) {
+        -:  594:		/* no channel for reply */
+    #####:  595:		error("%s: unknown channel", __func__);
+    #####:  596:		return;
+        -:  597:	}
+    #####:  598:	buffer_init(&out);
+    #####:  599:	if (fctx->fid >= options.num_remote_forwards ||
+    #####:  600:	    (options.remote_forwards[fctx->fid].connect_path == NULL &&
+    #####:  601:	    options.remote_forwards[fctx->fid].connect_host == NULL)) {
+    #####:  602:		xasprintf(&failmsg, "unknown forwarding id %d", fctx->fid);
+    #####:  603:		goto fail;
+        -:  604:	}
+    #####:  605:	rfwd = &options.remote_forwards[fctx->fid];
+    #####:  606:	debug("%s: %s for: listen %d, connect %s:%d", __func__,
+        -:  607:	    type == SSH2_MSG_REQUEST_SUCCESS ? "success" : "failure",
+    #####:  608:	    rfwd->listen_port, rfwd->connect_path ? rfwd->connect_path :
+        -:  609:	    rfwd->connect_host, rfwd->connect_port);
+    #####:  610:	if (type == SSH2_MSG_REQUEST_SUCCESS) {
+    #####:  611:		if (rfwd->listen_port == 0) {
+    #####:  612:			rfwd->allocated_port = packet_get_int();
+    #####:  613:			debug("Allocated port %u for mux remote forward"
+        -:  614:			    " to %s:%d", rfwd->allocated_port,
+        -:  615:			    rfwd->connect_host, rfwd->connect_port);
+    #####:  616:			buffer_put_int(&out, MUX_S_REMOTE_PORT);
+    #####:  617:			buffer_put_int(&out, fctx->rid);
+    #####:  618:			buffer_put_int(&out, rfwd->allocated_port);
+    #####:  619:			channel_update_permitted_opens(rfwd->handle,
+        -:  620:			   rfwd->allocated_port);
+        -:  621:		} else {
+    #####:  622:			buffer_put_int(&out, MUX_S_OK);
+    #####:  623:			buffer_put_int(&out, fctx->rid);
+        -:  624:		}
+    #####:  625:		goto out;
+        -:  626:	} else {
+    #####:  627:		if (rfwd->listen_port == 0)
+    #####:  628:			channel_update_permitted_opens(rfwd->handle, -1);
+    #####:  629:		if (rfwd->listen_path != NULL)
+    #####:  630:			xasprintf(&failmsg, "remote port forwarding failed for "
+        -:  631:			    "listen path %s", rfwd->listen_path);
+        -:  632:		else
+    #####:  633:			xasprintf(&failmsg, "remote port forwarding failed for "
+        -:  634:			    "listen port %d", rfwd->listen_port);
+        -:  635:
+    #####:  636:                debug2("%s: clearing registered forwarding for listen %d, "
+        -:  637:		    "connect %s:%d", __func__, rfwd->listen_port,
+    #####:  638:		    rfwd->connect_path ? rfwd->connect_path :
+        -:  639:		    rfwd->connect_host, rfwd->connect_port);
+        -:  640:
+    #####:  641:		free(rfwd->listen_host);
+    #####:  642:		free(rfwd->listen_path);
+    #####:  643:		free(rfwd->connect_host);
+    #####:  644:		free(rfwd->connect_path);
+    #####:  645:		memset(rfwd, 0, sizeof(*rfwd));
+        -:  646:	}
+        -:  647: fail:
+    #####:  648:	error("%s: %s", __func__, failmsg);
+    #####:  649:	buffer_put_int(&out, MUX_S_FAILURE);
+    #####:  650:	buffer_put_int(&out, fctx->rid);
+    #####:  651:	buffer_put_cstring(&out, failmsg);
+    #####:  652:	free(failmsg);
+        -:  653: out:
+    #####:  654:	buffer_put_string(&c->output, buffer_ptr(&out), buffer_len(&out));
+    #####:  655:	buffer_free(&out);
+    #####:  656:	if (c->mux_pause <= 0)
+    #####:  657:		fatal("%s: mux_pause %d", __func__, c->mux_pause);
+    #####:  658:	c->mux_pause = 0; /* start processing messages again */
+        -:  659:}
+        -:  660:
+        -:  661:static int
+    #####:  662:process_mux_open_fwd(u_int rid, Channel *c, Buffer *m, Buffer *r)
+        -:  663:{
+        -:  664:	struct Forward fwd;
+    #####:  665:	char *fwd_desc = NULL;
+        -:  666:	char *listen_addr, *connect_addr;
+        -:  667:	u_int ftype;
+        -:  668:	u_int lport, cport;
+    #####:  669:	int i, ret = 0, freefwd = 1;
+        -:  670:
+    #####:  671:	memset(&fwd, 0, sizeof(fwd));
+        -:  672:
+        -:  673:	/* XXX - lport/cport check redundant */
+    #####:  674:	if (buffer_get_int_ret(&ftype, m) != 0 ||
+    #####:  675:	    (listen_addr = buffer_get_string_ret(m, NULL)) == NULL ||
+    #####:  676:	    buffer_get_int_ret(&lport, m) != 0 ||
+    #####:  677:	    (connect_addr = buffer_get_string_ret(m, NULL)) == NULL ||
+    #####:  678:	    buffer_get_int_ret(&cport, m) != 0 ||
+    #####:  679:	    (lport != (u_int)PORT_STREAMLOCAL && lport > 65535) ||
+    #####:  680:	    (cport != (u_int)PORT_STREAMLOCAL && cport > 65535)) {
+    #####:  681:		error("%s: malformed message", __func__);
+    #####:  682:		ret = -1;
+    #####:  683:		goto out;
+        -:  684:	}
+    #####:  685:	if (*listen_addr == '\0') {
+    #####:  686:		free(listen_addr);
+    #####:  687:		listen_addr = NULL;
+        -:  688:	}
+    #####:  689:	if (*connect_addr == '\0') {
+    #####:  690:		free(connect_addr);
+    #####:  691:		connect_addr = NULL;
+        -:  692:	}
+        -:  693:
+    #####:  694:	memset(&fwd, 0, sizeof(fwd));
+    #####:  695:	fwd.listen_port = lport;
+    #####:  696:	if (fwd.listen_port == PORT_STREAMLOCAL)
+    #####:  697:		fwd.listen_path = listen_addr;
+        -:  698:	else
+    #####:  699:		fwd.listen_host = listen_addr;
+    #####:  700:	fwd.connect_port = cport;
+    #####:  701:	if (fwd.connect_port == PORT_STREAMLOCAL)
+    #####:  702:		fwd.connect_path = connect_addr;
+        -:  703:	else
+    #####:  704:		fwd.connect_host = connect_addr;
+        -:  705:
+    #####:  706:	debug2("%s: channel %d: request %s", __func__, c->self,
+    #####:  707:	    (fwd_desc = format_forward(ftype, &fwd)));
+        -:  708:
+    #####:  709:	if (ftype != MUX_FWD_LOCAL && ftype != MUX_FWD_REMOTE &&
+    #####:  710:	    ftype != MUX_FWD_DYNAMIC) {
+    #####:  711:		logit("%s: invalid forwarding type %u", __func__, ftype);
+        -:  712: invalid:
+    #####:  713:		free(listen_addr);
+    #####:  714:		free(connect_addr);
+    #####:  715:		buffer_put_int(r, MUX_S_FAILURE);
+    #####:  716:		buffer_put_int(r, rid);
+    #####:  717:		buffer_put_cstring(r, "Invalid forwarding request");
+    #####:  718:		return 0;
+        -:  719:	}
+    #####:  720:	if (ftype == MUX_FWD_DYNAMIC && fwd.listen_path) {
+    #####:  721:		logit("%s: streamlocal and dynamic forwards "
+        -:  722:		    "are mutually exclusive", __func__);
+    #####:  723:		goto invalid;
+        -:  724:	}
+    #####:  725:	if (fwd.listen_port != PORT_STREAMLOCAL && fwd.listen_port >= 65536) {
+    #####:  726:		logit("%s: invalid listen port %u", __func__,
+        -:  727:		    fwd.listen_port);
+    #####:  728:		goto invalid;
+        -:  729:	}
+    #####:  730:	if ((fwd.connect_port != PORT_STREAMLOCAL && fwd.connect_port >= 65536)
+    #####:  731:	    || (ftype != MUX_FWD_DYNAMIC && ftype != MUX_FWD_REMOTE && fwd.connect_port == 0)) {
+    #####:  732:		logit("%s: invalid connect port %u", __func__,
+        -:  733:		    fwd.connect_port);
+    #####:  734:		goto invalid;
+        -:  735:	}
+    #####:  736:	if (ftype != MUX_FWD_DYNAMIC && fwd.connect_host == NULL && fwd.connect_path == NULL) {
+    #####:  737:		logit("%s: missing connect host", __func__);
+    #####:  738:		goto invalid;
+        -:  739:	}
+        -:  740:
+        -:  741:	/* Skip forwards that have already been requested */
+    #####:  742:	switch (ftype) {
+        -:  743:	case MUX_FWD_LOCAL:
+        -:  744:	case MUX_FWD_DYNAMIC:
+    #####:  745:		for (i = 0; i < options.num_local_forwards; i++) {
+    #####:  746:			if (compare_forward(&fwd,
+    #####:  747:			    options.local_forwards + i)) {
+        -:  748: exists:
+    #####:  749:				debug2("%s: found existing forwarding",
+        -:  750:				    __func__);
+    #####:  751:				buffer_put_int(r, MUX_S_OK);
+    #####:  752:				buffer_put_int(r, rid);
+    #####:  753:				goto out;
+        -:  754:			}
+        -:  755:		}
+    #####:  756:		break;
+        -:  757:	case MUX_FWD_REMOTE:
+    #####:  758:		for (i = 0; i < options.num_remote_forwards; i++) {
+    #####:  759:			if (compare_forward(&fwd,
+    #####:  760:			    options.remote_forwards + i)) {
+    #####:  761:				if (fwd.listen_port != 0)
+    #####:  762:					goto exists;
+    #####:  763:				debug2("%s: found allocated port",
+        -:  764:				    __func__);
+    #####:  765:				buffer_put_int(r, MUX_S_REMOTE_PORT);
+    #####:  766:				buffer_put_int(r, rid);
+    #####:  767:				buffer_put_int(r,
+    #####:  768:				    options.remote_forwards[i].allocated_port);
+    #####:  769:				goto out;
+        -:  770:			}
+        -:  771:		}
+    #####:  772:		break;
+        -:  773:	}
+        -:  774:
+    #####:  775:	if (options.control_master == SSHCTL_MASTER_ASK ||
+    #####:  776:	    options.control_master == SSHCTL_MASTER_AUTO_ASK) {
+    #####:  777:		if (!ask_permission("Open %s on %s?", fwd_desc, host)) {
+    #####:  778:			debug2("%s: forwarding refused by user", __func__);
+    #####:  779:			buffer_put_int(r, MUX_S_PERMISSION_DENIED);
+    #####:  780:			buffer_put_int(r, rid);
+    #####:  781:			buffer_put_cstring(r, "Permission denied");
+    #####:  782:			goto out;
+        -:  783:		}
+        -:  784:	}
+        -:  785:
+    #####:  786:	if (ftype == MUX_FWD_LOCAL || ftype == MUX_FWD_DYNAMIC) {
+    #####:  787:		if (!channel_setup_local_fwd_listener(&fwd,
+        -:  788:		    &options.fwd_opts)) {
+        -:  789: fail:
+    #####:  790:			logit("slave-requested %s failed", fwd_desc);
+    #####:  791:			buffer_put_int(r, MUX_S_FAILURE);
+    #####:  792:			buffer_put_int(r, rid);
+    #####:  793:			buffer_put_cstring(r, "Port forwarding failed");
+    #####:  794:			goto out;
+        -:  795:		}
+    #####:  796:		add_local_forward(&options, &fwd);
+    #####:  797:		freefwd = 0;
+        -:  798:	} else {
+        -:  799:		struct mux_channel_confirm_ctx *fctx;
+        -:  800:
+    #####:  801:		fwd.handle = channel_request_remote_forwarding(&fwd);
+    #####:  802:		if (fwd.handle < 0)
+    #####:  803:			goto fail;
+    #####:  804:		add_remote_forward(&options, &fwd);
+    #####:  805:		fctx = xcalloc(1, sizeof(*fctx));
+    #####:  806:		fctx->cid = c->self;
+    #####:  807:		fctx->rid = rid;
+    #####:  808:		fctx->fid = options.num_remote_forwards - 1;
+    #####:  809:		client_register_global_confirm(mux_confirm_remote_forward,
+        -:  810:		    fctx);
+    #####:  811:		freefwd = 0;
+    #####:  812:		c->mux_pause = 1; /* wait for mux_confirm_remote_forward */
+        -:  813:		/* delayed reply in mux_confirm_remote_forward */
+    #####:  814:		goto out;
+        -:  815:	}
+    #####:  816:	buffer_put_int(r, MUX_S_OK);
+    #####:  817:	buffer_put_int(r, rid);
+        -:  818: out:
+    #####:  819:	free(fwd_desc);
+    #####:  820:	if (freefwd) {
+    #####:  821:		free(fwd.listen_host);
+    #####:  822:		free(fwd.listen_path);
+    #####:  823:		free(fwd.connect_host);
+    #####:  824:		free(fwd.connect_path);
+        -:  825:	}
+    #####:  826:	return ret;
+        -:  827:}
+        -:  828:
+        -:  829:static int
+    #####:  830:process_mux_close_fwd(u_int rid, Channel *c, Buffer *m, Buffer *r)
+        -:  831:{
+        -:  832:	struct Forward fwd, *found_fwd;
+    #####:  833:	char *fwd_desc = NULL;
+    #####:  834:	const char *error_reason = NULL;
+    #####:  835:	char *listen_addr = NULL, *connect_addr = NULL;
+        -:  836:	u_int ftype;
+    #####:  837:	int i, ret = 0;
+        -:  838:	u_int lport, cport;
+        -:  839:
+    #####:  840:	memset(&fwd, 0, sizeof(fwd));
+        -:  841:
+    #####:  842:	if (buffer_get_int_ret(&ftype, m) != 0 ||
+    #####:  843:	    (listen_addr = buffer_get_string_ret(m, NULL)) == NULL ||
+    #####:  844:	    buffer_get_int_ret(&lport, m) != 0 ||
+    #####:  845:	    (connect_addr = buffer_get_string_ret(m, NULL)) == NULL ||
+    #####:  846:	    buffer_get_int_ret(&cport, m) != 0 ||
+    #####:  847:	    (lport != (u_int)PORT_STREAMLOCAL && lport > 65535) ||
+    #####:  848:	    (cport != (u_int)PORT_STREAMLOCAL && cport > 65535)) {
+    #####:  849:		error("%s: malformed message", __func__);
+    #####:  850:		ret = -1;
+    #####:  851:		goto out;
+        -:  852:	}
+        -:  853:
+    #####:  854:	if (*listen_addr == '\0') {
+    #####:  855:		free(listen_addr);
+    #####:  856:		listen_addr = NULL;
+        -:  857:	}
+    #####:  858:	if (*connect_addr == '\0') {
+    #####:  859:		free(connect_addr);
+    #####:  860:		connect_addr = NULL;
+        -:  861:	}
+        -:  862:
+    #####:  863:	memset(&fwd, 0, sizeof(fwd));
+    #####:  864:	fwd.listen_port = lport;
+    #####:  865:	if (fwd.listen_port == PORT_STREAMLOCAL)
+    #####:  866:		fwd.listen_path = listen_addr;
+        -:  867:	else
+    #####:  868:		fwd.listen_host = listen_addr;
+    #####:  869:	fwd.connect_port = cport;
+    #####:  870:	if (fwd.connect_port == PORT_STREAMLOCAL)
+    #####:  871:		fwd.connect_path = connect_addr;
+        -:  872:	else
+    #####:  873:		fwd.connect_host = connect_addr;
+        -:  874:
+    #####:  875:	debug2("%s: channel %d: request cancel %s", __func__, c->self,
+    #####:  876:	    (fwd_desc = format_forward(ftype, &fwd)));
+        -:  877:
+        -:  878:	/* make sure this has been requested */
+    #####:  879:	found_fwd = NULL;
+    #####:  880:	switch (ftype) {
+        -:  881:	case MUX_FWD_LOCAL:
+        -:  882:	case MUX_FWD_DYNAMIC:
+    #####:  883:		for (i = 0; i < options.num_local_forwards; i++) {
+    #####:  884:			if (compare_forward(&fwd,
+    #####:  885:			    options.local_forwards + i)) {
+    #####:  886:				found_fwd = options.local_forwards + i;
+    #####:  887:				break;
+        -:  888:			}
+        -:  889:		}
+    #####:  890:		break;
+        -:  891:	case MUX_FWD_REMOTE:
+    #####:  892:		for (i = 0; i < options.num_remote_forwards; i++) {
+    #####:  893:			if (compare_forward(&fwd,
+    #####:  894:			    options.remote_forwards + i)) {
+    #####:  895:				found_fwd = options.remote_forwards + i;
+    #####:  896:				break;
+        -:  897:			}
+        -:  898:		}
+    #####:  899:		break;
+        -:  900:	}
+        -:  901:
+    #####:  902:	if (found_fwd == NULL)
+    #####:  903:		error_reason = "port not forwarded";
+    #####:  904:	else if (ftype == MUX_FWD_REMOTE) {
+        -:  905:		/*
+        -:  906:		 * This shouldn't fail unless we confused the host/port
+        -:  907:		 * between options.remote_forwards and permitted_opens.
+        -:  908:		 * However, for dynamic allocated listen ports we need
+        -:  909:		 * to use the actual listen port.
+        -:  910:		 */
+    #####:  911:		if (channel_request_rforward_cancel(found_fwd) == -1)
+    #####:  912:			error_reason = "port not in permitted opens";
+        -:  913:	} else {	/* local and dynamic forwards */
+        -:  914:		/* Ditto */
+    #####:  915:		if (channel_cancel_lport_listener(&fwd, fwd.connect_port,
+        -:  916:		    &options.fwd_opts) == -1)
+    #####:  917:			error_reason = "port not found";
+        -:  918:	}
+        -:  919:
+    #####:  920:	if (error_reason == NULL) {
+    #####:  921:		buffer_put_int(r, MUX_S_OK);
+    #####:  922:		buffer_put_int(r, rid);
+        -:  923:
+    #####:  924:		free(found_fwd->listen_host);
+    #####:  925:		free(found_fwd->listen_path);
+    #####:  926:		free(found_fwd->connect_host);
+    #####:  927:		free(found_fwd->connect_path);
+    #####:  928:		found_fwd->listen_host = found_fwd->connect_host = NULL;
+    #####:  929:		found_fwd->listen_path = found_fwd->connect_path = NULL;
+    #####:  930:		found_fwd->listen_port = found_fwd->connect_port = 0;
+        -:  931:	} else {
+    #####:  932:		buffer_put_int(r, MUX_S_FAILURE);
+    #####:  933:		buffer_put_int(r, rid);
+    #####:  934:		buffer_put_cstring(r, error_reason);
+        -:  935:	}
+        -:  936: out:
+    #####:  937:	free(fwd_desc);
+    #####:  938:	free(listen_addr);
+    #####:  939:	free(connect_addr);
+        -:  940:
+    #####:  941:	return ret;
+        -:  942:}
+        -:  943:
+        -:  944:static int
+    #####:  945:process_mux_stdio_fwd(u_int rid, Channel *c, Buffer *m, Buffer *r)
+        -:  946:{
+        -:  947:	Channel *nc;
+        -:  948:	char *reserved, *chost;
+        -:  949:	u_int cport, i, j;
+        -:  950:	int new_fd[2];
+        -:  951:	struct mux_stdio_confirm_ctx *cctx;
+        -:  952:
+    #####:  953:	chost = reserved = NULL;
+    #####:  954:	if ((reserved = buffer_get_string_ret(m, NULL)) == NULL ||
+    #####:  955:	   (chost = buffer_get_string_ret(m, NULL)) == NULL ||
+    #####:  956:	    buffer_get_int_ret(&cport, m) != 0) {
+    #####:  957:		free(reserved);
+    #####:  958:		free(chost);
+    #####:  959:		error("%s: malformed message", __func__);
+    #####:  960:		return -1;
+        -:  961:	}
+    #####:  962:	free(reserved);
+        -:  963:
+    #####:  964:	debug2("%s: channel %d: request stdio fwd to %s:%u",
+        -:  965:	    __func__, c->self, chost, cport);
+        -:  966:
+        -:  967:	/* Gather fds from client */
+    #####:  968:	for(i = 0; i < 2; i++) {
+    #####:  969:		if ((new_fd[i] = mm_receive_fd(c->sock)) == -1) {
+    #####:  970:			error("%s: failed to receive fd %d from slave",
+        -:  971:			    __func__, i);
+    #####:  972:			for (j = 0; j < i; j++)
+    #####:  973:				close(new_fd[j]);
+    #####:  974:			free(chost);
+        -:  975:
+        -:  976:			/* prepare reply */
+    #####:  977:			buffer_put_int(r, MUX_S_FAILURE);
+    #####:  978:			buffer_put_int(r, rid);
+    #####:  979:			buffer_put_cstring(r,
+        -:  980:			    "did not receive file descriptors");
+    #####:  981:			return -1;
+        -:  982:		}
+        -:  983:	}
+        -:  984:
+    #####:  985:	debug3("%s: got fds stdin %d, stdout %d", __func__,
+        -:  986:	    new_fd[0], new_fd[1]);
+        -:  987:
+        -:  988:	/* XXX support multiple child sessions in future */
+    #####:  989:	if (c->remote_id != -1) {
+    #####:  990:		debug2("%s: session already open", __func__);
+        -:  991:		/* prepare reply */
+    #####:  992:		buffer_put_int(r, MUX_S_FAILURE);
+    #####:  993:		buffer_put_int(r, rid);
+    #####:  994:		buffer_put_cstring(r, "Multiple sessions not supported");
+        -:  995: cleanup:
+    #####:  996:		close(new_fd[0]);
+    #####:  997:		close(new_fd[1]);
+    #####:  998:		free(chost);
+    #####:  999:		return 0;
+        -: 1000:	}
+        -: 1001:
+    #####: 1002:	if (options.control_master == SSHCTL_MASTER_ASK ||
+    #####: 1003:	    options.control_master == SSHCTL_MASTER_AUTO_ASK) {
+    #####: 1004:		if (!ask_permission("Allow forward to %s:%u? ",
+        -: 1005:		    chost, cport)) {
+    #####: 1006:			debug2("%s: stdio fwd refused by user", __func__);
+        -: 1007:			/* prepare reply */
+    #####: 1008:			buffer_put_int(r, MUX_S_PERMISSION_DENIED);
+    #####: 1009:			buffer_put_int(r, rid);
+    #####: 1010:			buffer_put_cstring(r, "Permission denied");
+    #####: 1011:			goto cleanup;
+        -: 1012:		}
+        -: 1013:	}
+        -: 1014:
+        -: 1015:	/* enable nonblocking unless tty */
+    #####: 1016:	if (!isatty(new_fd[0]))
+    #####: 1017:		set_nonblock(new_fd[0]);
+    #####: 1018:	if (!isatty(new_fd[1]))
+    #####: 1019:		set_nonblock(new_fd[1]);
+        -: 1020:
+    #####: 1021:	nc = channel_connect_stdio_fwd(chost, cport, new_fd[0], new_fd[1]);
+        -: 1022:
+    #####: 1023:	nc->ctl_chan = c->self;		/* link session -> control channel */
+    #####: 1024:	c->remote_id = nc->self; 	/* link control -> session channel */
+        -: 1025:
+    #####: 1026:	debug2("%s: channel_new: %d linked to control channel %d",
+        -: 1027:	    __func__, nc->self, nc->ctl_chan);
+        -: 1028:
+    #####: 1029:	channel_register_cleanup(nc->self, mux_master_session_cleanup_cb, 1);
+        -: 1030:
+    #####: 1031:	cctx = xcalloc(1, sizeof(*cctx));
+    #####: 1032:	cctx->rid = rid;
+    #####: 1033:	channel_register_open_confirm(nc->self, mux_stdio_confirm, cctx);
+    #####: 1034:	c->mux_pause = 1; /* stop handling messages until open_confirm done */
+        -: 1035:
+        -: 1036:	/* reply is deferred, sent by mux_session_confirm */
+    #####: 1037:	return 0;
+        -: 1038:}
+        -: 1039:
+        -: 1040:/* Callback on open confirmation in mux master for a mux stdio fwd session. */
+        -: 1041:static void
+    #####: 1042:mux_stdio_confirm(int id, int success, void *arg)
+        -: 1043:{
+    #####: 1044:	struct mux_stdio_confirm_ctx *cctx = arg;
+        -: 1045:	Channel *c, *cc;
+        -: 1046:	Buffer reply;
+        -: 1047:
+    #####: 1048:	if (cctx == NULL)
+    #####: 1049:		fatal("%s: cctx == NULL", __func__);
+    #####: 1050:	if ((c = channel_by_id(id)) == NULL)
+    #####: 1051:		fatal("%s: no channel for id %d", __func__, id);
+    #####: 1052:	if ((cc = channel_by_id(c->ctl_chan)) == NULL)
+    #####: 1053:		fatal("%s: channel %d lacks control channel %d", __func__,
+        -: 1054:		    id, c->ctl_chan);
+        -: 1055:
+    #####: 1056:	if (!success) {
+    #####: 1057:		debug3("%s: sending failure reply", __func__);
+        -: 1058:		/* prepare reply */
+    #####: 1059:		buffer_init(&reply);
+    #####: 1060:		buffer_put_int(&reply, MUX_S_FAILURE);
+    #####: 1061:		buffer_put_int(&reply, cctx->rid);
+    #####: 1062:		buffer_put_cstring(&reply, "Session open refused by peer");
+    #####: 1063:		goto done;
+        -: 1064:	}
+        -: 1065:
+    #####: 1066:	debug3("%s: sending success reply", __func__);
+        -: 1067:	/* prepare reply */
+    #####: 1068:	buffer_init(&reply);
+    #####: 1069:	buffer_put_int(&reply, MUX_S_SESSION_OPENED);
+    #####: 1070:	buffer_put_int(&reply, cctx->rid);
+    #####: 1071:	buffer_put_int(&reply, c->self);
+        -: 1072:
+        -: 1073: done:
+        -: 1074:	/* Send reply */
+    #####: 1075:	buffer_put_string(&cc->output, buffer_ptr(&reply), buffer_len(&reply));
+    #####: 1076:	buffer_free(&reply);
+        -: 1077:
+    #####: 1078:	if (cc->mux_pause <= 0)
+    #####: 1079:		fatal("%s: mux_pause %d", __func__, cc->mux_pause);
+    #####: 1080:	cc->mux_pause = 0; /* start processing messages again */
+    #####: 1081:	c->open_confirm_ctx = NULL;
+    #####: 1082:	free(cctx);
+    #####: 1083:}
+        -: 1084:
+        -: 1085:static int
+    #####: 1086:process_mux_stop_listening(u_int rid, Channel *c, Buffer *m, Buffer *r)
+        -: 1087:{
+    #####: 1088:	debug("%s: channel %d: stop listening", __func__, c->self);
+        -: 1089:
+    #####: 1090:	if (options.control_master == SSHCTL_MASTER_ASK ||
+    #####: 1091:	    options.control_master == SSHCTL_MASTER_AUTO_ASK) {
+    #####: 1092:		if (!ask_permission("Disable further multiplexing on shared "
+        -: 1093:		    "connection to %s? ", host)) {
+    #####: 1094:			debug2("%s: stop listen refused by user", __func__);
+    #####: 1095:			buffer_put_int(r, MUX_S_PERMISSION_DENIED);
+    #####: 1096:			buffer_put_int(r, rid);
+    #####: 1097:			buffer_put_cstring(r, "Permission denied");
+    #####: 1098:			return 0;
+        -: 1099:		}
+        -: 1100:	}
+        -: 1101:
+    #####: 1102:	if (mux_listener_channel != NULL) {
+    #####: 1103:		channel_free(mux_listener_channel);
+    #####: 1104:		client_stop_mux();
+    #####: 1105:		free(options.control_path);
+    #####: 1106:		options.control_path = NULL;
+    #####: 1107:		mux_listener_channel = NULL;
+    #####: 1108:		muxserver_sock = -1;
+        -: 1109:	}
+        -: 1110:
+        -: 1111:	/* prepare reply */
+    #####: 1112:	buffer_put_int(r, MUX_S_OK);
+    #####: 1113:	buffer_put_int(r, rid);
+        -: 1114:
+    #####: 1115:	return 0;
+        -: 1116:}
+        -: 1117:
+        -: 1118:static int
+    #####: 1119:process_mux_proxy(u_int rid, Channel *c, Buffer *m, Buffer *r)
+        -: 1120:{
+    #####: 1121:	debug("%s: channel %d: proxy request", __func__, c->self);
+        -: 1122:
+    #####: 1123:	c->mux_rcb = channel_proxy_downstream;
+    #####: 1124:	buffer_put_int(r, MUX_S_PROXY);
+    #####: 1125:	buffer_put_int(r, rid);
+        -: 1126:
+    #####: 1127:	return 0;
+        -: 1128:}
+        -: 1129:
+        -: 1130:/* Channel callbacks fired on read/write from mux slave fd */
+        -: 1131:static int
+    #####: 1132:mux_master_read_cb(Channel *c)
+        -: 1133:{
+    #####: 1134:	struct mux_master_state *state = (struct mux_master_state *)c->mux_ctx;
+        -: 1135:	Buffer in, out;
+        -: 1136:	const u_char *ptr;
+        -: 1137:	u_int type, rid, have, i;
+    #####: 1138:	int ret = -1;
+        -: 1139:
+        -: 1140:	/* Setup ctx and  */
+    #####: 1141:	if (c->mux_ctx == NULL) {
+    #####: 1142:		state = xcalloc(1, sizeof(*state));
+    #####: 1143:		c->mux_ctx = state;
+    #####: 1144:		channel_register_cleanup(c->self,
+        -: 1145:		    mux_master_control_cleanup_cb, 0);
+        -: 1146:
+        -: 1147:		/* Send hello */
+    #####: 1148:		buffer_init(&out);
+    #####: 1149:		buffer_put_int(&out, MUX_MSG_HELLO);
+    #####: 1150:		buffer_put_int(&out, SSHMUX_VER);
+        -: 1151:		/* no extensions */
+    #####: 1152:		buffer_put_string(&c->output, buffer_ptr(&out),
+        -: 1153:		    buffer_len(&out));
+    #####: 1154:		buffer_free(&out);
+    #####: 1155:		debug3("%s: channel %d: hello sent", __func__, c->self);
+    #####: 1156:		return 0;
+        -: 1157:	}
+        -: 1158:
+    #####: 1159:	buffer_init(&in);
+    #####: 1160:	buffer_init(&out);
+        -: 1161:
+        -: 1162:	/* Channel code ensures that we receive whole packets */
+    #####: 1163:	if ((ptr = buffer_get_string_ptr_ret(&c->input, &have)) == NULL) {
+        -: 1164: malf:
+    #####: 1165:		error("%s: malformed message", __func__);
+    #####: 1166:		goto out;
+        -: 1167:	}
+    #####: 1168:	buffer_append(&in, ptr, have);
+        -: 1169:
+    #####: 1170:	if (buffer_get_int_ret(&type, &in) != 0)
+    #####: 1171:		goto malf;
+    #####: 1172:	debug3("%s: channel %d packet type 0x%08x len %u",
+        -: 1173:	    __func__, c->self, type, buffer_len(&in));
+        -: 1174:
+    #####: 1175:	if (type == MUX_MSG_HELLO)
+    #####: 1176:		rid = 0;
+        -: 1177:	else {
+    #####: 1178:		if (!state->hello_rcvd) {
+    #####: 1179:			error("%s: expected MUX_MSG_HELLO(0x%08x), "
+        -: 1180:			    "received 0x%08x", __func__, MUX_MSG_HELLO, type);
+    #####: 1181:			goto out;
+        -: 1182:		}
+    #####: 1183:		if (buffer_get_int_ret(&rid, &in) != 0)
+    #####: 1184:			goto malf;
+        -: 1185:	}
+        -: 1186:
+    #####: 1187:	for (i = 0; mux_master_handlers[i].handler != NULL; i++) {
+    #####: 1188:		if (type == mux_master_handlers[i].type) {
+    #####: 1189:			ret = mux_master_handlers[i].handler(rid, c, &in, &out);
+    #####: 1190:			break;
+        -: 1191:		}
+        -: 1192:	}
+    #####: 1193:	if (mux_master_handlers[i].handler == NULL) {
+    #####: 1194:		error("%s: unsupported mux message 0x%08x", __func__, type);
+    #####: 1195:		buffer_put_int(&out, MUX_S_FAILURE);
+    #####: 1196:		buffer_put_int(&out, rid);
+    #####: 1197:		buffer_put_cstring(&out, "unsupported request");
+    #####: 1198:		ret = 0;
+        -: 1199:	}
+        -: 1200:	/* Enqueue reply packet */
+    #####: 1201:	if (buffer_len(&out) != 0) {
+    #####: 1202:		buffer_put_string(&c->output, buffer_ptr(&out),
+        -: 1203:		    buffer_len(&out));
+        -: 1204:	}
+        -: 1205: out:
+    #####: 1206:	buffer_free(&in);
+    #####: 1207:	buffer_free(&out);
+    #####: 1208:	return ret;
+        -: 1209:}
+        -: 1210:
+        -: 1211:void
+    #####: 1212:mux_exit_message(Channel *c, int exitval)
+        -: 1213:{
+        -: 1214:	Buffer m;
+        -: 1215:	Channel *mux_chan;
+        -: 1216:
+    #####: 1217:	debug3("%s: channel %d: exit message, exitval %d", __func__, c->self,
+        -: 1218:	    exitval);
+        -: 1219:
+    #####: 1220:	if ((mux_chan = channel_by_id(c->ctl_chan)) == NULL)
+    #####: 1221:		fatal("%s: channel %d missing mux channel %d",
+        -: 1222:		    __func__, c->self, c->ctl_chan);
+        -: 1223:
+        -: 1224:	/* Append exit message packet to control socket output queue */
+    #####: 1225:	buffer_init(&m);
+    #####: 1226:	buffer_put_int(&m, MUX_S_EXIT_MESSAGE);
+    #####: 1227:	buffer_put_int(&m, c->self);
+    #####: 1228:	buffer_put_int(&m, exitval);
+        -: 1229:
+    #####: 1230:	buffer_put_string(&mux_chan->output, buffer_ptr(&m), buffer_len(&m));
+    #####: 1231:	buffer_free(&m);
+    #####: 1232:}
+        -: 1233:
+        -: 1234:void
+    #####: 1235:mux_tty_alloc_failed(Channel *c)
+        -: 1236:{
+        -: 1237:	Buffer m;
+        -: 1238:	Channel *mux_chan;
+        -: 1239:
+    #####: 1240:	debug3("%s: channel %d: TTY alloc failed", __func__, c->self);
+        -: 1241:
+    #####: 1242:	if ((mux_chan = channel_by_id(c->ctl_chan)) == NULL)
+    #####: 1243:		fatal("%s: channel %d missing mux channel %d",
+        -: 1244:		    __func__, c->self, c->ctl_chan);
+        -: 1245:
+        -: 1246:	/* Append exit message packet to control socket output queue */
+    #####: 1247:	buffer_init(&m);
+    #####: 1248:	buffer_put_int(&m, MUX_S_TTY_ALLOC_FAIL);
+    #####: 1249:	buffer_put_int(&m, c->self);
+        -: 1250:
+    #####: 1251:	buffer_put_string(&mux_chan->output, buffer_ptr(&m), buffer_len(&m));
+    #####: 1252:	buffer_free(&m);
+    #####: 1253:}
+        -: 1254:
+        -: 1255:/* Prepare a mux master to listen on a Unix domain socket. */
+        -: 1256:void
+        1: 1257:muxserver_listen(void)
+        -: 1258:{
+        -: 1259:	mode_t old_umask;
+        1: 1260:	char *orig_control_path = options.control_path;
+        -: 1261:	char rbuf[16+1];
+        -: 1262:	u_int i, r;
+        -: 1263:	int oerrno;
+        -: 1264:
+        1: 1265:	if (options.control_path == NULL ||
+    #####: 1266:	    options.control_master == SSHCTL_MASTER_NO)
+        2: 1267:		return;
+        -: 1268:
+    #####: 1269:	debug("setting up multiplex master socket");
+        -: 1270:
+        -: 1271:	/*
+        -: 1272:	 * Use a temporary path before listen so we can pseudo-atomically
+        -: 1273:	 * establish the listening socket in its final location to avoid
+        -: 1274:	 * other processes racing in between bind() and listen() and hitting
+        -: 1275:	 * an unready socket.
+        -: 1276:	 */
+    #####: 1277:	for (i = 0; i < sizeof(rbuf) - 1; i++) {
+    #####: 1278:		r = arc4random_uniform(26+26+10);
+    #####: 1279:		rbuf[i] = (r < 26) ? 'a' + r :
+        -: 1280:		    (r < 26*2) ? 'A' + r - 26 :
+        -: 1281:		    '0' + r - 26 - 26;
+        -: 1282:	}
+    #####: 1283:	rbuf[sizeof(rbuf) - 1] = '\0';
+    #####: 1284:	options.control_path = NULL;
+    #####: 1285:	xasprintf(&options.control_path, "%s.%s", orig_control_path, rbuf);
+    #####: 1286:	debug3("%s: temporary control path %s", __func__, options.control_path);
+        -: 1287:
+    #####: 1288:	old_umask = umask(0177);
+    #####: 1289:	muxserver_sock = unix_listener(options.control_path, 64, 0);
+    #####: 1290:	oerrno = errno;
+    #####: 1291:	umask(old_umask);
+    #####: 1292:	if (muxserver_sock < 0) {
+    #####: 1293:		if (oerrno == EINVAL || oerrno == EADDRINUSE) {
+    #####: 1294:			error("ControlSocket %s already exists, "
+        -: 1295:			    "disabling multiplexing", options.control_path);
+        -: 1296: disable_mux_master:
+    #####: 1297:			if (muxserver_sock != -1) {
+    #####: 1298:				close(muxserver_sock);
+    #####: 1299:				muxserver_sock = -1;
+        -: 1300:			}
+    #####: 1301:			free(orig_control_path);
+    #####: 1302:			free(options.control_path);
+    #####: 1303:			options.control_path = NULL;
+    #####: 1304:			options.control_master = SSHCTL_MASTER_NO;
+    #####: 1305:			return;
+        -: 1306:		} else {
+        -: 1307:			/* unix_listener() logs the error */
+    #####: 1308:			cleanup_exit(255);
+        -: 1309:		}
+        -: 1310:	}
+        -: 1311:
+        -: 1312:	/* Now atomically "move" the mux socket into position */
+    #####: 1313:	if (link(options.control_path, orig_control_path) != 0) {
+    #####: 1314:		if (errno != EEXIST) {
+    #####: 1315:			fatal("%s: link mux listener %s => %s: %s", __func__,
+        -: 1316:			    options.control_path, orig_control_path,
+    #####: 1317:			    strerror(errno));
+        -: 1318:		}
+    #####: 1319:		error("ControlSocket %s already exists, disabling multiplexing",
+        -: 1320:		    orig_control_path);
+    #####: 1321:		unlink(options.control_path);
+    #####: 1322:		goto disable_mux_master;
+        -: 1323:	}
+    #####: 1324:	unlink(options.control_path);
+    #####: 1325:	free(options.control_path);
+    #####: 1326:	options.control_path = orig_control_path;
+        -: 1327:
+    #####: 1328:	set_nonblock(muxserver_sock);
+        -: 1329:
+    #####: 1330:	mux_listener_channel = channel_new("mux listener",
+        -: 1331:	    SSH_CHANNEL_MUX_LISTENER, muxserver_sock, muxserver_sock, -1,
+        -: 1332:	    CHAN_TCP_WINDOW_DEFAULT, CHAN_TCP_PACKET_DEFAULT,
+        -: 1333:	    0, options.control_path, 1);
+    #####: 1334:	mux_listener_channel->mux_rcb = mux_master_read_cb;
+    #####: 1335:	debug3("%s: mux listener channel %d fd %d", __func__,
+    #####: 1336:	    mux_listener_channel->self, mux_listener_channel->sock);
+        -: 1337:}
+        -: 1338:
+        -: 1339:/* Callback on open confirmation in mux master for a mux client session. */
+        -: 1340:static void
+    #####: 1341:mux_session_confirm(int id, int success, void *arg)
+        -: 1342:{
+    #####: 1343:	struct mux_session_confirm_ctx *cctx = arg;
+        -: 1344:	const char *display;
+        -: 1345:	Channel *c, *cc;
+        -: 1346:	int i;
+        -: 1347:	Buffer reply;
+        -: 1348:
+    #####: 1349:	if (cctx == NULL)
+    #####: 1350:		fatal("%s: cctx == NULL", __func__);
+    #####: 1351:	if ((c = channel_by_id(id)) == NULL)
+    #####: 1352:		fatal("%s: no channel for id %d", __func__, id);
+    #####: 1353:	if ((cc = channel_by_id(c->ctl_chan)) == NULL)
+    #####: 1354:		fatal("%s: channel %d lacks control channel %d", __func__,
+        -: 1355:		    id, c->ctl_chan);
+        -: 1356:
+    #####: 1357:	if (!success) {
+    #####: 1358:		debug3("%s: sending failure reply", __func__);
+        -: 1359:		/* prepare reply */
+    #####: 1360:		buffer_init(&reply);
+    #####: 1361:		buffer_put_int(&reply, MUX_S_FAILURE);
+    #####: 1362:		buffer_put_int(&reply, cctx->rid);
+    #####: 1363:		buffer_put_cstring(&reply, "Session open refused by peer");
+    #####: 1364:		goto done;
+        -: 1365:	}
+        -: 1366:
+    #####: 1367:	display = getenv("DISPLAY");
+    #####: 1368:	if (cctx->want_x_fwd && options.forward_x11 && display != NULL) {
+        -: 1369:		char *proto, *data;
+        -: 1370:
+        -: 1371:		/* Get reasonable local authentication information. */
+    #####: 1372:		if (client_x11_get_proto(display, options.xauth_location,
+    #####: 1373:		    options.forward_x11_trusted, options.forward_x11_timeout,
+        -: 1374:		    &proto, &data) == 0) {
+        -: 1375:			/* Request forwarding with authentication spoofing. */
+    #####: 1376:			debug("Requesting X11 forwarding with authentication "
+        -: 1377:			    "spoofing.");
+    #####: 1378:			x11_request_forwarding_with_spoofing(id, display, proto,
+        -: 1379:			    data, 1);
+        -: 1380:			/* XXX exit_on_forward_failure */
+    #####: 1381:			client_expect_confirm(id, "X11 forwarding",
+        -: 1382:			    CONFIRM_WARN);
+        -: 1383:		}
+        -: 1384:	}
+        -: 1385:
+    #####: 1386:	if (cctx->want_agent_fwd && options.forward_agent) {
+    #####: 1387:		debug("Requesting authentication agent forwarding.");
+    #####: 1388:		channel_request_start(id, "auth-agent-req@openssh.com", 0);
+    #####: 1389:		packet_send();
+        -: 1390:	}
+        -: 1391:
+    #####: 1392:	client_session2_setup(id, cctx->want_tty, cctx->want_subsys,
+    #####: 1393:	    cctx->term, &cctx->tio, c->rfd, &cctx->cmd, cctx->env);
+        -: 1394:
+    #####: 1395:	debug3("%s: sending success reply", __func__);
+        -: 1396:	/* prepare reply */
+    #####: 1397:	buffer_init(&reply);
+    #####: 1398:	buffer_put_int(&reply, MUX_S_SESSION_OPENED);
+    #####: 1399:	buffer_put_int(&reply, cctx->rid);
+    #####: 1400:	buffer_put_int(&reply, c->self);
+        -: 1401:
+        -: 1402: done:
+        -: 1403:	/* Send reply */
+    #####: 1404:	buffer_put_string(&cc->output, buffer_ptr(&reply), buffer_len(&reply));
+    #####: 1405:	buffer_free(&reply);
+        -: 1406:
+    #####: 1407:	if (cc->mux_pause <= 0)
+    #####: 1408:		fatal("%s: mux_pause %d", __func__, cc->mux_pause);
+    #####: 1409:	cc->mux_pause = 0; /* start processing messages again */
+    #####: 1410:	c->open_confirm_ctx = NULL;
+    #####: 1411:	buffer_free(&cctx->cmd);
+    #####: 1412:	free(cctx->term);
+    #####: 1413:	if (cctx->env != NULL) {
+    #####: 1414:		for (i = 0; cctx->env[i] != NULL; i++)
+    #####: 1415:			free(cctx->env[i]);
+    #####: 1416:		free(cctx->env);
+        -: 1417:	}
+    #####: 1418:	free(cctx);
+    #####: 1419:}
+        -: 1420:
+        -: 1421:/* ** Multiplexing client support */
+        -: 1422:
+        -: 1423:/* Exit signal handler */
+        -: 1424:static void
+    #####: 1425:control_client_sighandler(int signo)
+        -: 1426:{
+    #####: 1427:	muxclient_terminate = signo;
+    #####: 1428:}
+        -: 1429:
+        -: 1430:/*
+        -: 1431: * Relay signal handler - used to pass some signals from mux client to
+        -: 1432: * mux master.
+        -: 1433: */
+        -: 1434:static void
+    #####: 1435:control_client_sigrelay(int signo)
+        -: 1436:{
+    #####: 1437:	int save_errno = errno;
+        -: 1438:
+    #####: 1439:	if (muxserver_pid > 1)
+    #####: 1440:		kill(muxserver_pid, signo);
+        -: 1441:
+    #####: 1442:	errno = save_errno;
+    #####: 1443:}
+        -: 1444:
+        -: 1445:static int
+    #####: 1446:mux_client_read(int fd, Buffer *b, u_int need)
+        -: 1447:{
+        -: 1448:	u_int have;
+        -: 1449:	ssize_t len;
+        -: 1450:	u_char *p;
+        -: 1451:	struct pollfd pfd;
+        -: 1452:
+    #####: 1453:	pfd.fd = fd;
+    #####: 1454:	pfd.events = POLLIN;
+    #####: 1455:	p = buffer_append_space(b, need);
+    #####: 1456:	for (have = 0; have < need; ) {
+    #####: 1457:		if (muxclient_terminate) {
+    #####: 1458:			errno = EINTR;
+    #####: 1459:			return -1;
+        -: 1460:		}
+    #####: 1461:		len = read(fd, p + have, need - have);
+    #####: 1462:		if (len < 0) {
+    #####: 1463:			switch (errno) {
+        -: 1464:#if defined(EWOULDBLOCK) && (EWOULDBLOCK != EAGAIN)
+        -: 1465:			case EWOULDBLOCK:
+        -: 1466:#endif
+        -: 1467:			case EAGAIN:
+    #####: 1468:				(void)poll(&pfd, 1, -1);
+        -: 1469:				/* FALLTHROUGH */
+        -: 1470:			case EINTR:
+    #####: 1471:				continue;
+        -: 1472:			default:
+    #####: 1473:				return -1;
+        -: 1474:			}
+        -: 1475:		}
+    #####: 1476:		if (len == 0) {
+    #####: 1477:			errno = EPIPE;
+    #####: 1478:			return -1;
+        -: 1479:		}
+    #####: 1480:		have += (u_int)len;
+        -: 1481:	}
+    #####: 1482:	return 0;
+        -: 1483:}
+        -: 1484:
+        -: 1485:static int
+    #####: 1486:mux_client_write_packet(int fd, Buffer *m)
+        -: 1487:{
+        -: 1488:	Buffer queue;
+        -: 1489:	u_int have, need;
+        -: 1490:	int oerrno, len;
+        -: 1491:	u_char *ptr;
+        -: 1492:	struct pollfd pfd;
+        -: 1493:
+    #####: 1494:	pfd.fd = fd;
+    #####: 1495:	pfd.events = POLLOUT;
+    #####: 1496:	buffer_init(&queue);
+    #####: 1497:	buffer_put_string(&queue, buffer_ptr(m), buffer_len(m));
+        -: 1498:
+    #####: 1499:	need = buffer_len(&queue);
+    #####: 1500:	ptr = buffer_ptr(&queue);
+        -: 1501:
+    #####: 1502:	for (have = 0; have < need; ) {
+    #####: 1503:		if (muxclient_terminate) {
+    #####: 1504:			buffer_free(&queue);
+    #####: 1505:			errno = EINTR;
+    #####: 1506:			return -1;
+        -: 1507:		}
+    #####: 1508:		len = write(fd, ptr + have, need - have);
+    #####: 1509:		if (len < 0) {
+    #####: 1510:			switch (errno) {
+        -: 1511:#if defined(EWOULDBLOCK) && (EWOULDBLOCK != EAGAIN)
+        -: 1512:			case EWOULDBLOCK:
+        -: 1513:#endif
+        -: 1514:			case EAGAIN:
+    #####: 1515:				(void)poll(&pfd, 1, -1);
+        -: 1516:				/* FALLTHROUGH */
+        -: 1517:			case EINTR:
+    #####: 1518:				continue;
+        -: 1519:			default:
+    #####: 1520:				oerrno = errno;
+    #####: 1521:				buffer_free(&queue);
+    #####: 1522:				errno = oerrno;
+    #####: 1523:				return -1;
+        -: 1524:			}
+        -: 1525:		}
+    #####: 1526:		if (len == 0) {
+    #####: 1527:			buffer_free(&queue);
+    #####: 1528:			errno = EPIPE;
+    #####: 1529:			return -1;
+        -: 1530:		}
+    #####: 1531:		have += (u_int)len;
+        -: 1532:	}
+    #####: 1533:	buffer_free(&queue);
+    #####: 1534:	return 0;
+        -: 1535:}
+        -: 1536:
+        -: 1537:static int
+    #####: 1538:mux_client_read_packet(int fd, Buffer *m)
+        -: 1539:{
+        -: 1540:	Buffer queue;
+        -: 1541:	u_int need, have;
+        -: 1542:	const u_char *ptr;
+        -: 1543:	int oerrno;
+        -: 1544:
+    #####: 1545:	buffer_init(&queue);
+    #####: 1546:	if (mux_client_read(fd, &queue, 4) != 0) {
+    #####: 1547:		if ((oerrno = errno) == EPIPE)
+    #####: 1548:			debug3("%s: read header failed: %s", __func__,
+    #####: 1549:			    strerror(errno));
+    #####: 1550:		buffer_free(&queue);
+    #####: 1551:		errno = oerrno;
+    #####: 1552:		return -1;
+        -: 1553:	}
+    #####: 1554:	need = get_u32(buffer_ptr(&queue));
+    #####: 1555:	if (mux_client_read(fd, &queue, need) != 0) {
+    #####: 1556:		oerrno = errno;
+    #####: 1557:		debug3("%s: read body failed: %s", __func__, strerror(errno));
+    #####: 1558:		buffer_free(&queue);
+    #####: 1559:		errno = oerrno;
+    #####: 1560:		return -1;
+        -: 1561:	}
+    #####: 1562:	ptr = buffer_get_string_ptr(&queue, &have);
+    #####: 1563:	buffer_append(m, ptr, have);
+    #####: 1564:	buffer_free(&queue);
+    #####: 1565:	return 0;
+        -: 1566:}
+        -: 1567:
+        -: 1568:static int
+    #####: 1569:mux_client_hello_exchange(int fd)
+        -: 1570:{
+        -: 1571:	Buffer m;
+        -: 1572:	u_int type, ver;
+        -: 1573:
+    #####: 1574:	buffer_init(&m);
+    #####: 1575:	buffer_put_int(&m, MUX_MSG_HELLO);
+    #####: 1576:	buffer_put_int(&m, SSHMUX_VER);
+        -: 1577:	/* no extensions */
+        -: 1578:
+    #####: 1579:	if (mux_client_write_packet(fd, &m) != 0)
+    #####: 1580:		fatal("%s: write packet: %s", __func__, strerror(errno));
+        -: 1581:
+    #####: 1582:	buffer_clear(&m);
+        -: 1583:
+        -: 1584:	/* Read their HELLO */
+    #####: 1585:	if (mux_client_read_packet(fd, &m) != 0) {
+    #####: 1586:		buffer_free(&m);
+    #####: 1587:		return -1;
+        -: 1588:	}
+        -: 1589:
+    #####: 1590:	type = buffer_get_int(&m);
+    #####: 1591:	if (type != MUX_MSG_HELLO)
+    #####: 1592:		fatal("%s: expected HELLO (%u) received %u",
+        -: 1593:		    __func__, MUX_MSG_HELLO, type);
+    #####: 1594:	ver = buffer_get_int(&m);
+    #####: 1595:	if (ver != SSHMUX_VER)
+    #####: 1596:		fatal("Unsupported multiplexing protocol version %d "
+        -: 1597:		    "(expected %d)", ver, SSHMUX_VER);
+    #####: 1598:	debug2("%s: master version %u", __func__, ver);
+        -: 1599:	/* No extensions are presently defined */
+    #####: 1600:	while (buffer_len(&m) > 0) {
+    #####: 1601:		char *name = buffer_get_string(&m, NULL);
+    #####: 1602:		char *value = buffer_get_string(&m, NULL);
+        -: 1603:
+    #####: 1604:		debug2("Unrecognised master extension \"%s\"", name);
+    #####: 1605:		free(name);
+    #####: 1606:		free(value);
+        -: 1607:	}
+    #####: 1608:	buffer_free(&m);
+    #####: 1609:	return 0;
+        -: 1610:}
+        -: 1611:
+        -: 1612:static u_int
+    #####: 1613:mux_client_request_alive(int fd)
+        -: 1614:{
+        -: 1615:	Buffer m;
+        -: 1616:	char *e;
+        -: 1617:	u_int pid, type, rid;
+        -: 1618:
+    #####: 1619:	debug3("%s: entering", __func__);
+        -: 1620:
+    #####: 1621:	buffer_init(&m);
+    #####: 1622:	buffer_put_int(&m, MUX_C_ALIVE_CHECK);
+    #####: 1623:	buffer_put_int(&m, muxclient_request_id);
+        -: 1624:
+    #####: 1625:	if (mux_client_write_packet(fd, &m) != 0)
+    #####: 1626:		fatal("%s: write packet: %s", __func__, strerror(errno));
+        -: 1627:
+    #####: 1628:	buffer_clear(&m);
+        -: 1629:
+        -: 1630:	/* Read their reply */
+    #####: 1631:	if (mux_client_read_packet(fd, &m) != 0) {
+    #####: 1632:		buffer_free(&m);
+    #####: 1633:		return 0;
+        -: 1634:	}
+        -: 1635:
+    #####: 1636:	type = buffer_get_int(&m);
+    #####: 1637:	if (type != MUX_S_ALIVE) {
+    #####: 1638:		e = buffer_get_string(&m, NULL);
+    #####: 1639:		fatal("%s: master returned error: %s", __func__, e);
+        -: 1640:	}
+        -: 1641:
+    #####: 1642:	if ((rid = buffer_get_int(&m)) != muxclient_request_id)
+    #####: 1643:		fatal("%s: out of sequence reply: my id %u theirs %u",
+        -: 1644:		    __func__, muxclient_request_id, rid);
+    #####: 1645:	pid = buffer_get_int(&m);
+    #####: 1646:	buffer_free(&m);
+        -: 1647:
+    #####: 1648:	debug3("%s: done pid = %u", __func__, pid);
+        -: 1649:
+    #####: 1650:	muxclient_request_id++;
+        -: 1651:
+    #####: 1652:	return pid;
+        -: 1653:}
+        -: 1654:
+        -: 1655:static void
+    #####: 1656:mux_client_request_terminate(int fd)
+        -: 1657:{
+        -: 1658:	Buffer m;
+        -: 1659:	char *e;
+        -: 1660:	u_int type, rid;
+        -: 1661:
+    #####: 1662:	debug3("%s: entering", __func__);
+        -: 1663:
+    #####: 1664:	buffer_init(&m);
+    #####: 1665:	buffer_put_int(&m, MUX_C_TERMINATE);
+    #####: 1666:	buffer_put_int(&m, muxclient_request_id);
+        -: 1667:
+    #####: 1668:	if (mux_client_write_packet(fd, &m) != 0)
+    #####: 1669:		fatal("%s: write packet: %s", __func__, strerror(errno));
+        -: 1670:
+    #####: 1671:	buffer_clear(&m);
+        -: 1672:
+        -: 1673:	/* Read their reply */
+    #####: 1674:	if (mux_client_read_packet(fd, &m) != 0) {
+        -: 1675:		/* Remote end exited already */
+    #####: 1676:		if (errno == EPIPE) {
+    #####: 1677:			buffer_free(&m);
+    #####: 1678:			return;
+        -: 1679:		}
+    #####: 1680:		fatal("%s: read from master failed: %s",
+    #####: 1681:		    __func__, strerror(errno));
+        -: 1682:	}
+        -: 1683:
+    #####: 1684:	type = buffer_get_int(&m);
+    #####: 1685:	if ((rid = buffer_get_int(&m)) != muxclient_request_id)
+    #####: 1686:		fatal("%s: out of sequence reply: my id %u theirs %u",
+        -: 1687:		    __func__, muxclient_request_id, rid);
+    #####: 1688:	switch (type) {
+        -: 1689:	case MUX_S_OK:
+    #####: 1690:		break;
+        -: 1691:	case MUX_S_PERMISSION_DENIED:
+    #####: 1692:		e = buffer_get_string(&m, NULL);
+    #####: 1693:		fatal("Master refused termination request: %s", e);
+        -: 1694:	case MUX_S_FAILURE:
+    #####: 1695:		e = buffer_get_string(&m, NULL);
+    #####: 1696:		fatal("%s: termination request failed: %s", __func__, e);
+        -: 1697:	default:
+    #####: 1698:		fatal("%s: unexpected response from master 0x%08x",
+        -: 1699:		    __func__, type);
+        -: 1700:	}
+    #####: 1701:	buffer_free(&m);
+    #####: 1702:	muxclient_request_id++;
+        -: 1703:}
+        -: 1704:
+        -: 1705:static int
+    #####: 1706:mux_client_forward(int fd, int cancel_flag, u_int ftype, struct Forward *fwd)
+        -: 1707:{
+        -: 1708:	Buffer m;
+        -: 1709:	char *e, *fwd_desc;
+        -: 1710:	u_int type, rid;
+        -: 1711:
+    #####: 1712:	fwd_desc = format_forward(ftype, fwd);
+    #####: 1713:	debug("Requesting %s %s",
+        -: 1714:	    cancel_flag ? "cancellation of" : "forwarding of", fwd_desc);
+    #####: 1715:	free(fwd_desc);
+        -: 1716:
+    #####: 1717:	buffer_init(&m);
+    #####: 1718:	buffer_put_int(&m, cancel_flag ? MUX_C_CLOSE_FWD : MUX_C_OPEN_FWD);
+    #####: 1719:	buffer_put_int(&m, muxclient_request_id);
+    #####: 1720:	buffer_put_int(&m, ftype);
+    #####: 1721:	if (fwd->listen_path != NULL) {
+    #####: 1722:		buffer_put_cstring(&m, fwd->listen_path);
+        -: 1723:	} else {
+    #####: 1724:		buffer_put_cstring(&m,
+    #####: 1725:		    fwd->listen_host == NULL ? "" :
+    #####: 1726:		    (*fwd->listen_host == '\0' ? "*" : fwd->listen_host));
+        -: 1727:	}
+    #####: 1728:	buffer_put_int(&m, fwd->listen_port);
+    #####: 1729:	if (fwd->connect_path != NULL) {
+    #####: 1730:		buffer_put_cstring(&m, fwd->connect_path);
+        -: 1731:	} else {
+    #####: 1732:		buffer_put_cstring(&m,
+    #####: 1733:		    fwd->connect_host == NULL ? "" : fwd->connect_host);
+        -: 1734:	}
+    #####: 1735:	buffer_put_int(&m, fwd->connect_port);
+        -: 1736:
+    #####: 1737:	if (mux_client_write_packet(fd, &m) != 0)
+    #####: 1738:		fatal("%s: write packet: %s", __func__, strerror(errno));
+        -: 1739:
+    #####: 1740:	buffer_clear(&m);
+        -: 1741:
+        -: 1742:	/* Read their reply */
+    #####: 1743:	if (mux_client_read_packet(fd, &m) != 0) {
+    #####: 1744:		buffer_free(&m);
+    #####: 1745:		return -1;
+        -: 1746:	}
+        -: 1747:
+    #####: 1748:	type = buffer_get_int(&m);
+    #####: 1749:	if ((rid = buffer_get_int(&m)) != muxclient_request_id)
+    #####: 1750:		fatal("%s: out of sequence reply: my id %u theirs %u",
+        -: 1751:		    __func__, muxclient_request_id, rid);
+    #####: 1752:	switch (type) {
+        -: 1753:	case MUX_S_OK:
+    #####: 1754:		break;
+        -: 1755:	case MUX_S_REMOTE_PORT:
+    #####: 1756:		if (cancel_flag)
+    #####: 1757:			fatal("%s: got MUX_S_REMOTE_PORT for cancel", __func__);
+    #####: 1758:		fwd->allocated_port = buffer_get_int(&m);
+    #####: 1759:		verbose("Allocated port %u for remote forward to %s:%d",
+        -: 1760:		    fwd->allocated_port,
+    #####: 1761:		    fwd->connect_host ? fwd->connect_host : "",
+        -: 1762:		    fwd->connect_port);
+    #####: 1763:		if (muxclient_command == SSHMUX_COMMAND_FORWARD)
+    #####: 1764:			fprintf(stdout, "%i\n", fwd->allocated_port);
+    #####: 1765:		break;
+        -: 1766:	case MUX_S_PERMISSION_DENIED:
+    #####: 1767:		e = buffer_get_string(&m, NULL);
+    #####: 1768:		buffer_free(&m);
+    #####: 1769:		error("Master refused forwarding request: %s", e);
+    #####: 1770:		return -1;
+        -: 1771:	case MUX_S_FAILURE:
+    #####: 1772:		e = buffer_get_string(&m, NULL);
+    #####: 1773:		buffer_free(&m);
+    #####: 1774:		error("%s: forwarding request failed: %s", __func__, e);
+    #####: 1775:		return -1;
+        -: 1776:	default:
+    #####: 1777:		fatal("%s: unexpected response from master 0x%08x",
+        -: 1778:		    __func__, type);
+        -: 1779:	}
+    #####: 1780:	buffer_free(&m);
+        -: 1781:
+    #####: 1782:	muxclient_request_id++;
+    #####: 1783:	return 0;
+        -: 1784:}
+        -: 1785:
+        -: 1786:static int
+    #####: 1787:mux_client_forwards(int fd, int cancel_flag)
+        -: 1788:{
+    #####: 1789:	int i, ret = 0;
+        -: 1790:
+    #####: 1791:	debug3("%s: %s forwardings: %d local, %d remote", __func__,
+        -: 1792:	    cancel_flag ? "cancel" : "request",
+        -: 1793:	    options.num_local_forwards, options.num_remote_forwards);
+        -: 1794:
+        -: 1795:	/* XXX ExitOnForwardingFailure */
+    #####: 1796:	for (i = 0; i < options.num_local_forwards; i++) {
+    #####: 1797:		if (mux_client_forward(fd, cancel_flag,
+    #####: 1798:		    options.local_forwards[i].connect_port == 0 ?
+        -: 1799:		    MUX_FWD_DYNAMIC : MUX_FWD_LOCAL,
+    #####: 1800:		    options.local_forwards + i) != 0)
+    #####: 1801:			ret = -1;
+        -: 1802:	}
+    #####: 1803:	for (i = 0; i < options.num_remote_forwards; i++) {
+    #####: 1804:		if (mux_client_forward(fd, cancel_flag, MUX_FWD_REMOTE,
+    #####: 1805:		    options.remote_forwards + i) != 0)
+    #####: 1806:			ret = -1;
+        -: 1807:	}
+    #####: 1808:	return ret;
+        -: 1809:}
+        -: 1810:
+        -: 1811:static int
+    #####: 1812:mux_client_request_session(int fd)
+        -: 1813:{
+        -: 1814:	Buffer m;
+        -: 1815:	char *e, *term;
+        -: 1816:	u_int i, rid, sid, esid, exitval, type, exitval_seen;
+        -: 1817:	extern char **environ;
+        -: 1818:	int devnull, rawmode;
+        -: 1819:
+    #####: 1820:	debug3("%s: entering", __func__);
+        -: 1821:
+    #####: 1822:	if ((muxserver_pid = mux_client_request_alive(fd)) == 0) {
+    #####: 1823:		error("%s: master alive request failed", __func__);
+    #####: 1824:		return -1;
+        -: 1825:	}
+        -: 1826:
+    #####: 1827:	signal(SIGPIPE, SIG_IGN);
+        -: 1828:
+    #####: 1829:	if (stdin_null_flag) {
+    #####: 1830:		if ((devnull = open(_PATH_DEVNULL, O_RDONLY)) == -1)
+    #####: 1831:			fatal("open(/dev/null): %s", strerror(errno));
+    #####: 1832:		if (dup2(devnull, STDIN_FILENO) == -1)
+    #####: 1833:			fatal("dup2: %s", strerror(errno));
+    #####: 1834:		if (devnull > STDERR_FILENO)
+    #####: 1835:			close(devnull);
+        -: 1836:	}
+        -: 1837:
+    #####: 1838:	term = getenv("TERM");
+        -: 1839:
+    #####: 1840:	buffer_init(&m);
+    #####: 1841:	buffer_put_int(&m, MUX_C_NEW_SESSION);
+    #####: 1842:	buffer_put_int(&m, muxclient_request_id);
+    #####: 1843:	buffer_put_cstring(&m, ""); /* reserved */
+    #####: 1844:	buffer_put_int(&m, tty_flag);
+    #####: 1845:	buffer_put_int(&m, options.forward_x11);
+    #####: 1846:	buffer_put_int(&m, options.forward_agent);
+    #####: 1847:	buffer_put_int(&m, subsystem_flag);
+    #####: 1848:	buffer_put_int(&m, options.escape_char == SSH_ESCAPECHAR_NONE ?
+    #####: 1849:	    0xffffffff : (u_int)options.escape_char);
+    #####: 1850:	buffer_put_cstring(&m, term == NULL ? "" : term);
+    #####: 1851:	buffer_put_string(&m, buffer_ptr(&command), buffer_len(&command));
+        -: 1852:
+    #####: 1853:	if (options.num_send_env > 0 && environ != NULL) {
+        -: 1854:		/* Pass environment */
+    #####: 1855:		for (i = 0; environ[i] != NULL; i++) {
+    #####: 1856:			if (env_permitted(environ[i])) {
+    #####: 1857:				buffer_put_cstring(&m, environ[i]);
+        -: 1858:			}
+        -: 1859:		}
+        -: 1860:	}
+        -: 1861:
+    #####: 1862:	if (mux_client_write_packet(fd, &m) != 0)
+    #####: 1863:		fatal("%s: write packet: %s", __func__, strerror(errno));
+        -: 1864:
+        -: 1865:	/* Send the stdio file descriptors */
+    #####: 1866:	if (mm_send_fd(fd, STDIN_FILENO) == -1 ||
+    #####: 1867:	    mm_send_fd(fd, STDOUT_FILENO) == -1 ||
+    #####: 1868:	    mm_send_fd(fd, STDERR_FILENO) == -1)
+    #####: 1869:		fatal("%s: send fds failed", __func__);
+        -: 1870:
+    #####: 1871:	debug3("%s: session request sent", __func__);
+        -: 1872:
+        -: 1873:	/* Read their reply */
+    #####: 1874:	buffer_clear(&m);
+    #####: 1875:	if (mux_client_read_packet(fd, &m) != 0) {
+    #####: 1876:		error("%s: read from master failed: %s",
+    #####: 1877:		    __func__, strerror(errno));
+    #####: 1878:		buffer_free(&m);
+    #####: 1879:		return -1;
+        -: 1880:	}
+        -: 1881:
+    #####: 1882:	type = buffer_get_int(&m);
+    #####: 1883:	if ((rid = buffer_get_int(&m)) != muxclient_request_id)
+    #####: 1884:		fatal("%s: out of sequence reply: my id %u theirs %u",
+        -: 1885:		    __func__, muxclient_request_id, rid);
+    #####: 1886:	switch (type) {
+        -: 1887:	case MUX_S_SESSION_OPENED:
+    #####: 1888:		sid = buffer_get_int(&m);
+    #####: 1889:		debug("%s: master session id: %u", __func__, sid);
+    #####: 1890:		break;
+        -: 1891:	case MUX_S_PERMISSION_DENIED:
+    #####: 1892:		e = buffer_get_string(&m, NULL);
+    #####: 1893:		buffer_free(&m);
+    #####: 1894:		error("Master refused session request: %s", e);
+    #####: 1895:		return -1;
+        -: 1896:	case MUX_S_FAILURE:
+    #####: 1897:		e = buffer_get_string(&m, NULL);
+    #####: 1898:		buffer_free(&m);
+    #####: 1899:		error("%s: session request failed: %s", __func__, e);
+    #####: 1900:		return -1;
+        -: 1901:	default:
+    #####: 1902:		buffer_free(&m);
+    #####: 1903:		error("%s: unexpected response from master 0x%08x",
+        -: 1904:		    __func__, type);
+    #####: 1905:		return -1;
+        -: 1906:	}
+    #####: 1907:	muxclient_request_id++;
+        -: 1908:
+    #####: 1909:	if (pledge("stdio proc tty", NULL) == -1)
+    #####: 1910:		fatal("%s pledge(): %s", __func__, strerror(errno));
+    #####: 1911:	platform_pledge_mux();
+        -: 1912:
+    #####: 1913:	signal(SIGHUP, control_client_sighandler);
+    #####: 1914:	signal(SIGINT, control_client_sighandler);
+    #####: 1915:	signal(SIGTERM, control_client_sighandler);
+    #####: 1916:	signal(SIGWINCH, control_client_sigrelay);
+        -: 1917:
+    #####: 1918:	rawmode = tty_flag;
+    #####: 1919:	if (tty_flag)
+    #####: 1920:		enter_raw_mode(options.request_tty == REQUEST_TTY_FORCE);
+        -: 1921:
+        -: 1922:	/*
+        -: 1923:	 * Stick around until the controlee closes the client_fd.
+        -: 1924:	 * Before it does, it is expected to write an exit message.
+        -: 1925:	 * This process must read the value and wait for the closure of
+        -: 1926:	 * the client_fd; if this one closes early, the multiplex master will
+        -: 1927:	 * terminate early too (possibly losing data).
+        -: 1928:	 */
+    #####: 1929:	for (exitval = 255, exitval_seen = 0;;) {
+    #####: 1930:		buffer_clear(&m);
+    #####: 1931:		if (mux_client_read_packet(fd, &m) != 0)
+    #####: 1932:			break;
+    #####: 1933:		type = buffer_get_int(&m);
+    #####: 1934:		switch (type) {
+        -: 1935:		case MUX_S_TTY_ALLOC_FAIL:
+    #####: 1936:			if ((esid = buffer_get_int(&m)) != sid)
+    #####: 1937:				fatal("%s: tty alloc fail on unknown session: "
+        -: 1938:				    "my id %u theirs %u",
+        -: 1939:				    __func__, sid, esid);
+    #####: 1940:			leave_raw_mode(options.request_tty ==
+        -: 1941:			    REQUEST_TTY_FORCE);
+    #####: 1942:			rawmode = 0;
+    #####: 1943:			continue;
+        -: 1944:		case MUX_S_EXIT_MESSAGE:
+    #####: 1945:			if ((esid = buffer_get_int(&m)) != sid)
+    #####: 1946:				fatal("%s: exit on unknown session: "
+        -: 1947:				    "my id %u theirs %u",
+        -: 1948:				    __func__, sid, esid);
+    #####: 1949:			if (exitval_seen)
+    #####: 1950:				fatal("%s: exitval sent twice", __func__);
+    #####: 1951:			exitval = buffer_get_int(&m);
+    #####: 1952:			exitval_seen = 1;
+    #####: 1953:			continue;
+        -: 1954:		default:
+    #####: 1955:			e = buffer_get_string(&m, NULL);
+    #####: 1956:			fatal("%s: master returned error: %s", __func__, e);
+        -: 1957:		}
+    #####: 1958:	}
+        -: 1959:
+    #####: 1960:	close(fd);
+    #####: 1961:	if (rawmode)
+    #####: 1962:		leave_raw_mode(options.request_tty == REQUEST_TTY_FORCE);
+        -: 1963:
+    #####: 1964:	if (muxclient_terminate) {
+    #####: 1965:		debug2("Exiting on signal %d", muxclient_terminate);
+    #####: 1966:		exitval = 255;
+    #####: 1967:	} else if (!exitval_seen) {
+    #####: 1968:		debug2("Control master terminated unexpectedly");
+    #####: 1969:		exitval = 255;
+        -: 1970:	} else
+    #####: 1971:		debug2("Received exit status from master %d", exitval);
+        -: 1972:
+    #####: 1973:	if (tty_flag && options.log_level != SYSLOG_LEVEL_QUIET)
+    #####: 1974:		fprintf(stderr, "Shared connection to %s closed.\r\n", host);
+        -: 1975:
+    #####: 1976:	exit(exitval);
+        -: 1977:}
+        -: 1978:
+        -: 1979:static int
+    #####: 1980:mux_client_proxy(int fd)
+        -: 1981:{
+        -: 1982:	Buffer m;
+        -: 1983:	char *e;
+        -: 1984:	u_int type, rid;
+        -: 1985:
+    #####: 1986:	buffer_init(&m);
+    #####: 1987:	buffer_put_int(&m, MUX_C_PROXY);
+    #####: 1988:	buffer_put_int(&m, muxclient_request_id);
+    #####: 1989:	if (mux_client_write_packet(fd, &m) != 0)
+    #####: 1990:		fatal("%s: write packet: %s", __func__, strerror(errno));
+        -: 1991:
+    #####: 1992:	buffer_clear(&m);
+        -: 1993:
+        -: 1994:	/* Read their reply */
+    #####: 1995:	if (mux_client_read_packet(fd, &m) != 0) {
+    #####: 1996:		buffer_free(&m);
+    #####: 1997:		return 0;
+        -: 1998:	}
+    #####: 1999:	type = buffer_get_int(&m);
+    #####: 2000:	if (type != MUX_S_PROXY) {
+    #####: 2001:		e = buffer_get_string(&m, NULL);
+    #####: 2002:		fatal("%s: master returned error: %s", __func__, e);
+        -: 2003:	}
+    #####: 2004:	if ((rid = buffer_get_int(&m)) != muxclient_request_id)
+    #####: 2005:		fatal("%s: out of sequence reply: my id %u theirs %u",
+        -: 2006:		    __func__, muxclient_request_id, rid);
+    #####: 2007:	buffer_free(&m);
+        -: 2008:
+    #####: 2009:	debug3("%s: done", __func__);
+    #####: 2010:	muxclient_request_id++;
+    #####: 2011:	return 0;
+        -: 2012:}
+        -: 2013:
+        -: 2014:static int
+    #####: 2015:mux_client_request_stdio_fwd(int fd)
+        -: 2016:{
+        -: 2017:	Buffer m;
+        -: 2018:	char *e;
+        -: 2019:	u_int type, rid, sid;
+        -: 2020:	int devnull;
+        -: 2021:
+    #####: 2022:	debug3("%s: entering", __func__);
+        -: 2023:
+    #####: 2024:	if ((muxserver_pid = mux_client_request_alive(fd)) == 0) {
+    #####: 2025:		error("%s: master alive request failed", __func__);
+    #####: 2026:		return -1;
+        -: 2027:	}
+        -: 2028:
+    #####: 2029:	signal(SIGPIPE, SIG_IGN);
+        -: 2030:
+    #####: 2031:	if (stdin_null_flag) {
+    #####: 2032:		if ((devnull = open(_PATH_DEVNULL, O_RDONLY)) == -1)
+    #####: 2033:			fatal("open(/dev/null): %s", strerror(errno));
+    #####: 2034:		if (dup2(devnull, STDIN_FILENO) == -1)
+    #####: 2035:			fatal("dup2: %s", strerror(errno));
+    #####: 2036:		if (devnull > STDERR_FILENO)
+    #####: 2037:			close(devnull);
+        -: 2038:	}
+        -: 2039:
+    #####: 2040:	buffer_init(&m);
+    #####: 2041:	buffer_put_int(&m, MUX_C_NEW_STDIO_FWD);
+    #####: 2042:	buffer_put_int(&m, muxclient_request_id);
+    #####: 2043:	buffer_put_cstring(&m, ""); /* reserved */
+    #####: 2044:	buffer_put_cstring(&m, options.stdio_forward_host);
+    #####: 2045:	buffer_put_int(&m, options.stdio_forward_port);
+        -: 2046:
+    #####: 2047:	if (mux_client_write_packet(fd, &m) != 0)
+    #####: 2048:		fatal("%s: write packet: %s", __func__, strerror(errno));
+        -: 2049:
+        -: 2050:	/* Send the stdio file descriptors */
+    #####: 2051:	if (mm_send_fd(fd, STDIN_FILENO) == -1 ||
+    #####: 2052:	    mm_send_fd(fd, STDOUT_FILENO) == -1)
+    #####: 2053:		fatal("%s: send fds failed", __func__);
+        -: 2054:
+    #####: 2055:	if (pledge("stdio proc tty", NULL) == -1)
+    #####: 2056:		fatal("%s pledge(): %s", __func__, strerror(errno));
+    #####: 2057:	platform_pledge_mux();
+        -: 2058:
+    #####: 2059:	debug3("%s: stdio forward request sent", __func__);
+        -: 2060:
+        -: 2061:	/* Read their reply */
+    #####: 2062:	buffer_clear(&m);
+        -: 2063:
+    #####: 2064:	if (mux_client_read_packet(fd, &m) != 0) {
+    #####: 2065:		error("%s: read from master failed: %s",
+    #####: 2066:		    __func__, strerror(errno));
+    #####: 2067:		buffer_free(&m);
+    #####: 2068:		return -1;
+        -: 2069:	}
+        -: 2070:
+    #####: 2071:	type = buffer_get_int(&m);
+    #####: 2072:	if ((rid = buffer_get_int(&m)) != muxclient_request_id)
+    #####: 2073:		fatal("%s: out of sequence reply: my id %u theirs %u",
+        -: 2074:		    __func__, muxclient_request_id, rid);
+    #####: 2075:	switch (type) {
+        -: 2076:	case MUX_S_SESSION_OPENED:
+    #####: 2077:		sid = buffer_get_int(&m);
+    #####: 2078:		debug("%s: master session id: %u", __func__, sid);
+    #####: 2079:		break;
+        -: 2080:	case MUX_S_PERMISSION_DENIED:
+    #####: 2081:		e = buffer_get_string(&m, NULL);
+    #####: 2082:		buffer_free(&m);
+    #####: 2083:		fatal("Master refused stdio forwarding request: %s", e);
+        -: 2084:	case MUX_S_FAILURE:
+    #####: 2085:		e = buffer_get_string(&m, NULL);
+    #####: 2086:		buffer_free(&m);
+    #####: 2087:		fatal("Stdio forwarding request failed: %s", e);
+        -: 2088:	default:
+    #####: 2089:		buffer_free(&m);
+    #####: 2090:		error("%s: unexpected response from master 0x%08x",
+        -: 2091:		    __func__, type);
+    #####: 2092:		return -1;
+        -: 2093:	}
+    #####: 2094:	muxclient_request_id++;
+        -: 2095:
+    #####: 2096:	signal(SIGHUP, control_client_sighandler);
+    #####: 2097:	signal(SIGINT, control_client_sighandler);
+    #####: 2098:	signal(SIGTERM, control_client_sighandler);
+    #####: 2099:	signal(SIGWINCH, control_client_sigrelay);
+        -: 2100:
+        -: 2101:	/*
+        -: 2102:	 * Stick around until the controlee closes the client_fd.
+        -: 2103:	 */
+    #####: 2104:	buffer_clear(&m);
+    #####: 2105:	if (mux_client_read_packet(fd, &m) != 0) {
+    #####: 2106:		if (errno == EPIPE ||
+    #####: 2107:		    (errno == EINTR && muxclient_terminate != 0))
+    #####: 2108:			return 0;
+    #####: 2109:		fatal("%s: mux_client_read_packet: %s",
+    #####: 2110:		    __func__, strerror(errno));
+        -: 2111:	}
+    #####: 2112:	fatal("%s: master returned unexpected message %u", __func__, type);
+        -: 2113:}
+        -: 2114:
+        -: 2115:static void
+    #####: 2116:mux_client_request_stop_listening(int fd)
+        -: 2117:{
+        -: 2118:	Buffer m;
+        -: 2119:	char *e;
+        -: 2120:	u_int type, rid;
+        -: 2121:
+    #####: 2122:	debug3("%s: entering", __func__);
+        -: 2123:
+    #####: 2124:	buffer_init(&m);
+    #####: 2125:	buffer_put_int(&m, MUX_C_STOP_LISTENING);
+    #####: 2126:	buffer_put_int(&m, muxclient_request_id);
+        -: 2127:
+    #####: 2128:	if (mux_client_write_packet(fd, &m) != 0)
+    #####: 2129:		fatal("%s: write packet: %s", __func__, strerror(errno));
+        -: 2130:
+    #####: 2131:	buffer_clear(&m);
+        -: 2132:
+        -: 2133:	/* Read their reply */
+    #####: 2134:	if (mux_client_read_packet(fd, &m) != 0)
+    #####: 2135:		fatal("%s: read from master failed: %s",
+    #####: 2136:		    __func__, strerror(errno));
+        -: 2137:
+    #####: 2138:	type = buffer_get_int(&m);
+    #####: 2139:	if ((rid = buffer_get_int(&m)) != muxclient_request_id)
+    #####: 2140:		fatal("%s: out of sequence reply: my id %u theirs %u",
+        -: 2141:		    __func__, muxclient_request_id, rid);
+    #####: 2142:	switch (type) {
+        -: 2143:	case MUX_S_OK:
+    #####: 2144:		break;
+        -: 2145:	case MUX_S_PERMISSION_DENIED:
+    #####: 2146:		e = buffer_get_string(&m, NULL);
+    #####: 2147:		fatal("Master refused stop listening request: %s", e);
+        -: 2148:	case MUX_S_FAILURE:
+    #####: 2149:		e = buffer_get_string(&m, NULL);
+    #####: 2150:		fatal("%s: stop listening request failed: %s", __func__, e);
+        -: 2151:	default:
+    #####: 2152:		fatal("%s: unexpected response from master 0x%08x",
+        -: 2153:		    __func__, type);
+        -: 2154:	}
+    #####: 2155:	buffer_free(&m);
+    #####: 2156:	muxclient_request_id++;
+    #####: 2157:}
+        -: 2158:
+        -: 2159:/* Multiplex client main loop. */
+        -: 2160:int
+    #####: 2161:muxclient(const char *path)
+        -: 2162:{
+        -: 2163:	struct sockaddr_un addr;
+        -: 2164:	socklen_t sun_len;
+        -: 2165:	int sock;
+        -: 2166:	u_int pid;
+        -: 2167:
+    #####: 2168:	if (muxclient_command == 0) {
+    #####: 2169:		if (options.stdio_forward_host != NULL)
+    #####: 2170:			muxclient_command = SSHMUX_COMMAND_STDIO_FWD;
+        -: 2171:		else
+    #####: 2172:			muxclient_command = SSHMUX_COMMAND_OPEN;
+        -: 2173:	}
+        -: 2174:
+    #####: 2175:	switch (options.control_master) {
+        -: 2176:	case SSHCTL_MASTER_AUTO:
+        -: 2177:	case SSHCTL_MASTER_AUTO_ASK:
+    #####: 2178:		debug("auto-mux: Trying existing master");
+        -: 2179:		/* FALLTHROUGH */
+        -: 2180:	case SSHCTL_MASTER_NO:
+    #####: 2181:		break;
+        -: 2182:	default:
+    #####: 2183:		return -1;
+        -: 2184:	}
+        -: 2185:
+    #####: 2186:	memset(&addr, '\0', sizeof(addr));
+    #####: 2187:	addr.sun_family = AF_UNIX;
+    #####: 2188:	sun_len = offsetof(struct sockaddr_un, sun_path) +
+    #####: 2189:	    strlen(path) + 1;
+        -: 2190:
+    #####: 2191:	if (strlcpy(addr.sun_path, path,
+        -: 2192:	    sizeof(addr.sun_path)) >= sizeof(addr.sun_path))
+    #####: 2193:		fatal("ControlPath too long ('%s' >= %u bytes)", path,
+        -: 2194:		     (unsigned int)sizeof(addr.sun_path));
+        -: 2195:
+    #####: 2196:	if ((sock = socket(PF_UNIX, SOCK_STREAM, 0)) < 0)
+    #####: 2197:		fatal("%s socket(): %s", __func__, strerror(errno));
+        -: 2198:
+    #####: 2199:	if (connect(sock, (struct sockaddr *)&addr, sun_len) == -1) {
+    #####: 2200:		switch (muxclient_command) {
+        -: 2201:		case SSHMUX_COMMAND_OPEN:
+        -: 2202:		case SSHMUX_COMMAND_STDIO_FWD:
+    #####: 2203:			break;
+        -: 2204:		default:
+    #####: 2205:			fatal("Control socket connect(%.100s): %s", path,
+    #####: 2206:			    strerror(errno));
+        -: 2207:		}
+    #####: 2208:		if (errno == ECONNREFUSED &&
+    #####: 2209:		    options.control_master != SSHCTL_MASTER_NO) {
+    #####: 2210:			debug("Stale control socket %.100s, unlinking", path);
+    #####: 2211:			unlink(path);
+    #####: 2212:		} else if (errno == ENOENT) {
+    #####: 2213:			debug("Control socket \"%.100s\" does not exist", path);
+        -: 2214:		} else {
+    #####: 2215:			error("Control socket connect(%.100s): %s", path,
+    #####: 2216:			    strerror(errno));
+        -: 2217:		}
+    #####: 2218:		close(sock);
+    #####: 2219:		return -1;
+        -: 2220:	}
+    #####: 2221:	set_nonblock(sock);
+        -: 2222:
+    #####: 2223:	if (mux_client_hello_exchange(sock) != 0) {
+    #####: 2224:		error("%s: master hello exchange failed", __func__);
+    #####: 2225:		close(sock);
+    #####: 2226:		return -1;
+        -: 2227:	}
+        -: 2228:
+    #####: 2229:	switch (muxclient_command) {
+        -: 2230:	case SSHMUX_COMMAND_ALIVE_CHECK:
+    #####: 2231:		if ((pid = mux_client_request_alive(sock)) == 0)
+    #####: 2232:			fatal("%s: master alive check failed", __func__);
+    #####: 2233:		fprintf(stderr, "Master running (pid=%u)\r\n", pid);
+    #####: 2234:		exit(0);
+        -: 2235:	case SSHMUX_COMMAND_TERMINATE:
+    #####: 2236:		mux_client_request_terminate(sock);
+    #####: 2237:		if (options.log_level != SYSLOG_LEVEL_QUIET)
+    #####: 2238:			fprintf(stderr, "Exit request sent.\r\n");
+    #####: 2239:		exit(0);
+        -: 2240:	case SSHMUX_COMMAND_FORWARD:
+    #####: 2241:		if (mux_client_forwards(sock, 0) != 0)
+    #####: 2242:			fatal("%s: master forward request failed", __func__);
+    #####: 2243:		exit(0);
+        -: 2244:	case SSHMUX_COMMAND_OPEN:
+    #####: 2245:		if (mux_client_forwards(sock, 0) != 0) {
+    #####: 2246:			error("%s: master forward request failed", __func__);
+    #####: 2247:			return -1;
+        -: 2248:		}
+    #####: 2249:		mux_client_request_session(sock);
+    #####: 2250:		return -1;
+        -: 2251:	case SSHMUX_COMMAND_STDIO_FWD:
+    #####: 2252:		mux_client_request_stdio_fwd(sock);
+    #####: 2253:		exit(0);
+        -: 2254:	case SSHMUX_COMMAND_STOP:
+    #####: 2255:		mux_client_request_stop_listening(sock);
+    #####: 2256:		if (options.log_level != SYSLOG_LEVEL_QUIET)
+    #####: 2257:			fprintf(stderr, "Stop listening request sent.\r\n");
+    #####: 2258:		exit(0);
+        -: 2259:	case SSHMUX_COMMAND_CANCEL_FWD:
+    #####: 2260:		if (mux_client_forwards(sock, 1) != 0)
+    #####: 2261:			error("%s: master cancel forward request failed",
+        -: 2262:			    __func__);
+    #####: 2263:		exit(0);
+        -: 2264:	case SSHMUX_COMMAND_PROXY:
+    #####: 2265:		mux_client_proxy(sock);
+    #####: 2266:		return (sock);
+        -: 2267:	default:
+    #####: 2268:		fatal("unrecognised muxclient_command %d", muxclient_command);
+        -: 2269:	}
+        -: 2270:}

@@ -1,0 +1,195 @@
+        -:    0:Source:readpass.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: readpass.c,v 1.51 2015/12/11 00:20:04 mmcc Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2001 Markus Friedl.  All rights reserved.
+        -:    4: *
+        -:    5: * Redistribution and use in source and binary forms, with or without
+        -:    6: * modification, are permitted provided that the following conditions
+        -:    7: * are met:
+        -:    8: * 1. Redistributions of source code must retain the above copyright
+        -:    9: *    notice, this list of conditions and the following disclaimer.
+        -:   10: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   11: *    notice, this list of conditions and the following disclaimer in the
+        -:   12: *    documentation and/or other materials provided with the distribution.
+        -:   13: *
+        -:   14: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   15: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   16: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   17: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   18: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   19: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   20: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   21: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   22: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   23: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   24: */
+        -:   25:
+        -:   26:#include "includes.h"
+        -:   27:
+        -:   28:#include <sys/types.h>
+        -:   29:#include <sys/wait.h>
+        -:   30:
+        -:   31:#include <errno.h>
+        -:   32:#include <fcntl.h>
+        -:   33:#ifdef HAVE_PATHS_H
+        -:   34:# include <paths.h>
+        -:   35:#endif
+        -:   36:#include <signal.h>
+        -:   37:#include <stdarg.h>
+        -:   38:#include <stdio.h>
+        -:   39:#include <stdlib.h>
+        -:   40:#include <string.h>
+        -:   41:#include <unistd.h>
+        -:   42:
+        -:   43:#include "xmalloc.h"
+        -:   44:#include "misc.h"
+        -:   45:#include "pathnames.h"
+        -:   46:#include "log.h"
+        -:   47:#include "ssh.h"
+        -:   48:#include "uidswap.h"
+        -:   49:
+        -:   50:static char *
+    #####:   51:ssh_askpass(char *askpass, const char *msg)
+        -:   52:{
+        -:   53:	pid_t pid, ret;
+        -:   54:	size_t len;
+        -:   55:	char *pass;
+        -:   56:	int p[2], status;
+        -:   57:	char buf[1024];
+        -:   58:	void (*osigchld)(int);
+        -:   59:
+    #####:   60:	if (fflush(stdout) != 0)
+    #####:   61:		error("ssh_askpass: fflush: %s", strerror(errno));
+    #####:   62:	if (askpass == NULL)
+    #####:   63:		fatal("internal error: askpass undefined");
+    #####:   64:	if (pipe(p) < 0) {
+    #####:   65:		error("ssh_askpass: pipe: %s", strerror(errno));
+    #####:   66:		return NULL;
+        -:   67:	}
+    #####:   68:	osigchld = signal(SIGCHLD, SIG_DFL);
+    #####:   69:	if ((pid = fork()) < 0) {
+    #####:   70:		error("ssh_askpass: fork: %s", strerror(errno));
+    #####:   71:		signal(SIGCHLD, osigchld);
+    #####:   72:		return NULL;
+        -:   73:	}
+    #####:   74:	if (pid == 0) {
+    #####:   75:		permanently_drop_suid(getuid());
+    #####:   76:		close(p[0]);
+    #####:   77:		if (dup2(p[1], STDOUT_FILENO) < 0)
+    #####:   78:			fatal("ssh_askpass: dup2: %s", strerror(errno));
+    #####:   79:		execlp(askpass, askpass, msg, (char *)NULL);
+    #####:   80:		fatal("ssh_askpass: exec(%s): %s", askpass, strerror(errno));
+        -:   81:	}
+    #####:   82:	close(p[1]);
+        -:   83:
+    #####:   84:	len = 0;
+        -:   85:	do {
+    #####:   86:		ssize_t r = read(p[0], buf + len, sizeof(buf) - 1 - len);
+        -:   87:
+    #####:   88:		if (r == -1 && errno == EINTR)
+    #####:   89:			continue;
+    #####:   90:		if (r <= 0)
+    #####:   91:			break;
+    #####:   92:		len += r;
+    #####:   93:	} while (sizeof(buf) - 1 - len > 0);
+    #####:   94:	buf[len] = '\0';
+        -:   95:
+    #####:   96:	close(p[0]);
+    #####:   97:	while ((ret = waitpid(pid, &status, 0)) < 0)
+    #####:   98:		if (errno != EINTR)
+    #####:   99:			break;
+    #####:  100:	signal(SIGCHLD, osigchld);
+    #####:  101:	if (ret == -1 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+    #####:  102:		explicit_bzero(buf, sizeof(buf));
+    #####:  103:		return NULL;
+        -:  104:	}
+        -:  105:
+    #####:  106:	buf[strcspn(buf, "\r\n")] = '\0';
+    #####:  107:	pass = xstrdup(buf);
+    #####:  108:	explicit_bzero(buf, sizeof(buf));
+    #####:  109:	return pass;
+        -:  110:}
+        -:  111:
+        -:  112:/*
+        -:  113: * Reads a passphrase from /dev/tty with echo turned off/on.  Returns the
+        -:  114: * passphrase (allocated with xmalloc).  Exits if EOF is encountered. If
+        -:  115: * RP_ALLOW_STDIN is set, the passphrase will be read from stdin if no
+        -:  116: * tty is available
+        -:  117: */
+        -:  118:char *
+    #####:  119:read_passphrase(const char *prompt, int flags)
+        -:  120:{
+    #####:  121:	char *askpass = NULL, *ret, buf[1024];
+    #####:  122:	int rppflags, use_askpass = 0, ttyfd;
+        -:  123:
+    #####:  124:	rppflags = (flags & RP_ECHO) ? RPP_ECHO_ON : RPP_ECHO_OFF;
+    #####:  125:	if (flags & RP_USE_ASKPASS)
+    #####:  126:		use_askpass = 1;
+    #####:  127:	else if (flags & RP_ALLOW_STDIN) {
+    #####:  128:		if (!isatty(STDIN_FILENO)) {
+    #####:  129:			debug("read_passphrase: stdin is not a tty");
+    #####:  130:			use_askpass = 1;
+        -:  131:		}
+        -:  132:	} else {
+    #####:  133:		rppflags |= RPP_REQUIRE_TTY;
+    #####:  134:		ttyfd = open(_PATH_TTY, O_RDWR);
+    #####:  135:		if (ttyfd >= 0)
+    #####:  136:			close(ttyfd);
+        -:  137:		else {
+    #####:  138:			debug("read_passphrase: can't open %s: %s", _PATH_TTY,
+    #####:  139:			    strerror(errno));
+    #####:  140:			use_askpass = 1;
+        -:  141:		}
+        -:  142:	}
+        -:  143:
+    #####:  144:	if ((flags & RP_USE_ASKPASS) && getenv("DISPLAY") == NULL)
+    #####:  145:		return (flags & RP_ALLOW_EOF) ? NULL : xstrdup("");
+        -:  146:
+    #####:  147:	if (use_askpass && getenv("DISPLAY")) {
+    #####:  148:		if (getenv(SSH_ASKPASS_ENV))
+    #####:  149:			askpass = getenv(SSH_ASKPASS_ENV);
+        -:  150:		else
+    #####:  151:			askpass = _PATH_SSH_ASKPASS_DEFAULT;
+    #####:  152:		if ((ret = ssh_askpass(askpass, prompt)) == NULL)
+    #####:  153:			if (!(flags & RP_ALLOW_EOF))
+    #####:  154:				return xstrdup("");
+    #####:  155:		return ret;
+        -:  156:	}
+        -:  157:
+    #####:  158:	if (readpassphrase(prompt, buf, sizeof buf, rppflags) == NULL) {
+    #####:  159:		if (flags & RP_ALLOW_EOF)
+    #####:  160:			return NULL;
+    #####:  161:		return xstrdup("");
+        -:  162:	}
+        -:  163:
+    #####:  164:	ret = xstrdup(buf);
+    #####:  165:	explicit_bzero(buf, sizeof(buf));
+    #####:  166:	return ret;
+        -:  167:}
+        -:  168:
+        -:  169:int
+    #####:  170:ask_permission(const char *fmt, ...)
+        -:  171:{
+        -:  172:	va_list args;
+        -:  173:	char *p, prompt[1024];
+    #####:  174:	int allowed = 0;
+        -:  175:
+    #####:  176:	va_start(args, fmt);
+    #####:  177:	vsnprintf(prompt, sizeof(prompt), fmt, args);
+    #####:  178:	va_end(args);
+        -:  179:
+    #####:  180:	p = read_passphrase(prompt, RP_USE_ASKPASS|RP_ALLOW_EOF);
+    #####:  181:	if (p != NULL) {
+        -:  182:		/*
+        -:  183:		 * Accept empty responses and responses consisting
+        -:  184:		 * of the word "yes" as affirmative.
+        -:  185:		 */
+    #####:  186:		if (*p == '\0' || *p == '\n' ||
+    #####:  187:		    strcasecmp(p, "yes") == 0)
+    #####:  188:			allowed = 1;
+    #####:  189:		free(p);
+        -:  190:	}
+        -:  191:
+    #####:  192:	return (allowed);
+        -:  193:}

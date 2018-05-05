@@ -1,0 +1,144 @@
+        -:    0:Source:dispatch.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: dispatch.c,v 1.27 2015/05/01 07:10:01 djm Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2000 Markus Friedl.  All rights reserved.
+        -:    4: *
+        -:    5: * Redistribution and use in source and binary forms, with or without
+        -:    6: * modification, are permitted provided that the following conditions
+        -:    7: * are met:
+        -:    8: * 1. Redistributions of source code must retain the above copyright
+        -:    9: *    notice, this list of conditions and the following disclaimer.
+        -:   10: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   11: *    notice, this list of conditions and the following disclaimer in the
+        -:   12: *    documentation and/or other materials provided with the distribution.
+        -:   13: *
+        -:   14: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   15: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   16: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   17: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   18: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   19: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   20: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   21: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   22: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   23: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   24: */
+        -:   25:
+        -:   26:#include "includes.h"
+        -:   27:
+        -:   28:#include <sys/types.h>
+        -:   29:
+        -:   30:#include <signal.h>
+        -:   31:#include <stdarg.h>
+        -:   32:
+        -:   33:#include "ssh1.h"
+        -:   34:#include "ssh2.h"
+        -:   35:#include "log.h"
+        -:   36:#include "dispatch.h"
+        -:   37:#include "packet.h"
+        -:   38:#include "compat.h"
+        -:   39:#include "ssherr.h"
+        -:   40:
+        -:   41:int
+    #####:   42:dispatch_protocol_error(int type, u_int32_t seq, void *ctx)
+        -:   43:{
+    #####:   44:	struct ssh *ssh = active_state; /* XXX */
+        -:   45:	int r;
+        -:   46:
+    #####:   47:	logit("dispatch_protocol_error: type %d seq %u", type, seq);
+    #####:   48:	if (!compat20)
+    #####:   49:		fatal("protocol error");
+    #####:   50:	if ((r = sshpkt_start(ssh, SSH2_MSG_UNIMPLEMENTED)) != 0 ||
+    #####:   51:	    (r = sshpkt_put_u32(ssh, seq)) != 0 ||
+    #####:   52:	    (r = sshpkt_send(ssh)) != 0 ||
+        -:   53:	    (r = ssh_packet_write_wait(ssh)) != 0)
+    #####:   54:		sshpkt_fatal(ssh, __func__, r);
+    #####:   55:	return 0;
+        -:   56:}
+        -:   57:
+        -:   58:int
+    #####:   59:dispatch_protocol_ignore(int type, u_int32_t seq, void *ssh)
+        -:   60:{
+    #####:   61:	logit("dispatch_protocol_ignore: type %d seq %u", type, seq);
+    #####:   62:	return 0;
+        -:   63:}
+        -:   64:
+        -:   65:void
+        2:   66:ssh_dispatch_init(struct ssh *ssh, dispatch_fn *dflt)
+        -:   67:{
+        -:   68:	u_int i;
+      512:   69:	for (i = 0; i < DISPATCH_MAX; i++)
+      510:   70:		ssh->dispatch[i] = dflt;
+        2:   71:}
+        -:   72:
+        -:   73:void
+        4:   74:ssh_dispatch_range(struct ssh *ssh, u_int from, u_int to, dispatch_fn *fn)
+        -:   75:{
+        -:   76:	u_int i;
+        -:   77:
+      152:   78:	for (i = from; i <= to; i++) {
+      148:   79:		if (i >= DISPATCH_MAX)
+    #####:   80:			break;
+      148:   81:		ssh->dispatch[i] = fn;
+        -:   82:	}
+        4:   83:}
+        -:   84:
+        -:   85:void
+       28:   86:ssh_dispatch_set(struct ssh *ssh, int type, dispatch_fn *fn)
+        -:   87:{
+       28:   88:	ssh->dispatch[type] = fn;
+       28:   89:}
+        -:   90:
+        -:   91:int
+       55:   92:ssh_dispatch_run(struct ssh *ssh, int mode, volatile sig_atomic_t *done,
+        -:   93:    void *ctxt)
+        -:   94:{
+        -:   95:	int r;
+        -:   96:	u_char type;
+        -:   97:	u_int32_t seqnr;
+        -:   98:
+        -:   99:	for (;;) {
+       55:  100:		if (mode == DISPATCH_BLOCK) {
+        7:  101:			r = ssh_packet_read_seqnr(ssh, &type, &seqnr);
+        7:  102:			if (r != 0)
+    #####:  103:				return r;
+        -:  104:		} else {
+       48:  105:			r = ssh_packet_read_poll_seqnr(ssh, &type, &seqnr);
+       48:  106:			if (r != 0)
+    #####:  107:				return r;
+       48:  108:			if (type == SSH_MSG_NONE)
+       32:  109:				return 0;
+        -:  110:		}
+       46:  111:		if (type > 0 && type < DISPATCH_MAX &&
+       23:  112:		    ssh->dispatch[type] != NULL) {
+       23:  113:			if (ssh->dispatch_skip_packets) {
+    #####:  114:				debug2("skipped packet (type %u)", type);
+    #####:  115:				ssh->dispatch_skip_packets--;
+    #####:  116:				continue;
+        -:  117:			}
+        -:  118:			/* XXX 'ssh' will replace 'ctxt' later */
+       23:  119:			r = (*ssh->dispatch[type])(type, seqnr, ctxt);
+       46:  120:			if (r != 0)
+    #####:  121:				return r;
+        -:  122:		} else {
+    #####:  123:			r = sshpkt_disconnect(ssh,
+        -:  124:			    "protocol error: rcvd type %d", type);
+    #####:  125:			if (r != 0)
+    #####:  126:				return r;
+    #####:  127:			return SSH_ERR_DISCONNECTED;
+        -:  128:		}
+       23:  129:		if (done != NULL && *done)
+        2:  130:			return 0;
+       21:  131:	}
+        -:  132:}
+        -:  133:
+        -:  134:void
+       33:  135:ssh_dispatch_run_fatal(struct ssh *ssh, int mode, volatile sig_atomic_t *done,
+        -:  136:    void *ctxt)
+        -:  137:{
+        -:  138:	int r;
+        -:  139:
+       33:  140:	if ((r = ssh_dispatch_run(ssh, mode, done, ctxt)) != 0)
+    #####:  141:		sshpkt_fatal(ssh, __func__, r);
+       33:  142:}

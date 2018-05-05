@@ -1,0 +1,334 @@
+        -:    0:Source:utf8.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: utf8.c,v 1.3 2016/05/30 12:57:21 schwarze Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2016 Ingo Schwarze <schwarze@openbsd.org>
+        -:    4: *
+        -:    5: * Permission to use, copy, modify, and distribute this software for any
+        -:    6: * purpose with or without fee is hereby granted, provided that the above
+        -:    7: * copyright notice and this permission notice appear in all copies.
+        -:    8: *
+        -:    9: * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        -:   10: * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        -:   11: * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        -:   12: * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        -:   13: * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        -:   14: * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        -:   15: * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+        -:   16: */
+        -:   17:
+        -:   18:/*
+        -:   19: * Utility functions for multibyte-character handling,
+        -:   20: * in particular to sanitize untrusted strings for terminal output.
+        -:   21: */
+        -:   22:
+        -:   23:#include "includes.h"
+        -:   24:
+        -:   25:#include <sys/types.h>
+        -:   26:#ifdef HAVE_LANGINFO_H
+        -:   27:# include <langinfo.h>
+        -:   28:#endif
+        -:   29:#include <limits.h>
+        -:   30:#include <locale.h>
+        -:   31:#include <stdarg.h>
+        -:   32:#include <stdio.h>
+        -:   33:#include <stdlib.h>
+        -:   34:#include <string.h>
+        -:   35:#if defined(HAVE_STRNVIS) && defined(HAVE_VIS_H) && !defined(BROKEN_STRNVIS)
+        -:   36:# include <vis.h>
+        -:   37:#endif
+        -:   38:#ifdef HAVE_WCHAR_H
+        -:   39:# include <wchar.h>
+        -:   40:#endif
+        -:   41:
+        -:   42:#include "utf8.h"
+        -:   43:
+        -:   44:static int	 dangerous_locale(void);
+        -:   45:static int	 grow_dst(char **, size_t *, size_t, char **, size_t);
+        -:   46:static int	 vasnmprintf(char **, size_t, int *, const char *, va_list);
+        -:   47:
+        -:   48:
+        -:   49:/*
+        -:   50: * For US-ASCII and UTF-8 encodings, we can safely recover from
+        -:   51: * encoding errors and from non-printable characters.  For any
+        -:   52: * other encodings, err to the side of caution and abort parsing:
+        -:   53: * For state-dependent encodings, recovery is impossible.
+        -:   54: * For arbitrary encodings, replacement of non-printable
+        -:   55: * characters would be non-trivial and too fragile.
+        -:   56: */
+        -:   57:
+        -:   58:static int
+    #####:   59:dangerous_locale(void) {
+        -:   60:	char	*loc;
+        -:   61:
+    #####:   62:	loc = nl_langinfo(CODESET);
+    #####:   63:	return strcmp(loc, "US-ASCII") && strcmp(loc, "UTF-8");
+        -:   64:}
+        -:   65:
+        -:   66:static int
+    #####:   67:grow_dst(char **dst, size_t *sz, size_t maxsz, char **dp, size_t need)
+        -:   68:{
+        -:   69:	char	*tp;
+        -:   70:	size_t	 tsz;
+        -:   71:
+    #####:   72:	if (*dp + need < *dst + *sz)
+    #####:   73:		return 0;
+    #####:   74:	tsz = *sz + 128;
+    #####:   75:	if (tsz > maxsz)
+    #####:   76:		tsz = maxsz;
+    #####:   77:	if ((tp = realloc(*dst, tsz)) == NULL)
+    #####:   78:		return -1;
+    #####:   79:	*dp = tp + (*dp - *dst);
+    #####:   80:	*dst = tp;
+    #####:   81:	*sz = tsz;
+    #####:   82:	return 0;
+        -:   83:}
+        -:   84:
+        -:   85:/*
+        -:   86: * The following two functions limit the number of bytes written,
+        -:   87: * including the terminating '\0', to sz.  Unless wp is NULL,
+        -:   88: * they limit the number of display columns occupied to *wp.
+        -:   89: * Whichever is reached first terminates the output string.
+        -:   90: * To stay close to the standard interfaces, they return the number of
+        -:   91: * non-NUL bytes that would have been written if both were unlimited.
+        -:   92: * If wp is NULL, newline, carriage return, and tab are allowed;
+        -:   93: * otherwise, the actual number of columns occupied by what was
+        -:   94: * written is returned in *wp.
+        -:   95: */
+        -:   96:
+        -:   97:static int
+    #####:   98:vasnmprintf(char **str, size_t maxsz, int *wp, const char *fmt, va_list ap)
+        -:   99:{
+        -:  100:	char	*src;	/* Source string returned from vasprintf. */
+        -:  101:	char	*sp;	/* Pointer into src. */
+        -:  102:	char	*dst;	/* Destination string to be returned. */
+        -:  103:	char	*dp;	/* Pointer into dst. */
+        -:  104:	char	*tp;	/* Temporary pointer for dst. */
+        -:  105:	size_t	 sz;	/* Number of bytes allocated for dst. */
+        -:  106:	wchar_t	 wc;	/* Wide character at sp. */
+        -:  107:	int	 len;	/* Number of bytes in the character at sp. */
+        -:  108:	int	 ret;	/* Number of bytes needed to format src. */
+        -:  109:	int	 width;	/* Display width of the character wc. */
+        -:  110:	int	 total_width, max_width, print;
+        -:  111:
+    #####:  112:	src = NULL;
+    #####:  113:	if ((ret = vasprintf(&src, fmt, ap)) <= 0)
+    #####:  114:		goto fail;
+        -:  115:
+    #####:  116:	sz = strlen(src) + 1;
+    #####:  117:	if ((dst = malloc(sz)) == NULL) {
+    #####:  118:		free(src);
+    #####:  119:		goto fail;
+        -:  120:	}
+        -:  121:
+    #####:  122:	if (maxsz > INT_MAX)
+    #####:  123:		maxsz = INT_MAX;
+        -:  124:
+    #####:  125:	sp = src;
+    #####:  126:	dp = dst;
+    #####:  127:	ret = 0;
+    #####:  128:	print = 1;
+    #####:  129:	total_width = 0;
+    #####:  130:	max_width = wp == NULL ? INT_MAX : *wp;
+    #####:  131:	while (*sp != '\0') {
+    #####:  132:		if ((len = mbtowc(&wc, sp, MB_CUR_MAX)) == -1) {
+    #####:  133:			(void)mbtowc(NULL, NULL, MB_CUR_MAX);
+    #####:  134:			if (dangerous_locale()) {
+    #####:  135:				ret = -1;
+    #####:  136:				break;
+        -:  137:			}
+    #####:  138:			len = 1;
+    #####:  139:			width = -1;
+    #####:  140:		} else if (wp == NULL &&
+    #####:  141:		    (wc == L'\n' || wc == L'\r' || wc == L'\t')) {
+        -:  142:			/*
+        -:  143:			 * Don't use width uninitialized; the actual
+        -:  144:			 * value doesn't matter because total_width
+        -:  145:			 * is only returned for wp != NULL.
+        -:  146:			 */
+    #####:  147:			width = 0;
+    #####:  148:		} else if ((width = wcwidth(wc)) == -1 &&
+    #####:  149:		    dangerous_locale()) {
+    #####:  150:			ret = -1;
+    #####:  151:			break;
+        -:  152:		}
+        -:  153:
+        -:  154:		/* Valid, printable character. */
+        -:  155:
+    #####:  156:		if (width >= 0) {
+    #####:  157:			if (print && (dp - dst >= (int)maxsz - len ||
+    #####:  158:			    total_width > max_width - width))
+    #####:  159:				print = 0;
+    #####:  160:			if (print) {
+    #####:  161:				if (grow_dst(&dst, &sz, maxsz,
+        -:  162:				    &dp, len) == -1) {
+    #####:  163:					ret = -1;
+    #####:  164:					break;
+        -:  165:				}
+    #####:  166:				total_width += width;
+    #####:  167:				memcpy(dp, sp, len);
+    #####:  168:				dp += len;
+        -:  169:			}
+    #####:  170:			sp += len;
+    #####:  171:			if (ret >= 0)
+    #####:  172:				ret += len;
+    #####:  173:			continue;
+        -:  174:		}
+        -:  175:
+        -:  176:		/* Escaping required. */
+        -:  177:
+    #####:  178:		while (len > 0) {
+    #####:  179:			if (print && (dp - dst >= (int)maxsz - 4 ||
+    #####:  180:			    total_width > max_width - 4))
+    #####:  181:				print = 0;
+    #####:  182:			if (print) {
+    #####:  183:				if (grow_dst(&dst, &sz, maxsz,
+        -:  184:				    &dp, 4) == -1) {
+    #####:  185:					ret = -1;
+    #####:  186:					break;
+        -:  187:				}
+    #####:  188:				tp = vis(dp, *sp, VIS_OCTAL | VIS_ALL, 0);
+    #####:  189:				width = tp - dp;
+    #####:  190:				total_width += width;
+    #####:  191:				dp = tp;
+        -:  192:			} else
+    #####:  193:				width = 4;
+    #####:  194:			len--;
+    #####:  195:			sp++;
+    #####:  196:			if (ret >= 0)
+    #####:  197:				ret += width;
+        -:  198:		}
+    #####:  199:		if (len > 0)
+    #####:  200:			break;
+        -:  201:	}
+    #####:  202:	free(src);
+    #####:  203:	*dp = '\0';
+    #####:  204:	*str = dst;
+    #####:  205:	if (wp != NULL)
+    #####:  206:		*wp = total_width;
+        -:  207:
+        -:  208:	/*
+        -:  209:	 * If the string was truncated by the width limit but
+        -:  210:	 * would have fit into the size limit, the only sane way
+        -:  211:	 * to report the problem is using the return value, such
+        -:  212:	 * that the usual idiom "if (ret < 0 || ret >= sz) error"
+        -:  213:	 * works as expected.
+        -:  214:	 */
+        -:  215:
+    #####:  216:	if (ret < (int)maxsz && !print)
+    #####:  217:		ret = -1;
+    #####:  218:	return ret;
+        -:  219:
+        -:  220:fail:
+    #####:  221:	if (wp != NULL)
+    #####:  222:		*wp = 0;
+    #####:  223:	if (ret == 0) {
+    #####:  224:		*str = src;
+    #####:  225:		return 0;
+        -:  226:	} else {
+    #####:  227:		*str = NULL;
+    #####:  228:		return -1;
+        -:  229:	}
+        -:  230:}
+        -:  231:
+        -:  232:int
+    #####:  233:snmprintf(char *str, size_t sz, int *wp, const char *fmt, ...)
+        -:  234:{
+        -:  235:	va_list	 ap;
+        -:  236:	char	*cp;
+        -:  237:	int	 ret;
+        -:  238:
+    #####:  239:	va_start(ap, fmt);
+    #####:  240:	ret = vasnmprintf(&cp, sz, wp, fmt, ap);
+    #####:  241:	va_end(ap);
+    #####:  242:	if (cp != NULL) {
+    #####:  243:		(void)strlcpy(str, cp, sz);
+    #####:  244:		free(cp);
+        -:  245:	} else
+    #####:  246:		*str = '\0';
+    #####:  247:	return ret;
+        -:  248:}
+        -:  249:
+        -:  250:/*
+        -:  251: * To stay close to the standard interfaces, the following functions
+        -:  252: * return the number of non-NUL bytes written.
+        -:  253: */
+        -:  254:
+        -:  255:int
+    #####:  256:vfmprintf(FILE *stream, const char *fmt, va_list ap)
+        -:  257:{
+        -:  258:	char	*str;
+        -:  259:	int	 ret;
+        -:  260:
+    #####:  261:	if ((ret = vasnmprintf(&str, INT_MAX, NULL, fmt, ap)) < 0)
+    #####:  262:		return -1;
+    #####:  263:	if (fputs(str, stream) == EOF)
+    #####:  264:		ret = -1;
+    #####:  265:	free(str);
+    #####:  266:	return ret;
+        -:  267:}
+        -:  268:
+        -:  269:int
+    #####:  270:fmprintf(FILE *stream, const char *fmt, ...)
+        -:  271:{
+        -:  272:	va_list	 ap;
+        -:  273:	int	 ret;
+        -:  274:
+    #####:  275:	va_start(ap, fmt);
+    #####:  276:	ret = vfmprintf(stream, fmt, ap);
+    #####:  277:	va_end(ap);
+    #####:  278:	return ret;
+        -:  279:}
+        -:  280:
+        -:  281:int
+    #####:  282:mprintf(const char *fmt, ...)
+        -:  283:{
+        -:  284:	va_list	 ap;
+        -:  285:	int	 ret;
+        -:  286:
+    #####:  287:	va_start(ap, fmt);
+    #####:  288:	ret = vfmprintf(stdout, fmt, ap);
+    #####:  289:	va_end(ap);
+    #####:  290:	return ret;
+        -:  291:}
+        -:  292:
+        -:  293:/*
+        -:  294: * Set up libc for multibyte output in the user's chosen locale.
+        -:  295: *
+        -:  296: * XXX: we are known to have problems with Turkish (i/I confusion) so we
+        -:  297: *      deliberately fall back to the C locale for now. Longer term we should
+        -:  298: *      always prefer to select C.[encoding] if possible, but there's no
+        -:  299: *      standardisation in locales between systems, so we'll need to survey
+        -:  300: *      what's out there first.
+        -:  301: */
+        -:  302:void
+        1:  303:msetlocale(void)
+        -:  304:{
+        1:  305:	const char *vars[] = { "LC_ALL", "LC_CTYPE", "LANG", NULL };
+        -:  306:	char *cp;
+        -:  307:	int i;
+        -:  308:
+        -:  309:	/*
+        -:  310:	 * We can't yet cope with dotless/dotted I in Turkish locales,
+        -:  311:	 * so fall back to the C locale for these.
+        -:  312:	 */
+        6:  313:	for (i = 0; vars[i] != NULL; i++) {
+        3:  314:		if ((cp = getenv(vars[i])) == NULL)
+        2:  315:			continue;
+        1:  316:		if (strncasecmp(cp, "TR", 2) != 0)
+        1:  317:			break;
+        -:  318:		/*
+        -:  319:		 * If we're in a UTF-8 locale then prefer to use
+        -:  320:		 * the C.UTF-8 locale (or equivalent) if it exists.
+        -:  321:		 */
+    #####:  322:		if ((strcasestr(cp, "UTF-8") != NULL ||
+    #####:  323:		    strcasestr(cp, "UTF8") != NULL) &&
+    #####:  324:		    (setlocale(LC_CTYPE, "C.UTF-8") != NULL ||
+    #####:  325:		    setlocale(LC_CTYPE, "POSIX.UTF-8") != NULL))
+    #####:  326:			return;
+    #####:  327:		setlocale(LC_CTYPE, "C");
+    #####:  328:		return;
+        -:  329:	}
+        -:  330:	/* We can handle this locale */
+        1:  331:	setlocale(LC_CTYPE, "");
+        -:  332:}

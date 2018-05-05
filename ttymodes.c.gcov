@@ -1,0 +1,491 @@
+        -:    0:Source:ttymodes.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: ttymodes.c,v 1.30 2016/05/04 14:22:33 markus Exp $ */
+        -:    2:/*
+        -:    3: * Author: Tatu Ylonen <ylo@cs.hut.fi>
+        -:    4: * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
+        -:    5: *                    All rights reserved
+        -:    6: *
+        -:    7: * As far as I am concerned, the code I have written for this software
+        -:    8: * can be used freely for any purpose.  Any derived versions of this
+        -:    9: * software must be clearly marked as such, and if the derived work is
+        -:   10: * incompatible with the protocol description in the RFC file, it must be
+        -:   11: * called by a name other than "ssh" or "Secure Shell".
+        -:   12: */
+        -:   13:
+        -:   14:/*
+        -:   15: * SSH2 tty modes support by Kevin Steves.
+        -:   16: * Copyright (c) 2001 Kevin Steves.  All rights reserved.
+        -:   17: *
+        -:   18: * Redistribution and use in source and binary forms, with or without
+        -:   19: * modification, are permitted provided that the following conditions
+        -:   20: * are met:
+        -:   21: * 1. Redistributions of source code must retain the above copyright
+        -:   22: *    notice, this list of conditions and the following disclaimer.
+        -:   23: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   24: *    notice, this list of conditions and the following disclaimer in the
+        -:   25: *    documentation and/or other materials provided with the distribution.
+        -:   26: *
+        -:   27: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   28: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   29: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   30: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   31: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   32: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   33: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   34: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   35: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   36: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   37: */
+        -:   38:
+        -:   39:/*
+        -:   40: * Encoding and decoding of terminal modes in a portable way.
+        -:   41: * Much of the format is defined in ttymodes.h; it is included multiple times
+        -:   42: * into this file with the appropriate macro definitions to generate the
+        -:   43: * suitable code.
+        -:   44: */
+        -:   45:
+        -:   46:#include "includes.h"
+        -:   47:
+        -:   48:#include <sys/types.h>
+        -:   49:
+        -:   50:#include <errno.h>
+        -:   51:#include <string.h>
+        -:   52:#include <termios.h>
+        -:   53:#include <stdarg.h>
+        -:   54:
+        -:   55:#include "packet.h"
+        -:   56:#include "log.h"
+        -:   57:#include "compat.h"
+        -:   58:#include "buffer.h"
+        -:   59:
+        -:   60:#define TTY_OP_END		0
+        -:   61:/*
+        -:   62: * uint32 (u_int) follows speed in SSH1 and SSH2
+        -:   63: */
+        -:   64:#define TTY_OP_ISPEED_PROTO1	192
+        -:   65:#define TTY_OP_OSPEED_PROTO1	193
+        -:   66:#define TTY_OP_ISPEED_PROTO2	128
+        -:   67:#define TTY_OP_OSPEED_PROTO2	129
+        -:   68:
+        -:   69:/*
+        -:   70: * Converts POSIX speed_t to a baud rate.  The values of the
+        -:   71: * constants for speed_t are not themselves portable.
+        -:   72: */
+        -:   73:static int
+        2:   74:speed_to_baud(speed_t speed)
+        -:   75:{
+        2:   76:	switch (speed) {
+        -:   77:	case B0:
+    #####:   78:		return 0;
+        -:   79:	case B50:
+    #####:   80:		return 50;
+        -:   81:	case B75:
+    #####:   82:		return 75;
+        -:   83:	case B110:
+    #####:   84:		return 110;
+        -:   85:	case B134:
+    #####:   86:		return 134;
+        -:   87:	case B150:
+    #####:   88:		return 150;
+        -:   89:	case B200:
+    #####:   90:		return 200;
+        -:   91:	case B300:
+    #####:   92:		return 300;
+        -:   93:	case B600:
+    #####:   94:		return 600;
+        -:   95:	case B1200:
+    #####:   96:		return 1200;
+        -:   97:	case B1800:
+    #####:   98:		return 1800;
+        -:   99:	case B2400:
+    #####:  100:		return 2400;
+        -:  101:	case B4800:
+    #####:  102:		return 4800;
+        -:  103:	case B9600:
+    #####:  104:		return 9600;
+        -:  105:
+        -:  106:#ifdef B19200
+        -:  107:	case B19200:
+    #####:  108:		return 19200;
+        -:  109:#else /* B19200 */
+        -:  110:#ifdef EXTA
+        -:  111:	case EXTA:
+        -:  112:		return 19200;
+        -:  113:#endif /* EXTA */
+        -:  114:#endif /* B19200 */
+        -:  115:
+        -:  116:#ifdef B38400
+        -:  117:	case B38400:
+        2:  118:		return 38400;
+        -:  119:#else /* B38400 */
+        -:  120:#ifdef EXTB
+        -:  121:	case EXTB:
+        -:  122:		return 38400;
+        -:  123:#endif /* EXTB */
+        -:  124:#endif /* B38400 */
+        -:  125:
+        -:  126:#ifdef B7200
+        -:  127:	case B7200:
+        -:  128:		return 7200;
+        -:  129:#endif /* B7200 */
+        -:  130:#ifdef B14400
+        -:  131:	case B14400:
+        -:  132:		return 14400;
+        -:  133:#endif /* B14400 */
+        -:  134:#ifdef B28800
+        -:  135:	case B28800:
+        -:  136:		return 28800;
+        -:  137:#endif /* B28800 */
+        -:  138:#ifdef B57600
+        -:  139:	case B57600:
+    #####:  140:		return 57600;
+        -:  141:#endif /* B57600 */
+        -:  142:#ifdef B76800
+        -:  143:	case B76800:
+        -:  144:		return 76800;
+        -:  145:#endif /* B76800 */
+        -:  146:#ifdef B115200
+        -:  147:	case B115200:
+    #####:  148:		return 115200;
+        -:  149:#endif /* B115200 */
+        -:  150:#ifdef B230400
+        -:  151:	case B230400:
+    #####:  152:		return 230400;
+        -:  153:#endif /* B230400 */
+        -:  154:	default:
+    #####:  155:		return 9600;
+        -:  156:	}
+        -:  157:}
+        -:  158:
+        -:  159:/*
+        -:  160: * Converts a numeric baud rate to a POSIX speed_t.
+        -:  161: */
+        -:  162:static speed_t
+    #####:  163:baud_to_speed(int baud)
+        -:  164:{
+    #####:  165:	switch (baud) {
+        -:  166:	case 0:
+    #####:  167:		return B0;
+        -:  168:	case 50:
+    #####:  169:		return B50;
+        -:  170:	case 75:
+    #####:  171:		return B75;
+        -:  172:	case 110:
+    #####:  173:		return B110;
+        -:  174:	case 134:
+    #####:  175:		return B134;
+        -:  176:	case 150:
+    #####:  177:		return B150;
+        -:  178:	case 200:
+    #####:  179:		return B200;
+        -:  180:	case 300:
+    #####:  181:		return B300;
+        -:  182:	case 600:
+    #####:  183:		return B600;
+        -:  184:	case 1200:
+    #####:  185:		return B1200;
+        -:  186:	case 1800:
+    #####:  187:		return B1800;
+        -:  188:	case 2400:
+    #####:  189:		return B2400;
+        -:  190:	case 4800:
+    #####:  191:		return B4800;
+        -:  192:	case 9600:
+    #####:  193:		return B9600;
+        -:  194:
+        -:  195:#ifdef B19200
+        -:  196:	case 19200:
+    #####:  197:		return B19200;
+        -:  198:#else /* B19200 */
+        -:  199:#ifdef EXTA
+        -:  200:	case 19200:
+        -:  201:		return EXTA;
+        -:  202:#endif /* EXTA */
+        -:  203:#endif /* B19200 */
+        -:  204:
+        -:  205:#ifdef B38400
+        -:  206:	case 38400:
+    #####:  207:		return B38400;
+        -:  208:#else /* B38400 */
+        -:  209:#ifdef EXTB
+        -:  210:	case 38400:
+        -:  211:		return EXTB;
+        -:  212:#endif /* EXTB */
+        -:  213:#endif /* B38400 */
+        -:  214:
+        -:  215:#ifdef B7200
+        -:  216:	case 7200:
+        -:  217:		return B7200;
+        -:  218:#endif /* B7200 */
+        -:  219:#ifdef B14400
+        -:  220:	case 14400:
+        -:  221:		return B14400;
+        -:  222:#endif /* B14400 */
+        -:  223:#ifdef B28800
+        -:  224:	case 28800:
+        -:  225:		return B28800;
+        -:  226:#endif /* B28800 */
+        -:  227:#ifdef B57600
+        -:  228:	case 57600:
+    #####:  229:		return B57600;
+        -:  230:#endif /* B57600 */
+        -:  231:#ifdef B76800
+        -:  232:	case 76800:
+        -:  233:		return B76800;
+        -:  234:#endif /* B76800 */
+        -:  235:#ifdef B115200
+        -:  236:	case 115200:
+    #####:  237:		return B115200;
+        -:  238:#endif /* B115200 */
+        -:  239:#ifdef B230400
+        -:  240:	case 230400:
+    #####:  241:		return B230400;
+        -:  242:#endif /* B230400 */
+        -:  243:	default:
+    #####:  244:		return B9600;
+        -:  245:	}
+        -:  246:}
+        -:  247:
+        -:  248:/*
+        -:  249: * Encode a special character into SSH line format.
+        -:  250: */
+        -:  251:static u_int
+       14:  252:special_char_encode(cc_t c)
+        -:  253:{
+        -:  254:#ifdef _POSIX_VDISABLE
+        -:  255:	if (c == _POSIX_VDISABLE)
+        -:  256:		return 255;
+        -:  257:#endif /* _POSIX_VDISABLE */
+       14:  258:	return c;
+        -:  259:}
+        -:  260:
+        -:  261:/*
+        -:  262: * Decode a special character from SSH line format.
+        -:  263: */
+        -:  264:static cc_t
+    #####:  265:special_char_decode(u_int c)
+        -:  266:{
+        -:  267:#ifdef _POSIX_VDISABLE
+        -:  268:	if (c == 255)
+        -:  269:		return _POSIX_VDISABLE;
+        -:  270:#endif /* _POSIX_VDISABLE */
+    #####:  271:	return c;
+        -:  272:}
+        -:  273:
+        -:  274:/*
+        -:  275: * Encodes terminal modes for the terminal referenced by fd
+        -:  276: * or tiop in a portable manner, and appends the modes to a packet
+        -:  277: * being constructed.
+        -:  278: */
+        -:  279:void
+        1:  280:tty_make_modes(int fd, struct termios *tiop)
+        -:  281:{
+        -:  282:	struct termios tio;
+        -:  283:	int baud;
+        -:  284:	Buffer buf;
+        -:  285:	int tty_op_ospeed, tty_op_ispeed;
+        -:  286:	void (*put_arg)(Buffer *, u_int);
+        -:  287:
+        1:  288:	buffer_init(&buf);
+        1:  289:	if (compat20) {
+        1:  290:		tty_op_ospeed = TTY_OP_OSPEED_PROTO2;
+        1:  291:		tty_op_ispeed = TTY_OP_ISPEED_PROTO2;
+        1:  292:		put_arg = buffer_put_int;
+        -:  293:	} else {
+    #####:  294:		tty_op_ospeed = TTY_OP_OSPEED_PROTO1;
+    #####:  295:		tty_op_ispeed = TTY_OP_ISPEED_PROTO1;
+    #####:  296:		put_arg = (void (*)(Buffer *, u_int)) buffer_put_char;
+        -:  297:	}
+        -:  298:
+        1:  299:	if (tiop == NULL) {
+    #####:  300:		if (fd == -1) {
+    #####:  301:			debug("tty_make_modes: no fd or tio");
+    #####:  302:			goto end;
+        -:  303:		}
+    #####:  304:		if (tcgetattr(fd, &tio) == -1) {
+    #####:  305:			logit("tcgetattr: %.100s", strerror(errno));
+    #####:  306:			goto end;
+        -:  307:		}
+        -:  308:	} else
+        1:  309:		tio = *tiop;
+        -:  310:
+        -:  311:	/* Store input and output baud rates. */
+        1:  312:	baud = speed_to_baud(cfgetospeed(&tio));
+        1:  313:	buffer_put_char(&buf, tty_op_ospeed);
+        1:  314:	buffer_put_int(&buf, baud);
+        1:  315:	baud = speed_to_baud(cfgetispeed(&tio));
+        1:  316:	buffer_put_char(&buf, tty_op_ispeed);
+        1:  317:	buffer_put_int(&buf, baud);
+        -:  318:
+        -:  319:	/* Store values of mode flags. */
+        -:  320:#define TTYCHAR(NAME, OP) \
+        -:  321:	buffer_put_char(&buf, OP); \
+        -:  322:	put_arg(&buf, special_char_encode(tio.c_cc[NAME]));
+        -:  323:
+        -:  324:#define TTYMODE(NAME, FIELD, OP) \
+        -:  325:	buffer_put_char(&buf, OP); \
+        -:  326:	put_arg(&buf, ((tio.FIELD & NAME) != 0));
+        -:  327:
+        -:  328:#include "ttymodes.h"
+        -:  329:
+        -:  330:#undef TTYCHAR
+        -:  331:#undef TTYMODE
+        -:  332:
+        -:  333:end:
+        -:  334:	/* Mark end of mode data. */
+        1:  335:	buffer_put_char(&buf, TTY_OP_END);
+        1:  336:	if (compat20)
+        1:  337:		packet_put_string(buffer_ptr(&buf), buffer_len(&buf));
+        -:  338:	else
+    #####:  339:		packet_put_raw(buffer_ptr(&buf), buffer_len(&buf));
+        1:  340:	buffer_free(&buf);
+        1:  341:}
+        -:  342:
+        -:  343:/*
+        -:  344: * Decodes terminal modes for the terminal referenced by fd in a portable
+        -:  345: * manner from a packet being read.
+        -:  346: */
+        -:  347:void
+    #####:  348:tty_parse_modes(int fd, int *n_bytes_ptr)
+        -:  349:{
+        -:  350:	struct termios tio;
+        -:  351:	int opcode, baud;
+    #####:  352:	int n_bytes = 0;
+    #####:  353:	int failure = 0;
+        -:  354:	u_int (*get_arg)(void);
+        -:  355:	int arg_size;
+        -:  356:
+    #####:  357:	if (compat20) {
+    #####:  358:		*n_bytes_ptr = packet_get_int();
+    #####:  359:		if (*n_bytes_ptr == 0)
+    #####:  360:			return;
+    #####:  361:		get_arg = packet_get_int;
+    #####:  362:		arg_size = 4;
+        -:  363:	} else {
+    #####:  364:		get_arg = packet_get_char;
+    #####:  365:		arg_size = 1;
+        -:  366:	}
+        -:  367:
+        -:  368:	/*
+        -:  369:	 * Get old attributes for the terminal.  We will modify these
+        -:  370:	 * flags. I am hoping that if there are any machine-specific
+        -:  371:	 * modes, they will initially have reasonable values.
+        -:  372:	 */
+    #####:  373:	if (tcgetattr(fd, &tio) == -1) {
+    #####:  374:		logit("tcgetattr: %.100s", strerror(errno));
+    #####:  375:		failure = -1;
+        -:  376:	}
+        -:  377:
+        -:  378:	for (;;) {
+    #####:  379:		n_bytes += 1;
+    #####:  380:		opcode = packet_get_char();
+    #####:  381:		switch (opcode) {
+        -:  382:		case TTY_OP_END:
+    #####:  383:			goto set;
+        -:  384:
+        -:  385:		/* XXX: future conflict possible */
+        -:  386:		case TTY_OP_ISPEED_PROTO1:
+        -:  387:		case TTY_OP_ISPEED_PROTO2:
+    #####:  388:			n_bytes += 4;
+    #####:  389:			baud = packet_get_int();
+    #####:  390:			if (failure != -1 &&
+    #####:  391:			    cfsetispeed(&tio, baud_to_speed(baud)) == -1)
+    #####:  392:				error("cfsetispeed failed for %d", baud);
+    #####:  393:			break;
+        -:  394:
+        -:  395:		/* XXX: future conflict possible */
+        -:  396:		case TTY_OP_OSPEED_PROTO1:
+        -:  397:		case TTY_OP_OSPEED_PROTO2:
+    #####:  398:			n_bytes += 4;
+    #####:  399:			baud = packet_get_int();
+    #####:  400:			if (failure != -1 &&
+    #####:  401:			    cfsetospeed(&tio, baud_to_speed(baud)) == -1)
+    #####:  402:				error("cfsetospeed failed for %d", baud);
+    #####:  403:			break;
+        -:  404:
+        -:  405:#define TTYCHAR(NAME, OP) \
+        -:  406:	case OP: \
+        -:  407:	  n_bytes += arg_size; \
+        -:  408:	  tio.c_cc[NAME] = special_char_decode(get_arg()); \
+        -:  409:	  break;
+        -:  410:#define TTYMODE(NAME, FIELD, OP) \
+        -:  411:	case OP: \
+        -:  412:	  n_bytes += arg_size; \
+        -:  413:	  if (get_arg()) \
+        -:  414:	    tio.FIELD |= NAME; \
+        -:  415:	  else \
+        -:  416:	    tio.FIELD &= ~NAME;	\
+        -:  417:	  break;
+        -:  418:
+        -:  419:#include "ttymodes.h"
+        -:  420:
+        -:  421:#undef TTYCHAR
+        -:  422:#undef TTYMODE
+        -:  423:
+        -:  424:		default:
+    #####:  425:			debug("Ignoring unsupported tty mode opcode %d (0x%x)",
+        -:  426:			    opcode, opcode);
+    #####:  427:			if (!compat20) {
+        -:  428:				/*
+        -:  429:				 * SSH1:
+        -:  430:				 * Opcodes 1 to 127 are defined to have
+        -:  431:				 * a one-byte argument.
+        -:  432:				 * Opcodes 128 to 159 are defined to have
+        -:  433:				 * an integer argument.
+        -:  434:				 */
+    #####:  435:				if (opcode > 0 && opcode < 128) {
+    #####:  436:					n_bytes += 1;
+    #####:  437:					(void) packet_get_char();
+    #####:  438:					break;
+    #####:  439:				} else if (opcode >= 128 && opcode < 160) {
+    #####:  440:					n_bytes += 4;
+    #####:  441:					(void) packet_get_int();
+    #####:  442:					break;
+        -:  443:				} else {
+        -:  444:					/*
+        -:  445:					 * It is a truly undefined opcode (160 to 255).
+        -:  446:					 * We have no idea about its arguments.  So we
+        -:  447:					 * must stop parsing.  Note that some data
+        -:  448:					 * may be left in the packet; hopefully there
+        -:  449:					 * is nothing more coming after the mode data.
+        -:  450:					 */
+    #####:  451:					logit("parse_tty_modes: unknown opcode %d",
+        -:  452:					    opcode);
+    #####:  453:					goto set;
+        -:  454:				}
+        -:  455:			} else {
+        -:  456:				/*
+        -:  457:				 * SSH2:
+        -:  458:				 * Opcodes 1 to 159 are defined to have
+        -:  459:				 * a uint32 argument.
+        -:  460:				 * Opcodes 160 to 255 are undefined and
+        -:  461:				 * cause parsing to stop.
+        -:  462:				 */
+    #####:  463:				if (opcode > 0 && opcode < 160) {
+    #####:  464:					n_bytes += 4;
+    #####:  465:					(void) packet_get_int();
+    #####:  466:					break;
+        -:  467:				} else {
+    #####:  468:					logit("parse_tty_modes: unknown opcode %d",
+        -:  469:					    opcode);
+    #####:  470:					goto set;
+        -:  471:				}
+        -:  472:			}
+        -:  473:		}
+    #####:  474:	}
+        -:  475:
+        -:  476:set:
+    #####:  477:	if (*n_bytes_ptr != n_bytes) {
+    #####:  478:		*n_bytes_ptr = n_bytes;
+    #####:  479:		logit("parse_tty_modes: n_bytes_ptr != n_bytes: %d %d",
+        -:  480:		    *n_bytes_ptr, n_bytes);
+    #####:  481:		return;		/* Don't process bytes passed */
+        -:  482:	}
+    #####:  483:	if (failure == -1)
+    #####:  484:		return;		/* Packet parsed ok but tcgetattr() failed */
+        -:  485:
+        -:  486:	/* Set the new modes for the terminal. */
+    #####:  487:	if (tcsetattr(fd, TCSANOW, &tio) == -1)
+    #####:  488:		logit("Setting tty modes failed: %.100s", strerror(errno));
+        -:  489:}

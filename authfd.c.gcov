@@ -1,0 +1,725 @@
+        -:    0:Source:authfd.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: authfd.c,v 1.100 2015/12/04 16:41:28 markus Exp $ */
+        -:    2:/*
+        -:    3: * Author: Tatu Ylonen <ylo@cs.hut.fi>
+        -:    4: * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
+        -:    5: *                    All rights reserved
+        -:    6: * Functions for connecting the local authentication agent.
+        -:    7: *
+        -:    8: * As far as I am concerned, the code I have written for this software
+        -:    9: * can be used freely for any purpose.  Any derived versions of this
+        -:   10: * software must be clearly marked as such, and if the derived work is
+        -:   11: * incompatible with the protocol description in the RFC file, it must be
+        -:   12: * called by a name other than "ssh" or "Secure Shell".
+        -:   13: *
+        -:   14: * SSH2 implementation,
+        -:   15: * Copyright (c) 2000 Markus Friedl.  All rights reserved.
+        -:   16: *
+        -:   17: * Redistribution and use in source and binary forms, with or without
+        -:   18: * modification, are permitted provided that the following conditions
+        -:   19: * are met:
+        -:   20: * 1. Redistributions of source code must retain the above copyright
+        -:   21: *    notice, this list of conditions and the following disclaimer.
+        -:   22: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   23: *    notice, this list of conditions and the following disclaimer in the
+        -:   24: *    documentation and/or other materials provided with the distribution.
+        -:   25: *
+        -:   26: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   27: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   28: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   29: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   30: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   31: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   32: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   33: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   34: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   35: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   36: */
+        -:   37:
+        -:   38:#include "includes.h"
+        -:   39:
+        -:   40:#include <sys/types.h>
+        -:   41:#include <sys/un.h>
+        -:   42:#include <sys/socket.h>
+        -:   43:
+        -:   44:#include <fcntl.h>
+        -:   45:#include <stdlib.h>
+        -:   46:#include <signal.h>
+        -:   47:#include <stdarg.h>
+        -:   48:#include <string.h>
+        -:   49:#include <unistd.h>
+        -:   50:#include <errno.h>
+        -:   51:
+        -:   52:#include "xmalloc.h"
+        -:   53:#include "ssh.h"
+        -:   54:#include "rsa.h"
+        -:   55:#include "sshbuf.h"
+        -:   56:#include "sshkey.h"
+        -:   57:#include "authfd.h"
+        -:   58:#include "cipher.h"
+        -:   59:#include "compat.h"
+        -:   60:#include "log.h"
+        -:   61:#include "atomicio.h"
+        -:   62:#include "misc.h"
+        -:   63:#include "ssherr.h"
+        -:   64:
+        -:   65:#define MAX_AGENT_IDENTITIES	2048		/* Max keys in agent reply */
+        -:   66:#define MAX_AGENT_REPLY_LEN	(256 * 1024) 	/* Max bytes in agent reply */
+        -:   67:
+        -:   68:/* macro to check for "agent failure" message */
+        -:   69:#define agent_failed(x) \
+        -:   70:    ((x == SSH_AGENT_FAILURE) || \
+        -:   71:    (x == SSH_COM_AGENT2_FAILURE) || \
+        -:   72:    (x == SSH2_AGENT_FAILURE))
+        -:   73:
+        -:   74:/* Convert success/failure response from agent to a err.h status */
+        -:   75:static int
+    #####:   76:decode_reply(u_char type)
+        -:   77:{
+    #####:   78:	if (agent_failed(type))
+    #####:   79:		return SSH_ERR_AGENT_FAILURE;
+    #####:   80:	else if (type == SSH_AGENT_SUCCESS)
+    #####:   81:		return 0;
+        -:   82:	else
+    #####:   83:		return SSH_ERR_INVALID_FORMAT;
+        -:   84:}
+        -:   85:
+        -:   86:/* Returns the number of the authentication fd, or -1 if there is none. */
+        -:   87:int
+        1:   88:ssh_get_authentication_socket(int *fdp)
+        -:   89:{
+        -:   90:	const char *authsocket;
+        -:   91:	int sock, oerrno;
+        -:   92:	struct sockaddr_un sunaddr;
+        -:   93:
+        1:   94:	if (fdp != NULL)
+        1:   95:		*fdp = -1;
+        -:   96:
+        1:   97:	authsocket = getenv(SSH_AUTHSOCKET_ENV_NAME);
+        1:   98:	if (!authsocket)
+        1:   99:		return SSH_ERR_AGENT_NOT_PRESENT;
+        -:  100:
+    #####:  101:	memset(&sunaddr, 0, sizeof(sunaddr));
+    #####:  102:	sunaddr.sun_family = AF_UNIX;
+    #####:  103:	strlcpy(sunaddr.sun_path, authsocket, sizeof(sunaddr.sun_path));
+        -:  104:
+    #####:  105:	if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
+    #####:  106:		return SSH_ERR_SYSTEM_ERROR;
+        -:  107:
+        -:  108:	/* close on exec */
+    #####:  109:	if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1 ||
+    #####:  110:	    connect(sock, (struct sockaddr *)&sunaddr, sizeof(sunaddr)) < 0) {
+    #####:  111:		oerrno = errno;
+    #####:  112:		close(sock);
+    #####:  113:		errno = oerrno;
+    #####:  114:		return SSH_ERR_SYSTEM_ERROR;
+        -:  115:	}
+    #####:  116:	if (fdp != NULL)
+    #####:  117:		*fdp = sock;
+        -:  118:	else
+    #####:  119:		close(sock);
+    #####:  120:	return 0;
+        -:  121:}
+        -:  122:
+        -:  123:/* Communicate with agent: send request and read reply */
+        -:  124:static int
+    #####:  125:ssh_request_reply(int sock, struct sshbuf *request, struct sshbuf *reply)
+        -:  126:{
+        -:  127:	int r;
+        -:  128:	size_t l, len;
+        -:  129:	char buf[1024];
+        -:  130:
+        -:  131:	/* Get the length of the message, and format it in the buffer. */
+    #####:  132:	len = sshbuf_len(request);
+    #####:  133:	put_u32(buf, len);
+        -:  134:
+        -:  135:	/* Send the length and then the packet to the agent. */
+    #####:  136:	if (atomicio(vwrite, sock, buf, 4) != 4 ||
+    #####:  137:	    atomicio(vwrite, sock, (u_char *)sshbuf_ptr(request),
+    #####:  138:	    sshbuf_len(request)) != sshbuf_len(request))
+    #####:  139:		return SSH_ERR_AGENT_COMMUNICATION;
+        -:  140:	/*
+        -:  141:	 * Wait for response from the agent.  First read the length of the
+        -:  142:	 * response packet.
+        -:  143:	 */
+    #####:  144:	if (atomicio(read, sock, buf, 4) != 4)
+    #####:  145:	    return SSH_ERR_AGENT_COMMUNICATION;
+        -:  146:
+        -:  147:	/* Extract the length, and check it for sanity. */
+    #####:  148:	len = get_u32(buf);
+    #####:  149:	if (len > MAX_AGENT_REPLY_LEN)
+    #####:  150:		return SSH_ERR_INVALID_FORMAT;
+        -:  151:
+        -:  152:	/* Read the rest of the response in to the buffer. */
+    #####:  153:	sshbuf_reset(reply);
+    #####:  154:	while (len > 0) {
+    #####:  155:		l = len;
+    #####:  156:		if (l > sizeof(buf))
+    #####:  157:			l = sizeof(buf);
+    #####:  158:		if (atomicio(read, sock, buf, l) != l)
+    #####:  159:			return SSH_ERR_AGENT_COMMUNICATION;
+    #####:  160:		if ((r = sshbuf_put(reply, buf, l)) != 0)
+    #####:  161:			return r;
+    #####:  162:		len -= l;
+        -:  163:	}
+    #####:  164:	return 0;
+        -:  165:}
+        -:  166:
+        -:  167:/*
+        -:  168: * Closes the agent socket if it should be closed (depends on how it was
+        -:  169: * obtained).  The argument must have been returned by
+        -:  170: * ssh_get_authentication_socket().
+        -:  171: */
+        -:  172:void
+    #####:  173:ssh_close_authentication_socket(int sock)
+        -:  174:{
+    #####:  175:	if (getenv(SSH_AUTHSOCKET_ENV_NAME))
+    #####:  176:		close(sock);
+    #####:  177:}
+        -:  178:
+        -:  179:/* Lock/unlock agent */
+        -:  180:int
+    #####:  181:ssh_lock_agent(int sock, int lock, const char *password)
+        -:  182:{
+        -:  183:	int r;
+    #####:  184:	u_char type = lock ? SSH_AGENTC_LOCK : SSH_AGENTC_UNLOCK;
+        -:  185:	struct sshbuf *msg;
+        -:  186:
+    #####:  187:	if ((msg = sshbuf_new()) == NULL)
+    #####:  188:		return SSH_ERR_ALLOC_FAIL;
+    #####:  189:	if ((r = sshbuf_put_u8(msg, type)) != 0 ||
+        -:  190:	    (r = sshbuf_put_cstring(msg, password)) != 0)
+        -:  191:		goto out;
+    #####:  192:	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
+    #####:  193:		goto out;
+    #####:  194:	if ((r = sshbuf_get_u8(msg, &type)) != 0)
+    #####:  195:		goto out;
+    #####:  196:	r = decode_reply(type);
+        -:  197: out:
+    #####:  198:	sshbuf_free(msg);
+    #####:  199:	return r;
+        -:  200:}
+        -:  201:
+        -:  202:#ifdef WITH_SSH1
+        -:  203:static int
+        -:  204:deserialise_identity1(struct sshbuf *ids, struct sshkey **keyp, char **commentp)
+        -:  205:{
+        -:  206:	struct sshkey *key;
+        -:  207:	int r, keybits;
+        -:  208:	u_int32_t bits;
+        -:  209:	char *comment = NULL;
+        -:  210:
+        -:  211:	if ((key = sshkey_new(KEY_RSA1)) == NULL)
+        -:  212:		return SSH_ERR_ALLOC_FAIL;
+        -:  213:	if ((r = sshbuf_get_u32(ids, &bits)) != 0 ||
+        -:  214:	    (r = sshbuf_get_bignum1(ids, key->rsa->e)) != 0 ||
+        -:  215:	    (r = sshbuf_get_bignum1(ids, key->rsa->n)) != 0 ||
+        -:  216:	    (r = sshbuf_get_cstring(ids, &comment, NULL)) != 0)
+        -:  217:		goto out;
+        -:  218:	keybits = BN_num_bits(key->rsa->n);
+        -:  219:	/* XXX previously we just warned here. I think we should be strict */
+        -:  220:	if (keybits < 0 || bits != (u_int)keybits) {
+        -:  221:		r = SSH_ERR_KEY_BITS_MISMATCH;
+        -:  222:		goto out;
+        -:  223:	}
+        -:  224:	if (keyp != NULL) {
+        -:  225:		*keyp = key;
+        -:  226:		key = NULL;
+        -:  227:	}
+        -:  228:	if (commentp != NULL) {
+        -:  229:		*commentp = comment;
+        -:  230:		comment = NULL;
+        -:  231:	}
+        -:  232:	r = 0;
+        -:  233: out:
+        -:  234:	sshkey_free(key);
+        -:  235:	free(comment);
+        -:  236:	return r;
+        -:  237:}
+        -:  238:#endif
+        -:  239:
+        -:  240:
+        -:  241:static int
+    #####:  242:deserialise_identity2(struct sshbuf *ids, struct sshkey **keyp, char **commentp)
+        -:  243:{
+        -:  244:	int r;
+    #####:  245:	char *comment = NULL;
+        -:  246:	const u_char *blob;
+        -:  247:	size_t blen;
+        -:  248:
+    #####:  249:	if ((r = sshbuf_get_string_direct(ids, &blob, &blen)) != 0 ||
+        -:  250:	    (r = sshbuf_get_cstring(ids, &comment, NULL)) != 0)
+        -:  251:		goto out;
+    #####:  252:	if ((r = sshkey_from_blob(blob, blen, keyp)) != 0)
+    #####:  253:		goto out;
+    #####:  254:	if (commentp != NULL) {
+    #####:  255:		*commentp = comment;
+    #####:  256:		comment = NULL;
+        -:  257:	}
+    #####:  258:	r = 0;
+        -:  259: out:
+    #####:  260:	free(comment);
+    #####:  261:	return r;
+        -:  262:}
+        -:  263:
+        -:  264:/*
+        -:  265: * Fetch list of identities held by the agent.
+        -:  266: */
+        -:  267:
+        -:  268:int
+    #####:  269:ssh_fetch_identitylist(int sock, int version, struct ssh_identitylist **idlp)
+        -:  270:{
+    #####:  271:	u_char type, code1 = 0, code2 = 0;
+        -:  272:	u_int32_t num, i;
+        -:  273:	struct sshbuf *msg;
+    #####:  274:	struct ssh_identitylist *idl = NULL;
+        -:  275:	int r;
+        -:  276:
+        -:  277:	/* Determine request and expected response types */
+    #####:  278:	switch (version) {
+        -:  279:	case 1:
+    #####:  280:		code1 = SSH_AGENTC_REQUEST_RSA_IDENTITIES;
+    #####:  281:		code2 = SSH_AGENT_RSA_IDENTITIES_ANSWER;
+    #####:  282:		break;
+        -:  283:	case 2:
+    #####:  284:		code1 = SSH2_AGENTC_REQUEST_IDENTITIES;
+    #####:  285:		code2 = SSH2_AGENT_IDENTITIES_ANSWER;
+    #####:  286:		break;
+        -:  287:	default:
+    #####:  288:		return SSH_ERR_INVALID_ARGUMENT;
+        -:  289:	}
+        -:  290:
+        -:  291:	/*
+        -:  292:	 * Send a message to the agent requesting for a list of the
+        -:  293:	 * identities it can represent.
+        -:  294:	 */
+    #####:  295:	if ((msg = sshbuf_new()) == NULL)
+    #####:  296:		return SSH_ERR_ALLOC_FAIL;
+    #####:  297:	if ((r = sshbuf_put_u8(msg, code1)) != 0)
+    #####:  298:		goto out;
+        -:  299:
+    #####:  300:	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
+    #####:  301:		goto out;
+        -:  302:
+        -:  303:	/* Get message type, and verify that we got a proper answer. */
+    #####:  304:	if ((r = sshbuf_get_u8(msg, &type)) != 0)
+    #####:  305:		goto out;
+    #####:  306:	if (agent_failed(type)) {
+    #####:  307:		r = SSH_ERR_AGENT_FAILURE;
+    #####:  308:		goto out;
+    #####:  309:	} else if (type != code2) {
+    #####:  310:		r = SSH_ERR_INVALID_FORMAT;
+    #####:  311:		goto out;
+        -:  312:	}
+        -:  313:
+        -:  314:	/* Get the number of entries in the response and check it for sanity. */
+    #####:  315:	if ((r = sshbuf_get_u32(msg, &num)) != 0)
+    #####:  316:		goto out;
+    #####:  317:	if (num > MAX_AGENT_IDENTITIES) {
+    #####:  318:		r = SSH_ERR_INVALID_FORMAT;
+    #####:  319:		goto out;
+        -:  320:	}
+    #####:  321:	if (num == 0) {
+    #####:  322:		r = SSH_ERR_AGENT_NO_IDENTITIES;
+    #####:  323:		goto out;
+        -:  324:	}
+        -:  325:
+        -:  326:	/* Deserialise the response into a list of keys/comments */
+    #####:  327:	if ((idl = calloc(1, sizeof(*idl))) == NULL ||
+    #####:  328:	    (idl->keys = calloc(num, sizeof(*idl->keys))) == NULL ||
+    #####:  329:	    (idl->comments = calloc(num, sizeof(*idl->comments))) == NULL) {
+    #####:  330:		r = SSH_ERR_ALLOC_FAIL;
+    #####:  331:		goto out;
+        -:  332:	}
+    #####:  333:	for (i = 0; i < num;) {
+    #####:  334:		switch (version) {
+        -:  335:		case 1:
+        -:  336:#ifdef WITH_SSH1
+        -:  337:			if ((r = deserialise_identity1(msg,
+        -:  338:			    &(idl->keys[i]), &(idl->comments[i]))) != 0)
+        -:  339:				goto out;
+        -:  340:#endif
+    #####:  341:			break;
+        -:  342:		case 2:
+    #####:  343:			if ((r = deserialise_identity2(msg,
+    #####:  344:			    &(idl->keys[i]), &(idl->comments[i]))) != 0) {
+    #####:  345:				if (r == SSH_ERR_KEY_TYPE_UNKNOWN) {
+        -:  346:					/* Gracefully skip unknown key types */
+    #####:  347:					num--;
+    #####:  348:					continue;
+        -:  349:				} else
+    #####:  350:					goto out;
+        -:  351:			}
+    #####:  352:			break;
+        -:  353:		}
+    #####:  354:		i++;
+        -:  355:	}
+    #####:  356:	idl->nkeys = num;
+    #####:  357:	*idlp = idl;
+    #####:  358:	idl = NULL;
+    #####:  359:	r = 0;
+        -:  360: out:
+    #####:  361:	sshbuf_free(msg);
+    #####:  362:	if (idl != NULL)
+    #####:  363:		ssh_free_identitylist(idl);
+    #####:  364:	return r;
+        -:  365:}
+        -:  366:
+        -:  367:void
+    #####:  368:ssh_free_identitylist(struct ssh_identitylist *idl)
+        -:  369:{
+        -:  370:	size_t i;
+        -:  371:
+    #####:  372:	if (idl == NULL)
+    #####:  373:		return;
+    #####:  374:	for (i = 0; i < idl->nkeys; i++) {
+    #####:  375:		if (idl->keys != NULL)
+    #####:  376:			sshkey_free(idl->keys[i]);
+    #####:  377:		if (idl->comments != NULL)
+    #####:  378:			free(idl->comments[i]);
+        -:  379:	}
+    #####:  380:	free(idl);
+        -:  381:}
+        -:  382:
+        -:  383:/*
+        -:  384: * Sends a challenge (typically from a server via ssh(1)) to the agent,
+        -:  385: * and waits for a response from the agent.
+        -:  386: * Returns true (non-zero) if the agent gave the correct answer, zero
+        -:  387: * otherwise.
+        -:  388: */
+        -:  389:
+        -:  390:#ifdef WITH_SSH1
+        -:  391:int
+        -:  392:ssh_decrypt_challenge(int sock, struct sshkey* key, BIGNUM *challenge,
+        -:  393:    u_char session_id[16], u_char response[16])
+        -:  394:{
+        -:  395:	struct sshbuf *msg;
+        -:  396:	int r;
+        -:  397:	u_char type;
+        -:  398:
+        -:  399:	if (key->type != KEY_RSA1)
+        -:  400:		return SSH_ERR_INVALID_ARGUMENT;
+        -:  401:	if ((msg = sshbuf_new()) == NULL)
+        -:  402:		return SSH_ERR_ALLOC_FAIL;
+        -:  403:	if ((r = sshbuf_put_u8(msg, SSH_AGENTC_RSA_CHALLENGE)) != 0 ||
+        -:  404:	    (r = sshbuf_put_u32(msg, BN_num_bits(key->rsa->n))) != 0 ||
+        -:  405:	    (r = sshbuf_put_bignum1(msg, key->rsa->e)) != 0 ||
+        -:  406:	    (r = sshbuf_put_bignum1(msg, key->rsa->n)) != 0 ||
+        -:  407:	    (r = sshbuf_put_bignum1(msg, challenge)) != 0 ||
+        -:  408:	    (r = sshbuf_put(msg, session_id, 16)) != 0 ||
+        -:  409:	    (r = sshbuf_put_u32(msg, 1)) != 0) /* Response type for proto 1.1 */
+        -:  410:		goto out;
+        -:  411:	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
+        -:  412:		goto out;
+        -:  413:	if ((r = sshbuf_get_u8(msg, &type)) != 0)
+        -:  414:		goto out;
+        -:  415:	if (agent_failed(type)) {
+        -:  416:		r = SSH_ERR_AGENT_FAILURE;
+        -:  417:		goto out;
+        -:  418:	} else if (type != SSH_AGENT_RSA_RESPONSE) {
+        -:  419:		r = SSH_ERR_INVALID_FORMAT;
+        -:  420:		goto out;
+        -:  421:	}
+        -:  422:	if ((r = sshbuf_get(msg, response, 16)) != 0)
+        -:  423:		goto out;
+        -:  424:	r = 0;
+        -:  425: out:
+        -:  426:	sshbuf_free(msg);
+        -:  427:	return r;
+        -:  428:}
+        -:  429:#endif
+        -:  430:
+        -:  431:/* encode signature algoritm in flag bits, so we can keep the msg format */
+        -:  432:static u_int
+    #####:  433:agent_encode_alg(struct sshkey *key, const char *alg)
+        -:  434:{
+    #####:  435:	if (alg != NULL && key->type == KEY_RSA) {
+    #####:  436:		if (strcmp(alg, "rsa-sha2-256") == 0)
+    #####:  437:			return SSH_AGENT_RSA_SHA2_256;
+    #####:  438:		else if (strcmp(alg, "rsa-sha2-512") == 0)
+    #####:  439:			return SSH_AGENT_RSA_SHA2_512;
+        -:  440:	}
+    #####:  441:	return 0;
+        -:  442:}
+        -:  443:
+        -:  444:/* ask agent to sign data, returns err.h code on error, 0 on success */
+        -:  445:int
+    #####:  446:ssh_agent_sign(int sock, struct sshkey *key,
+        -:  447:    u_char **sigp, size_t *lenp,
+        -:  448:    const u_char *data, size_t datalen, const char *alg, u_int compat)
+        -:  449:{
+        -:  450:	struct sshbuf *msg;
+    #####:  451:	u_char *blob = NULL, type;
+    #####:  452:	size_t blen = 0, len = 0;
+    #####:  453:	u_int flags = 0;
+    #####:  454:	int r = SSH_ERR_INTERNAL_ERROR;
+        -:  455:
+    #####:  456:	*sigp = NULL;
+    #####:  457:	*lenp = 0;
+        -:  458:
+    #####:  459:	if (datalen > SSH_KEY_MAX_SIGN_DATA_SIZE)
+    #####:  460:		return SSH_ERR_INVALID_ARGUMENT;
+    #####:  461:	if (compat & SSH_BUG_SIGBLOB)
+    #####:  462:		flags |= SSH_AGENT_OLD_SIGNATURE;
+    #####:  463:	if ((msg = sshbuf_new()) == NULL)
+    #####:  464:		return SSH_ERR_ALLOC_FAIL;
+    #####:  465:	if ((r = sshkey_to_blob(key, &blob, &blen)) != 0)
+    #####:  466:		goto out;
+    #####:  467:	flags |= agent_encode_alg(key, alg);
+    #####:  468:	if ((r = sshbuf_put_u8(msg, SSH2_AGENTC_SIGN_REQUEST)) != 0 ||
+    #####:  469:	    (r = sshbuf_put_string(msg, blob, blen)) != 0 ||
+    #####:  470:	    (r = sshbuf_put_string(msg, data, datalen)) != 0 ||
+        -:  471:	    (r = sshbuf_put_u32(msg, flags)) != 0)
+        -:  472:		goto out;
+    #####:  473:	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
+    #####:  474:		goto out;
+    #####:  475:	if ((r = sshbuf_get_u8(msg, &type)) != 0)
+    #####:  476:		goto out;
+    #####:  477:	if (agent_failed(type)) {
+    #####:  478:		r = SSH_ERR_AGENT_FAILURE;
+    #####:  479:		goto out;
+    #####:  480:	} else if (type != SSH2_AGENT_SIGN_RESPONSE) {
+    #####:  481:		r = SSH_ERR_INVALID_FORMAT;
+    #####:  482:		goto out;
+        -:  483:	}
+    #####:  484:	if ((r = sshbuf_get_string(msg, sigp, &len)) != 0)
+    #####:  485:		goto out;
+    #####:  486:	*lenp = len;
+    #####:  487:	r = 0;
+        -:  488: out:
+    #####:  489:	if (blob != NULL) {
+    #####:  490:		explicit_bzero(blob, blen);
+    #####:  491:		free(blob);
+        -:  492:	}
+    #####:  493:	sshbuf_free(msg);
+    #####:  494:	return r;
+        -:  495:}
+        -:  496:
+        -:  497:/* Encode key for a message to the agent. */
+        -:  498:
+        -:  499:#ifdef WITH_SSH1
+        -:  500:static int
+        -:  501:ssh_encode_identity_rsa1(struct sshbuf *b, RSA *key, const char *comment)
+        -:  502:{
+        -:  503:	int r;
+        -:  504:
+        -:  505:	/* To keep within the protocol: p < q for ssh. in SSL p > q */
+        -:  506:	if ((r = sshbuf_put_u32(b, BN_num_bits(key->n))) != 0 ||
+        -:  507:	    (r = sshbuf_put_bignum1(b, key->n)) != 0 ||
+        -:  508:	    (r = sshbuf_put_bignum1(b, key->e)) != 0 ||
+        -:  509:	    (r = sshbuf_put_bignum1(b, key->d)) != 0 ||
+        -:  510:	    (r = sshbuf_put_bignum1(b, key->iqmp)) != 0 ||
+        -:  511:	    (r = sshbuf_put_bignum1(b, key->q)) != 0 ||
+        -:  512:	    (r = sshbuf_put_bignum1(b, key->p)) != 0 ||
+        -:  513:	    (r = sshbuf_put_cstring(b, comment)) != 0)
+        -:  514:		return r;
+        -:  515:	return 0;
+        -:  516:}
+        -:  517:#endif
+        -:  518:
+        -:  519:static int
+    #####:  520:ssh_encode_identity_ssh2(struct sshbuf *b, struct sshkey *key,
+        -:  521:    const char *comment)
+        -:  522:{
+        -:  523:	int r;
+        -:  524:
+    #####:  525:	if ((r = sshkey_private_serialize(key, b)) != 0 ||
+        -:  526:	    (r = sshbuf_put_cstring(b, comment)) != 0)
+    #####:  527:		return r;
+    #####:  528:	return 0;
+        -:  529:}
+        -:  530:
+        -:  531:static int
+    #####:  532:encode_constraints(struct sshbuf *m, u_int life, u_int confirm)
+        -:  533:{
+        -:  534:	int r;
+        -:  535:
+    #####:  536:	if (life != 0) {
+    #####:  537:		if ((r = sshbuf_put_u8(m, SSH_AGENT_CONSTRAIN_LIFETIME)) != 0 ||
+        -:  538:		    (r = sshbuf_put_u32(m, life)) != 0)
+        -:  539:			goto out;
+        -:  540:	}
+    #####:  541:	if (confirm != 0) {
+    #####:  542:		if ((r = sshbuf_put_u8(m, SSH_AGENT_CONSTRAIN_CONFIRM)) != 0)
+    #####:  543:			goto out;
+        -:  544:	}
+    #####:  545:	r = 0;
+        -:  546: out:
+    #####:  547:	return r;
+        -:  548:}
+        -:  549:
+        -:  550:/*
+        -:  551: * Adds an identity to the authentication server.
+        -:  552: * This call is intended only for use by ssh-add(1) and like applications.
+        -:  553: */
+        -:  554:int
+    #####:  555:ssh_add_identity_constrained(int sock, struct sshkey *key, const char *comment,
+        -:  556:    u_int life, u_int confirm)
+        -:  557:{
+        -:  558:	struct sshbuf *msg;
+    #####:  559:	int r, constrained = (life || confirm);
+        -:  560:	u_char type;
+        -:  561:
+    #####:  562:	if ((msg = sshbuf_new()) == NULL)
+    #####:  563:		return SSH_ERR_ALLOC_FAIL;
+        -:  564:
+    #####:  565:	switch (key->type) {
+        -:  566:#ifdef WITH_SSH1
+        -:  567:	case KEY_RSA1:
+        -:  568:		type = constrained ?
+        -:  569:		    SSH_AGENTC_ADD_RSA_ID_CONSTRAINED :
+        -:  570:		    SSH_AGENTC_ADD_RSA_IDENTITY;
+        -:  571:		if ((r = sshbuf_put_u8(msg, type)) != 0 ||
+        -:  572:		    (r = ssh_encode_identity_rsa1(msg, key->rsa, comment)) != 0)
+        -:  573:			goto out;
+        -:  574:		break;
+        -:  575:#endif
+        -:  576:#ifdef WITH_OPENSSL
+        -:  577:	case KEY_RSA:
+        -:  578:	case KEY_RSA_CERT:
+        -:  579:	case KEY_DSA:
+        -:  580:	case KEY_DSA_CERT:
+        -:  581:	case KEY_ECDSA:
+        -:  582:	case KEY_ECDSA_CERT:
+        -:  583:#endif
+        -:  584:	case KEY_ED25519:
+        -:  585:	case KEY_ED25519_CERT:
+    #####:  586:		type = constrained ?
+        -:  587:		    SSH2_AGENTC_ADD_ID_CONSTRAINED :
+        -:  588:		    SSH2_AGENTC_ADD_IDENTITY;
+    #####:  589:		if ((r = sshbuf_put_u8(msg, type)) != 0 ||
+        -:  590:		    (r = ssh_encode_identity_ssh2(msg, key, comment)) != 0)
+        -:  591:			goto out;
+    #####:  592:		break;
+        -:  593:	default:
+    #####:  594:		r = SSH_ERR_INVALID_ARGUMENT;
+    #####:  595:		goto out;
+        -:  596:	}
+    #####:  597:	if (constrained &&
+        -:  598:	    (r = encode_constraints(msg, life, confirm)) != 0)
+    #####:  599:		goto out;
+    #####:  600:	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
+    #####:  601:		goto out;
+    #####:  602:	if ((r = sshbuf_get_u8(msg, &type)) != 0)
+    #####:  603:		goto out;
+    #####:  604:	r = decode_reply(type);
+        -:  605: out:
+    #####:  606:	sshbuf_free(msg);
+    #####:  607:	return r;
+        -:  608:}
+        -:  609:
+        -:  610:/*
+        -:  611: * Removes an identity from the authentication server.
+        -:  612: * This call is intended only for use by ssh-add(1) and like applications.
+        -:  613: */
+        -:  614:int
+    #####:  615:ssh_remove_identity(int sock, struct sshkey *key)
+        -:  616:{
+        -:  617:	struct sshbuf *msg;
+        -:  618:	int r;
+    #####:  619:	u_char type, *blob = NULL;
+        -:  620:	size_t blen;
+        -:  621:
+    #####:  622:	if ((msg = sshbuf_new()) == NULL)
+    #####:  623:		return SSH_ERR_ALLOC_FAIL;
+        -:  624:
+        -:  625:#ifdef WITH_SSH1
+        -:  626:	if (key->type == KEY_RSA1) {
+        -:  627:		if ((r = sshbuf_put_u8(msg,
+        -:  628:		    SSH_AGENTC_REMOVE_RSA_IDENTITY)) != 0 ||
+        -:  629:		    (r = sshbuf_put_u32(msg, BN_num_bits(key->rsa->n))) != 0 ||
+        -:  630:		    (r = sshbuf_put_bignum1(msg, key->rsa->e)) != 0 ||
+        -:  631:		    (r = sshbuf_put_bignum1(msg, key->rsa->n)) != 0)
+        -:  632:			goto out;
+        -:  633:	} else
+        -:  634:#endif
+    #####:  635:	if (key->type != KEY_UNSPEC) {
+    #####:  636:		if ((r = sshkey_to_blob(key, &blob, &blen)) != 0)
+    #####:  637:			goto out;
+    #####:  638:		if ((r = sshbuf_put_u8(msg,
+    #####:  639:		    SSH2_AGENTC_REMOVE_IDENTITY)) != 0 ||
+    #####:  640:		    (r = sshbuf_put_string(msg, blob, blen)) != 0)
+        -:  641:			goto out;
+        -:  642:	} else {
+    #####:  643:		r = SSH_ERR_INVALID_ARGUMENT;
+    #####:  644:		goto out;
+        -:  645:	}
+    #####:  646:	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
+    #####:  647:		goto out;
+    #####:  648:	if ((r = sshbuf_get_u8(msg, &type)) != 0)
+    #####:  649:		goto out;
+    #####:  650:	r = decode_reply(type);
+        -:  651: out:
+    #####:  652:	if (blob != NULL) {
+    #####:  653:		explicit_bzero(blob, blen);
+    #####:  654:		free(blob);
+        -:  655:	}
+    #####:  656:	sshbuf_free(msg);
+    #####:  657:	return r;
+        -:  658:}
+        -:  659:
+        -:  660:/*
+        -:  661: * Add/remove an token-based identity from the authentication server.
+        -:  662: * This call is intended only for use by ssh-add(1) and like applications.
+        -:  663: */
+        -:  664:int
+    #####:  665:ssh_update_card(int sock, int add, const char *reader_id, const char *pin,
+        -:  666:    u_int life, u_int confirm)
+        -:  667:{
+        -:  668:	struct sshbuf *msg;
+    #####:  669:	int r, constrained = (life || confirm);
+        -:  670:	u_char type;
+        -:  671:
+    #####:  672:	if (add) {
+    #####:  673:		type = constrained ?
+        -:  674:		    SSH_AGENTC_ADD_SMARTCARD_KEY_CONSTRAINED :
+        -:  675:		    SSH_AGENTC_ADD_SMARTCARD_KEY;
+        -:  676:	} else
+    #####:  677:		type = SSH_AGENTC_REMOVE_SMARTCARD_KEY;
+        -:  678:
+    #####:  679:	if ((msg = sshbuf_new()) == NULL)
+    #####:  680:		return SSH_ERR_ALLOC_FAIL;
+    #####:  681:	if ((r = sshbuf_put_u8(msg, type)) != 0 ||
+    #####:  682:	    (r = sshbuf_put_cstring(msg, reader_id)) != 0 ||
+        -:  683:	    (r = sshbuf_put_cstring(msg, pin)) != 0)
+        -:  684:		goto out;
+    #####:  685:	if (constrained &&
+        -:  686:	    (r = encode_constraints(msg, life, confirm)) != 0)
+    #####:  687:		goto out;
+    #####:  688:	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
+    #####:  689:		goto out;
+    #####:  690:	if ((r = sshbuf_get_u8(msg, &type)) != 0)
+    #####:  691:		goto out;
+    #####:  692:	r = decode_reply(type);
+        -:  693: out:
+    #####:  694:	sshbuf_free(msg);
+    #####:  695:	return r;
+        -:  696:}
+        -:  697:
+        -:  698:/*
+        -:  699: * Removes all identities from the agent.
+        -:  700: * This call is intended only for use by ssh-add(1) and like applications.
+        -:  701: */
+        -:  702:int
+    #####:  703:ssh_remove_all_identities(int sock, int version)
+        -:  704:{
+        -:  705:	struct sshbuf *msg;
+    #####:  706:	u_char type = (version == 1) ?
+        -:  707:	    SSH_AGENTC_REMOVE_ALL_RSA_IDENTITIES :
+        -:  708:	    SSH2_AGENTC_REMOVE_ALL_IDENTITIES;
+        -:  709:	int r;
+        -:  710:
+    #####:  711:	if ((msg = sshbuf_new()) == NULL)
+    #####:  712:		return SSH_ERR_ALLOC_FAIL;
+    #####:  713:	if ((r = sshbuf_put_u8(msg, type)) != 0)
+    #####:  714:		goto out;
+    #####:  715:	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
+    #####:  716:		goto out;
+    #####:  717:	if ((r = sshbuf_get_u8(msg, &type)) != 0)
+    #####:  718:		goto out;
+    #####:  719:	r = decode_reply(type);
+        -:  720: out:
+    #####:  721:	sshbuf_free(msg);
+    #####:  722:	return r;
+        -:  723:}

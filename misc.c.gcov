@@ -1,0 +1,1273 @@
+        -:    0:Source:misc.c
+        -:    0:Programs:78
+        -:    1:/* $OpenBSD: misc.c,v 1.107 2016/11/30 00:28:31 dtucker Exp $ */
+        -:    2:/*
+        -:    3: * Copyright (c) 2000 Markus Friedl.  All rights reserved.
+        -:    4: * Copyright (c) 2005,2006 Damien Miller.  All rights reserved.
+        -:    5: *
+        -:    6: * Redistribution and use in source and binary forms, with or without
+        -:    7: * modification, are permitted provided that the following conditions
+        -:    8: * are met:
+        -:    9: * 1. Redistributions of source code must retain the above copyright
+        -:   10: *    notice, this list of conditions and the following disclaimer.
+        -:   11: * 2. Redistributions in binary form must reproduce the above copyright
+        -:   12: *    notice, this list of conditions and the following disclaimer in the
+        -:   13: *    documentation and/or other materials provided with the distribution.
+        -:   14: *
+        -:   15: * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+        -:   16: * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+        -:   17: * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+        -:   18: * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+        -:   19: * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+        -:   20: * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   21: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   22: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   23: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+        -:   24: * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   25: */
+        -:   26:
+        -:   27:#include "includes.h"
+        -:   28:
+        -:   29:#include <sys/types.h>
+        -:   30:#include <sys/ioctl.h>
+        -:   31:#include <sys/socket.h>
+        -:   32:#include <sys/time.h>
+        -:   33:#include <sys/un.h>
+        -:   34:
+        -:   35:#include <limits.h>
+        -:   36:#include <stdarg.h>
+        -:   37:#include <stdio.h>
+        -:   38:#include <stdlib.h>
+        -:   39:#include <string.h>
+        -:   40:#include <time.h>
+        -:   41:#include <unistd.h>
+        -:   42:
+        -:   43:#include <netinet/in.h>
+        -:   44:#include <netinet/in_systm.h>
+        -:   45:#include <netinet/ip.h>
+        -:   46:#include <netinet/tcp.h>
+        -:   47:
+        -:   48:#include <ctype.h>
+        -:   49:#include <errno.h>
+        -:   50:#include <fcntl.h>
+        -:   51:#include <netdb.h>
+        -:   52:#ifdef HAVE_PATHS_H
+        -:   53:# include <paths.h>
+        -:   54:#include <pwd.h>
+        -:   55:#endif
+        -:   56:#ifdef SSH_TUN_OPENBSD
+        -:   57:#include <net/if.h>
+        -:   58:#endif
+        -:   59:
+        -:   60:#include "xmalloc.h"
+        -:   61:#include "misc.h"
+        -:   62:#include "log.h"
+        -:   63:#include "ssh.h"
+        -:   64:
+        -:   65:/* remove newline at end of string */
+        -:   66:char *
+        2:   67:chop(char *s)
+        -:   68:{
+        2:   69:	char *t = s;
+       65:   70:	while (*t) {
+       63:   71:		if (*t == '\n' || *t == '\r') {
+        2:   72:			*t = '\0';
+        2:   73:			return s;
+        -:   74:		}
+       61:   75:		t++;
+        -:   76:	}
+    #####:   77:	return s;
+        -:   78:
+        -:   79:}
+        -:   80:
+        -:   81:/* set/unset filedescriptor to non-blocking */
+        -:   82:int
+        1:   83:set_nonblock(int fd)
+        -:   84:{
+        -:   85:	int val;
+        -:   86:
+        1:   87:	val = fcntl(fd, F_GETFL);
+        1:   88:	if (val < 0) {
+    #####:   89:		error("fcntl(%d, F_GETFL): %s", fd, strerror(errno));
+    #####:   90:		return (-1);
+        -:   91:	}
+        1:   92:	if (val & O_NONBLOCK) {
+    #####:   93:		debug3("fd %d is O_NONBLOCK", fd);
+    #####:   94:		return (0);
+        -:   95:	}
+        1:   96:	debug2("fd %d setting O_NONBLOCK", fd);
+        1:   97:	val |= O_NONBLOCK;
+        1:   98:	if (fcntl(fd, F_SETFL, val) == -1) {
+    #####:   99:		debug("fcntl(%d, F_SETFL, O_NONBLOCK): %s", fd,
+    #####:  100:		    strerror(errno));
+    #####:  101:		return (-1);
+        -:  102:	}
+        1:  103:	return (0);
+        -:  104:}
+        -:  105:
+        -:  106:int
+    #####:  107:unset_nonblock(int fd)
+        -:  108:{
+        -:  109:	int val;
+        -:  110:
+    #####:  111:	val = fcntl(fd, F_GETFL);
+    #####:  112:	if (val < 0) {
+    #####:  113:		error("fcntl(%d, F_GETFL): %s", fd, strerror(errno));
+    #####:  114:		return (-1);
+        -:  115:	}
+    #####:  116:	if (!(val & O_NONBLOCK)) {
+    #####:  117:		debug3("fd %d is not O_NONBLOCK", fd);
+    #####:  118:		return (0);
+        -:  119:	}
+    #####:  120:	debug("fd %d clearing O_NONBLOCK", fd);
+    #####:  121:	val &= ~O_NONBLOCK;
+    #####:  122:	if (fcntl(fd, F_SETFL, val) == -1) {
+    #####:  123:		debug("fcntl(%d, F_SETFL, ~O_NONBLOCK): %s",
+    #####:  124:		    fd, strerror(errno));
+    #####:  125:		return (-1);
+        -:  126:	}
+    #####:  127:	return (0);
+        -:  128:}
+        -:  129:
+        -:  130:const char *
+    #####:  131:ssh_gai_strerror(int gaierr)
+        -:  132:{
+    #####:  133:	if (gaierr == EAI_SYSTEM && errno != 0)
+    #####:  134:		return strerror(errno);
+    #####:  135:	return gai_strerror(gaierr);
+        -:  136:}
+        -:  137:
+        -:  138:/* disable nagle on socket */
+        -:  139:void
+        1:  140:set_nodelay(int fd)
+        -:  141:{
+        -:  142:	int opt;
+        -:  143:	socklen_t optlen;
+        -:  144:
+        1:  145:	optlen = sizeof opt;
+        1:  146:	if (getsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &opt, &optlen) == -1) {
+    #####:  147:		debug("getsockopt TCP_NODELAY: %.100s", strerror(errno));
+    #####:  148:		return;
+        -:  149:	}
+        1:  150:	if (opt == 1) {
+    #####:  151:		debug2("fd %d is TCP_NODELAY", fd);
+    #####:  152:		return;
+        -:  153:	}
+        1:  154:	opt = 1;
+        1:  155:	debug2("fd %d setting TCP_NODELAY", fd);
+        1:  156:	if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof opt) == -1)
+    #####:  157:		error("setsockopt TCP_NODELAY: %.100s", strerror(errno));
+        -:  158:}
+        -:  159:
+        -:  160:/* Characters considered whitespace in strsep calls. */
+        -:  161:#define WHITESPACE " \t\r\n"
+        -:  162:#define QUOTE	"\""
+        -:  163:
+        -:  164:/* return next token in configuration line */
+        -:  165:char *
+       54:  166:strdelim(char **s)
+        -:  167:{
+        -:  168:	char *old;
+       54:  169:	int wspace = 0;
+        -:  170:
+       54:  171:	if (*s == NULL)
+    #####:  172:		return NULL;
+        -:  173:
+       54:  174:	old = *s;
+        -:  175:
+       54:  176:	*s = strpbrk(*s, WHITESPACE QUOTE "=");
+       54:  177:	if (*s == NULL)
+        4:  178:		return (old);
+        -:  179:
+       50:  180:	if (*s[0] == '\"') {
+    #####:  181:		memmove(*s, *s + 1, strlen(*s)); /* move nul too */
+        -:  182:		/* Find matching quote */
+    #####:  183:		if ((*s = strpbrk(*s, QUOTE)) == NULL) {
+    #####:  184:			return (NULL);		/* no matching quote */
+        -:  185:		} else {
+    #####:  186:			*s[0] = '\0';
+    #####:  187:			*s += strspn(*s + 1, WHITESPACE) + 1;
+    #####:  188:			return (old);
+        -:  189:		}
+        -:  190:	}
+        -:  191:
+        -:  192:	/* Allow only one '=' to be skipped */
+       50:  193:	if (*s[0] == '=')
+    #####:  194:		wspace = 1;
+       50:  195:	*s[0] = '\0';
+        -:  196:
+        -:  197:	/* Skip any extra whitespace after first token */
+       50:  198:	*s += strspn(*s + 1, WHITESPACE) + 1;
+       50:  199:	if (*s[0] == '=' && !wspace)
+    #####:  200:		*s += strspn(*s + 1, WHITESPACE) + 1;
+        -:  201:
+       50:  202:	return (old);
+        -:  203:}
+        -:  204:
+        -:  205:struct passwd *
+        1:  206:pwcopy(struct passwd *pw)
+        -:  207:{
+        1:  208:	struct passwd *copy = xcalloc(1, sizeof(*copy));
+        -:  209:
+        1:  210:	copy->pw_name = xstrdup(pw->pw_name);
+        1:  211:	copy->pw_passwd = xstrdup(pw->pw_passwd);
+        -:  212:#ifdef HAVE_STRUCT_PASSWD_PW_GECOS
+        1:  213:	copy->pw_gecos = xstrdup(pw->pw_gecos);
+        -:  214:#endif
+        1:  215:	copy->pw_uid = pw->pw_uid;
+        1:  216:	copy->pw_gid = pw->pw_gid;
+        -:  217:#ifdef HAVE_STRUCT_PASSWD_PW_EXPIRE
+        -:  218:	copy->pw_expire = pw->pw_expire;
+        -:  219:#endif
+        -:  220:#ifdef HAVE_STRUCT_PASSWD_PW_CHANGE
+        -:  221:	copy->pw_change = pw->pw_change;
+        -:  222:#endif
+        -:  223:#ifdef HAVE_STRUCT_PASSWD_PW_CLASS
+        -:  224:	copy->pw_class = xstrdup(pw->pw_class);
+        -:  225:#endif
+        1:  226:	copy->pw_dir = xstrdup(pw->pw_dir);
+        1:  227:	copy->pw_shell = xstrdup(pw->pw_shell);
+        1:  228:	return copy;
+        -:  229:}
+        -:  230:
+        -:  231:/*
+        -:  232: * Convert ASCII string to TCP/IP port number.
+        -:  233: * Port must be >=0 and <=65535.
+        -:  234: * Return -1 if invalid.
+        -:  235: */
+        -:  236:int
+    #####:  237:a2port(const char *s)
+        -:  238:{
+        -:  239:	long long port;
+        -:  240:	const char *errstr;
+        -:  241:
+    #####:  242:	port = strtonum(s, 0, 65535, &errstr);
+    #####:  243:	if (errstr != NULL)
+    #####:  244:		return -1;
+    #####:  245:	return (int)port;
+        -:  246:}
+        -:  247:
+        -:  248:int
+    #####:  249:a2tun(const char *s, int *remote)
+        -:  250:{
+    #####:  251:	const char *errstr = NULL;
+        -:  252:	char *sp, *ep;
+        -:  253:	int tun;
+        -:  254:
+    #####:  255:	if (remote != NULL) {
+    #####:  256:		*remote = SSH_TUNID_ANY;
+    #####:  257:		sp = xstrdup(s);
+    #####:  258:		if ((ep = strchr(sp, ':')) == NULL) {
+    #####:  259:			free(sp);
+    #####:  260:			return (a2tun(s, NULL));
+        -:  261:		}
+    #####:  262:		ep[0] = '\0'; ep++;
+    #####:  263:		*remote = a2tun(ep, NULL);
+    #####:  264:		tun = a2tun(sp, NULL);
+    #####:  265:		free(sp);
+    #####:  266:		return (*remote == SSH_TUNID_ERR ? *remote : tun);
+        -:  267:	}
+        -:  268:
+    #####:  269:	if (strcasecmp(s, "any") == 0)
+    #####:  270:		return (SSH_TUNID_ANY);
+        -:  271:
+    #####:  272:	tun = strtonum(s, 0, SSH_TUNID_MAX, &errstr);
+    #####:  273:	if (errstr != NULL)
+    #####:  274:		return (SSH_TUNID_ERR);
+        -:  275:
+    #####:  276:	return (tun);
+        -:  277:}
+        -:  278:
+        -:  279:#define SECONDS		1
+        -:  280:#define MINUTES		(SECONDS * 60)
+        -:  281:#define HOURS		(MINUTES * 60)
+        -:  282:#define DAYS		(HOURS * 24)
+        -:  283:#define WEEKS		(DAYS * 7)
+        -:  284:
+        -:  285:/*
+        -:  286: * Convert a time string into seconds; format is
+        -:  287: * a sequence of:
+        -:  288: *      time[qualifier]
+        -:  289: *
+        -:  290: * Valid time qualifiers are:
+        -:  291: *      <none>  seconds
+        -:  292: *      s|S     seconds
+        -:  293: *      m|M     minutes
+        -:  294: *      h|H     hours
+        -:  295: *      d|D     days
+        -:  296: *      w|W     weeks
+        -:  297: *
+        -:  298: * Examples:
+        -:  299: *      90m     90 minutes
+        -:  300: *      1h30m   90 minutes
+        -:  301: *      2d      2 days
+        -:  302: *      1w      1 week
+        -:  303: *
+        -:  304: * Return -1 if time string is invalid.
+        -:  305: */
+        -:  306:long
+    #####:  307:convtime(const char *s)
+        -:  308:{
+        -:  309:	long total, secs;
+        -:  310:	const char *p;
+        -:  311:	char *endp;
+        -:  312:
+    #####:  313:	errno = 0;
+    #####:  314:	total = 0;
+    #####:  315:	p = s;
+        -:  316:
+    #####:  317:	if (p == NULL || *p == '\0')
+    #####:  318:		return -1;
+        -:  319:
+    #####:  320:	while (*p) {
+    #####:  321:		secs = strtol(p, &endp, 10);
+    #####:  322:		if (p == endp ||
+    #####:  323:		    (errno == ERANGE && (secs == LONG_MIN || secs == LONG_MAX)) ||
+        -:  324:		    secs < 0)
+    #####:  325:			return -1;
+        -:  326:
+    #####:  327:		switch (*endp++) {
+        -:  328:		case '\0':
+    #####:  329:			endp--;
+    #####:  330:			break;
+        -:  331:		case 's':
+        -:  332:		case 'S':
+    #####:  333:			break;
+        -:  334:		case 'm':
+        -:  335:		case 'M':
+    #####:  336:			secs *= MINUTES;
+    #####:  337:			break;
+        -:  338:		case 'h':
+        -:  339:		case 'H':
+    #####:  340:			secs *= HOURS;
+    #####:  341:			break;
+        -:  342:		case 'd':
+        -:  343:		case 'D':
+    #####:  344:			secs *= DAYS;
+    #####:  345:			break;
+        -:  346:		case 'w':
+        -:  347:		case 'W':
+    #####:  348:			secs *= WEEKS;
+    #####:  349:			break;
+        -:  350:		default:
+    #####:  351:			return -1;
+        -:  352:		}
+    #####:  353:		total += secs;
+    #####:  354:		if (total < 0)
+    #####:  355:			return -1;
+    #####:  356:		p = endp;
+        -:  357:	}
+        -:  358:
+    #####:  359:	return total;
+        -:  360:}
+        -:  361:
+        -:  362:/*
+        -:  363: * Returns a standardized host+port identifier string.
+        -:  364: * Caller must free returned string.
+        -:  365: */
+        -:  366:char *
+        3:  367:put_host_port(const char *host, u_short port)
+        -:  368:{
+        -:  369:	char *hoststr;
+        -:  370:
+        3:  371:	if (port == 0 || port == SSH_DEFAULT_PORT)
+        3:  372:		return(xstrdup(host));
+    #####:  373:	if (asprintf(&hoststr, "[%s]:%d", host, (int)port) < 0)
+    #####:  374:		fatal("put_host_port: asprintf: %s", strerror(errno));
+    #####:  375:	debug3("put_host_port: %s", hoststr);
+    #####:  376:	return hoststr;
+        -:  377:}
+        -:  378:
+        -:  379:/*
+        -:  380: * Search for next delimiter between hostnames/addresses and ports.
+        -:  381: * Argument may be modified (for termination).
+        -:  382: * Returns *cp if parsing succeeds.
+        -:  383: * *cp is set to the start of the next delimiter, if one was found.
+        -:  384: * If this is the last field, *cp is set to NULL.
+        -:  385: */
+        -:  386:char *
+    #####:  387:hpdelim(char **cp)
+        -:  388:{
+        -:  389:	char *s, *old;
+        -:  390:
+    #####:  391:	if (cp == NULL || *cp == NULL)
+    #####:  392:		return NULL;
+        -:  393:
+    #####:  394:	old = s = *cp;
+    #####:  395:	if (*s == '[') {
+    #####:  396:		if ((s = strchr(s, ']')) == NULL)
+    #####:  397:			return NULL;
+        -:  398:		else
+    #####:  399:			s++;
+    #####:  400:	} else if ((s = strpbrk(s, ":/")) == NULL)
+    #####:  401:		s = *cp + strlen(*cp); /* skip to end (see first case below) */
+        -:  402:
+    #####:  403:	switch (*s) {
+        -:  404:	case '\0':
+    #####:  405:		*cp = NULL;	/* no more fields*/
+    #####:  406:		break;
+        -:  407:
+        -:  408:	case ':':
+        -:  409:	case '/':
+    #####:  410:		*s = '\0';	/* terminate */
+    #####:  411:		*cp = s + 1;
+    #####:  412:		break;
+        -:  413:
+        -:  414:	default:
+    #####:  415:		return NULL;
+        -:  416:	}
+        -:  417:
+    #####:  418:	return old;
+        -:  419:}
+        -:  420:
+        -:  421:char *
+    #####:  422:cleanhostname(char *host)
+        -:  423:{
+    #####:  424:	if (*host == '[' && host[strlen(host) - 1] == ']') {
+    #####:  425:		host[strlen(host) - 1] = '\0';
+    #####:  426:		return (host + 1);
+        -:  427:	} else
+    #####:  428:		return host;
+        -:  429:}
+        -:  430:
+        -:  431:char *
+    #####:  432:colon(char *cp)
+        -:  433:{
+    #####:  434:	int flag = 0;
+        -:  435:
+    #####:  436:	if (*cp == ':')		/* Leading colon is part of file name. */
+    #####:  437:		return NULL;
+    #####:  438:	if (*cp == '[')
+    #####:  439:		flag = 1;
+        -:  440:
+    #####:  441:	for (; *cp; ++cp) {
+    #####:  442:		if (*cp == '@' && *(cp+1) == '[')
+    #####:  443:			flag = 1;
+    #####:  444:		if (*cp == ']' && *(cp+1) == ':' && flag)
+    #####:  445:			return (cp+1);
+    #####:  446:		if (*cp == ':' && !flag)
+    #####:  447:			return (cp);
+    #####:  448:		if (*cp == '/')
+    #####:  449:			return NULL;
+        -:  450:	}
+    #####:  451:	return NULL;
+        -:  452:}
+        -:  453:
+        -:  454:/*
+        -:  455: * Parse a [user@]host[:port] string.
+        -:  456: * Caller must free returned user and host.
+        -:  457: * Any of the pointer return arguments may be NULL (useful for syntax checking).
+        -:  458: * If user was not specified then *userp will be set to NULL.
+        -:  459: * If port was not specified then *portp will be -1.
+        -:  460: * Returns 0 on success, -1 on failure.
+        -:  461: */
+        -:  462:int
+    #####:  463:parse_user_host_port(const char *s, char **userp, char **hostp, int *portp)
+        -:  464:{
+        -:  465:	char *sdup, *cp, *tmp;
+    #####:  466:	char *user = NULL, *host = NULL;
+    #####:  467:	int port = -1, ret = -1;
+        -:  468:
+    #####:  469:	if (userp != NULL)
+    #####:  470:		*userp = NULL;
+    #####:  471:	if (hostp != NULL)
+    #####:  472:		*hostp = NULL;
+    #####:  473:	if (portp != NULL)
+    #####:  474:		*portp = -1;
+        -:  475:
+    #####:  476:	if ((sdup = tmp = strdup(s)) == NULL)
+    #####:  477:		return -1;
+        -:  478:	/* Extract optional username */
+    #####:  479:	if ((cp = strchr(tmp, '@')) != NULL) {
+    #####:  480:		*cp = '\0';
+    #####:  481:		if (*tmp == '\0')
+    #####:  482:			goto out;
+    #####:  483:		if ((user = strdup(tmp)) == NULL)
+    #####:  484:			goto out;
+    #####:  485:		tmp = cp + 1;
+        -:  486:	}
+        -:  487:	/* Extract mandatory hostname */
+    #####:  488:	if ((cp = hpdelim(&tmp)) == NULL || *cp == '\0')
+        -:  489:		goto out;
+    #####:  490:	host = xstrdup(cleanhostname(cp));
+        -:  491:	/* Convert and verify optional port */
+    #####:  492:	if (tmp != NULL && *tmp != '\0') {
+    #####:  493:		if ((port = a2port(tmp)) <= 0)
+    #####:  494:			goto out;
+        -:  495:	}
+        -:  496:	/* Success */
+    #####:  497:	if (userp != NULL) {
+    #####:  498:		*userp = user;
+    #####:  499:		user = NULL;
+        -:  500:	}
+    #####:  501:	if (hostp != NULL) {
+    #####:  502:		*hostp = host;
+    #####:  503:		host = NULL;
+        -:  504:	}
+    #####:  505:	if (portp != NULL)
+    #####:  506:		*portp = port;
+    #####:  507:	ret = 0;
+        -:  508: out:
+    #####:  509:	free(sdup);
+    #####:  510:	free(user);
+    #####:  511:	free(host);
+    #####:  512:	return ret;
+        -:  513:}
+        -:  514:
+        -:  515:/* function to assist building execv() arguments */
+        -:  516:void
+    #####:  517:addargs(arglist *args, char *fmt, ...)
+        -:  518:{
+        -:  519:	va_list ap;
+        -:  520:	char *cp;
+        -:  521:	u_int nalloc;
+        -:  522:	int r;
+        -:  523:
+    #####:  524:	va_start(ap, fmt);
+    #####:  525:	r = vasprintf(&cp, fmt, ap);
+    #####:  526:	va_end(ap);
+    #####:  527:	if (r == -1)
+    #####:  528:		fatal("addargs: argument too long");
+        -:  529:
+    #####:  530:	nalloc = args->nalloc;
+    #####:  531:	if (args->list == NULL) {
+    #####:  532:		nalloc = 32;
+    #####:  533:		args->num = 0;
+    #####:  534:	} else if (args->num+2 >= nalloc)
+    #####:  535:		nalloc *= 2;
+        -:  536:
+    #####:  537:	args->list = xreallocarray(args->list, nalloc, sizeof(char *));
+    #####:  538:	args->nalloc = nalloc;
+    #####:  539:	args->list[args->num++] = cp;
+    #####:  540:	args->list[args->num] = NULL;
+    #####:  541:}
+        -:  542:
+        -:  543:void
+    #####:  544:replacearg(arglist *args, u_int which, char *fmt, ...)
+        -:  545:{
+        -:  546:	va_list ap;
+        -:  547:	char *cp;
+        -:  548:	int r;
+        -:  549:
+    #####:  550:	va_start(ap, fmt);
+    #####:  551:	r = vasprintf(&cp, fmt, ap);
+    #####:  552:	va_end(ap);
+    #####:  553:	if (r == -1)
+    #####:  554:		fatal("replacearg: argument too long");
+        -:  555:
+    #####:  556:	if (which >= args->num)
+    #####:  557:		fatal("replacearg: tried to replace invalid arg %d >= %d",
+        -:  558:		    which, args->num);
+    #####:  559:	free(args->list[which]);
+    #####:  560:	args->list[which] = cp;
+    #####:  561:}
+        -:  562:
+        -:  563:void
+    #####:  564:freeargs(arglist *args)
+        -:  565:{
+        -:  566:	u_int i;
+        -:  567:
+    #####:  568:	if (args->list != NULL) {
+    #####:  569:		for (i = 0; i < args->num; i++)
+    #####:  570:			free(args->list[i]);
+    #####:  571:		free(args->list);
+    #####:  572:		args->nalloc = args->num = 0;
+    #####:  573:		args->list = NULL;
+        -:  574:	}
+    #####:  575:}
+        -:  576:
+        -:  577:/*
+        -:  578: * Expands tildes in the file name.  Returns data allocated by xmalloc.
+        -:  579: * Warning: this calls getpw*.
+        -:  580: */
+        -:  581:char *
+        8:  582:tilde_expand_filename(const char *filename, uid_t uid)
+        -:  583:{
+        -:  584:	const char *path, *sep;
+        -:  585:	char user[128], *ret;
+        -:  586:	struct passwd *pw;
+        -:  587:	u_int len, slash;
+        -:  588:
+        8:  589:	if (*filename != '~')
+        2:  590:		return (xstrdup(filename));
+        6:  591:	filename++;
+        -:  592:
+        6:  593:	path = strchr(filename, '/');
+        6:  594:	if (path != NULL && path > filename) {		/* ~user/path */
+    #####:  595:		slash = path - filename;
+    #####:  596:		if (slash > sizeof(user) - 1)
+    #####:  597:			fatal("tilde_expand_filename: ~username too long");
+    #####:  598:		memcpy(user, filename, slash);
+    #####:  599:		user[slash] = '\0';
+    #####:  600:		if ((pw = getpwnam(user)) == NULL)
+    #####:  601:			fatal("tilde_expand_filename: No such user %s", user);
+        6:  602:	} else if ((pw = getpwuid(uid)) == NULL)	/* ~/path */
+    #####:  603:		fatal("tilde_expand_filename: No such uid %ld", (long)uid);
+        -:  604:
+        -:  605:	/* Make sure directory has a trailing '/' */
+        6:  606:	len = strlen(pw->pw_dir);
+        6:  607:	if (len == 0 || pw->pw_dir[len - 1] != '/')
+        6:  608:		sep = "/";
+        -:  609:	else
+    #####:  610:		sep = "";
+        -:  611:
+        -:  612:	/* Skip leading '/' from specified path */
+        6:  613:	if (path != NULL)
+        6:  614:		filename = path + 1;
+        -:  615:
+        6:  616:	if (xasprintf(&ret, "%s%s%s", pw->pw_dir, sep, filename) >= PATH_MAX)
+    #####:  617:		fatal("tilde_expand_filename: Path too long");
+        -:  618:
+        6:  619:	return (ret);
+        -:  620:}
+        -:  621:
+        -:  622:/*
+        -:  623: * Expand a string with a set of %[char] escapes. A number of escapes may be
+        -:  624: * specified as (char *escape_chars, char *replacement) pairs. The list must
+        -:  625: * be terminated by a NULL escape_char. Returns replaced string in memory
+        -:  626: * allocated by xmalloc.
+        -:  627: */
+        -:  628:char *
+        4:  629:percent_expand(const char *string, ...)
+        -:  630:{
+        -:  631:#define EXPAND_MAX_KEYS	16
+        -:  632:	u_int num_keys, i, j;
+        -:  633:	struct {
+        -:  634:		const char *key;
+        -:  635:		const char *repl;
+        -:  636:	} keys[EXPAND_MAX_KEYS];
+        -:  637:	char buf[4096];
+        -:  638:	va_list ap;
+        -:  639:
+        -:  640:	/* Gather keys */
+        4:  641:	va_start(ap, string);
+       24:  642:	for (num_keys = 0; num_keys < EXPAND_MAX_KEYS; num_keys++) {
+       24:  643:		keys[num_keys].key = va_arg(ap, char *);
+       24:  644:		if (keys[num_keys].key == NULL)
+        4:  645:			break;
+       20:  646:		keys[num_keys].repl = va_arg(ap, char *);
+       20:  647:		if (keys[num_keys].repl == NULL)
+    #####:  648:			fatal("%s: NULL replacement", __func__);
+        -:  649:	}
+        4:  650:	if (num_keys == EXPAND_MAX_KEYS && va_arg(ap, char *) != NULL)
+    #####:  651:		fatal("%s: too many keys", __func__);
+        4:  652:	va_end(ap);
+        -:  653:
+        -:  654:	/* Expand string */
+        4:  655:	*buf = '\0';
+       78:  656:	for (i = 0; *string != '\0'; string++) {
+       74:  657:		if (*string != '%') {
+        -:  658: append:
+       74:  659:			buf[i++] = *string;
+       74:  660:			if (i >= sizeof(buf))
+    #####:  661:				fatal("%s: string too long", __func__);
+       74:  662:			buf[i] = '\0';
+       74:  663:			continue;
+        -:  664:		}
+    #####:  665:		string++;
+        -:  666:		/* %% case */
+    #####:  667:		if (*string == '%')
+    #####:  668:			goto append;
+    #####:  669:		if (*string == '\0')
+    #####:  670:			fatal("%s: invalid format", __func__);
+    #####:  671:		for (j = 0; j < num_keys; j++) {
+    #####:  672:			if (strchr(keys[j].key, *string) != NULL) {
+    #####:  673:				i = strlcat(buf, keys[j].repl, sizeof(buf));
+    #####:  674:				if (i >= sizeof(buf))
+    #####:  675:					fatal("%s: string too long", __func__);
+    #####:  676:				break;
+        -:  677:			}
+        -:  678:		}
+    #####:  679:		if (j >= num_keys)
+    #####:  680:			fatal("%s: unknown key %%%c", __func__, *string);
+        -:  681:	}
+        4:  682:	return (xstrdup(buf));
+        -:  683:#undef EXPAND_MAX_KEYS
+        -:  684:}
+        -:  685:
+        -:  686:/*
+        -:  687: * Read an entire line from a public key file into a static buffer, discarding
+        -:  688: * lines that exceed the buffer size.  Returns 0 on success, -1 on failure.
+        -:  689: */
+        -:  690:int
+        6:  691:read_keyfile_line(FILE *f, const char *filename, char *buf, size_t bufsz,
+        -:  692:   u_long *lineno)
+        -:  693:{
+       12:  694:	while (fgets(buf, bufsz, f) != NULL) {
+        4:  695:		if (buf[0] == '\0')
+    #####:  696:			continue;
+        4:  697:		(*lineno)++;
+        4:  698:		if (buf[strlen(buf) - 1] == '\n' || feof(f)) {
+        4:  699:			return 0;
+        -:  700:		} else {
+    #####:  701:			debug("%s: %s line %lu exceeds size limit", __func__,
+        -:  702:			    filename, *lineno);
+        -:  703:			/* discard remainder of line */
+    #####:  704:			while (fgetc(f) != '\n' && !feof(f))
+        -:  705:				;	/* nothing */
+        -:  706:		}
+        -:  707:	}
+        2:  708:	return -1;
+        -:  709:}
+        -:  710:
+        -:  711:int
+    #####:  712:tun_open(int tun, int mode)
+        -:  713:{
+        -:  714:#if defined(CUSTOM_SYS_TUN_OPEN)
+    #####:  715:	return (sys_tun_open(tun, mode));
+        -:  716:#elif defined(SSH_TUN_OPENBSD)
+        -:  717:	struct ifreq ifr;
+        -:  718:	char name[100];
+        -:  719:	int fd = -1, sock;
+        -:  720:	const char *tunbase = "tun";
+        -:  721:
+        -:  722:	if (mode == SSH_TUNMODE_ETHERNET)
+        -:  723:		tunbase = "tap";
+        -:  724:
+        -:  725:	/* Open the tunnel device */
+        -:  726:	if (tun <= SSH_TUNID_MAX) {
+        -:  727:		snprintf(name, sizeof(name), "/dev/%s%d", tunbase, tun);
+        -:  728:		fd = open(name, O_RDWR);
+        -:  729:	} else if (tun == SSH_TUNID_ANY) {
+        -:  730:		for (tun = 100; tun >= 0; tun--) {
+        -:  731:			snprintf(name, sizeof(name), "/dev/%s%d",
+        -:  732:			    tunbase, tun);
+        -:  733:			if ((fd = open(name, O_RDWR)) >= 0)
+        -:  734:				break;
+        -:  735:		}
+        -:  736:	} else {
+        -:  737:		debug("%s: invalid tunnel %u", __func__, tun);
+        -:  738:		return -1;
+        -:  739:	}
+        -:  740:
+        -:  741:	if (fd < 0) {
+        -:  742:		debug("%s: %s open: %s", __func__, name, strerror(errno));
+        -:  743:		return -1;
+        -:  744:	}
+        -:  745:
+        -:  746:	debug("%s: %s mode %d fd %d", __func__, name, mode, fd);
+        -:  747:
+        -:  748:	/* Bring interface up if it is not already */
+        -:  749:	snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s%d", tunbase, tun);
+        -:  750:	if ((sock = socket(PF_UNIX, SOCK_STREAM, 0)) == -1)
+        -:  751:		goto failed;
+        -:  752:
+        -:  753:	if (ioctl(sock, SIOCGIFFLAGS, &ifr) == -1) {
+        -:  754:		debug("%s: get interface %s flags: %s", __func__,
+        -:  755:		    ifr.ifr_name, strerror(errno));
+        -:  756:		goto failed;
+        -:  757:	}
+        -:  758:
+        -:  759:	if (!(ifr.ifr_flags & IFF_UP)) {
+        -:  760:		ifr.ifr_flags |= IFF_UP;
+        -:  761:		if (ioctl(sock, SIOCSIFFLAGS, &ifr) == -1) {
+        -:  762:			debug("%s: activate interface %s: %s", __func__,
+        -:  763:			    ifr.ifr_name, strerror(errno));
+        -:  764:			goto failed;
+        -:  765:		}
+        -:  766:	}
+        -:  767:
+        -:  768:	close(sock);
+        -:  769:	return fd;
+        -:  770:
+        -:  771: failed:
+        -:  772:	if (fd >= 0)
+        -:  773:		close(fd);
+        -:  774:	if (sock >= 0)
+        -:  775:		close(sock);
+        -:  776:	return -1;
+        -:  777:#else
+        -:  778:	error("Tunnel interfaces are not supported on this platform");
+        -:  779:	return (-1);
+        -:  780:#endif
+        -:  781:}
+        -:  782:
+        -:  783:void
+        1:  784:sanitise_stdfd(void)
+        -:  785:{
+        -:  786:	int nullfd, dupfd;
+        -:  787:
+        1:  788:	if ((nullfd = dupfd = open(_PATH_DEVNULL, O_RDWR)) == -1) {
+    #####:  789:		fprintf(stderr, "Couldn't open /dev/null: %s\n",
+    #####:  790:		    strerror(errno));
+    #####:  791:		exit(1);
+        -:  792:	}
+        2:  793:	while (++dupfd <= STDERR_FILENO) {
+        -:  794:		/* Only populate closed fds. */
+    #####:  795:		if (fcntl(dupfd, F_GETFL) == -1 && errno == EBADF) {
+    #####:  796:			if (dup2(nullfd, dupfd) == -1) {
+    #####:  797:				fprintf(stderr, "dup2: %s\n", strerror(errno));
+    #####:  798:				exit(1);
+        -:  799:			}
+        -:  800:		}
+        -:  801:	}
+        1:  802:	if (nullfd > STDERR_FILENO)
+        1:  803:		close(nullfd);
+        1:  804:}
+        -:  805:
+        -:  806:char *
+        1:  807:tohex(const void *vp, size_t l)
+        -:  808:{
+        1:  809:	const u_char *p = (const u_char *)vp;
+        -:  810:	char b[3], *r;
+        -:  811:	size_t i, hl;
+        -:  812:
+        1:  813:	if (l > 65536)
+    #####:  814:		return xstrdup("tohex: length > 65536");
+        -:  815:
+        1:  816:	hl = l * 2 + 1;
+        1:  817:	r = xcalloc(1, hl);
+       21:  818:	for (i = 0; i < l; i++) {
+       20:  819:		snprintf(b, sizeof(b), "%02x", p[i]);
+       20:  820:		strlcat(r, b, hl);
+        -:  821:	}
+        1:  822:	return (r);
+        -:  823:}
+        -:  824:
+        -:  825:u_int64_t
+    #####:  826:get_u64(const void *vp)
+        -:  827:{
+    #####:  828:	const u_char *p = (const u_char *)vp;
+        -:  829:	u_int64_t v;
+        -:  830:
+    #####:  831:	v  = (u_int64_t)p[0] << 56;
+    #####:  832:	v |= (u_int64_t)p[1] << 48;
+    #####:  833:	v |= (u_int64_t)p[2] << 40;
+    #####:  834:	v |= (u_int64_t)p[3] << 32;
+    #####:  835:	v |= (u_int64_t)p[4] << 24;
+    #####:  836:	v |= (u_int64_t)p[5] << 16;
+    #####:  837:	v |= (u_int64_t)p[6] << 8;
+    #####:  838:	v |= (u_int64_t)p[7];
+        -:  839:
+    #####:  840:	return (v);
+        -:  841:}
+        -:  842:
+        -:  843:u_int32_t
+    #####:  844:get_u32(const void *vp)
+        -:  845:{
+    #####:  846:	const u_char *p = (const u_char *)vp;
+        -:  847:	u_int32_t v;
+        -:  848:
+    #####:  849:	v  = (u_int32_t)p[0] << 24;
+    #####:  850:	v |= (u_int32_t)p[1] << 16;
+    #####:  851:	v |= (u_int32_t)p[2] << 8;
+    #####:  852:	v |= (u_int32_t)p[3];
+        -:  853:
+    #####:  854:	return (v);
+        -:  855:}
+        -:  856:
+        -:  857:u_int32_t
+    #####:  858:get_u32_le(const void *vp)
+        -:  859:{
+    #####:  860:	const u_char *p = (const u_char *)vp;
+        -:  861:	u_int32_t v;
+        -:  862:
+    #####:  863:	v  = (u_int32_t)p[0];
+    #####:  864:	v |= (u_int32_t)p[1] << 8;
+    #####:  865:	v |= (u_int32_t)p[2] << 16;
+    #####:  866:	v |= (u_int32_t)p[3] << 24;
+        -:  867:
+    #####:  868:	return (v);
+        -:  869:}
+        -:  870:
+        -:  871:u_int16_t
+    #####:  872:get_u16(const void *vp)
+        -:  873:{
+    #####:  874:	const u_char *p = (const u_char *)vp;
+        -:  875:	u_int16_t v;
+        -:  876:
+    #####:  877:	v  = (u_int16_t)p[0] << 8;
+    #####:  878:	v |= (u_int16_t)p[1];
+        -:  879:
+    #####:  880:	return (v);
+        -:  881:}
+        -:  882:
+        -:  883:void
+    #####:  884:put_u64(void *vp, u_int64_t v)
+        -:  885:{
+    #####:  886:	u_char *p = (u_char *)vp;
+        -:  887:
+    #####:  888:	p[0] = (u_char)(v >> 56) & 0xff;
+    #####:  889:	p[1] = (u_char)(v >> 48) & 0xff;
+    #####:  890:	p[2] = (u_char)(v >> 40) & 0xff;
+    #####:  891:	p[3] = (u_char)(v >> 32) & 0xff;
+    #####:  892:	p[4] = (u_char)(v >> 24) & 0xff;
+    #####:  893:	p[5] = (u_char)(v >> 16) & 0xff;
+    #####:  894:	p[6] = (u_char)(v >> 8) & 0xff;
+    #####:  895:	p[7] = (u_char)v & 0xff;
+    #####:  896:}
+        -:  897:
+        -:  898:void
+    #####:  899:put_u32(void *vp, u_int32_t v)
+        -:  900:{
+    #####:  901:	u_char *p = (u_char *)vp;
+        -:  902:
+    #####:  903:	p[0] = (u_char)(v >> 24) & 0xff;
+    #####:  904:	p[1] = (u_char)(v >> 16) & 0xff;
+    #####:  905:	p[2] = (u_char)(v >> 8) & 0xff;
+    #####:  906:	p[3] = (u_char)v & 0xff;
+    #####:  907:}
+        -:  908:
+        -:  909:void
+    #####:  910:put_u32_le(void *vp, u_int32_t v)
+        -:  911:{
+    #####:  912:	u_char *p = (u_char *)vp;
+        -:  913:
+    #####:  914:	p[0] = (u_char)v & 0xff;
+    #####:  915:	p[1] = (u_char)(v >> 8) & 0xff;
+    #####:  916:	p[2] = (u_char)(v >> 16) & 0xff;
+    #####:  917:	p[3] = (u_char)(v >> 24) & 0xff;
+    #####:  918:}
+        -:  919:
+        -:  920:void
+    #####:  921:put_u16(void *vp, u_int16_t v)
+        -:  922:{
+    #####:  923:	u_char *p = (u_char *)vp;
+        -:  924:
+    #####:  925:	p[0] = (u_char)(v >> 8) & 0xff;
+    #####:  926:	p[1] = (u_char)v & 0xff;
+    #####:  927:}
+        -:  928:
+        -:  929:void
+    #####:  930:ms_subtract_diff(struct timeval *start, int *ms)
+        -:  931:{
+        -:  932:	struct timeval diff, finish;
+        -:  933:
+    #####:  934:	gettimeofday(&finish, NULL);
+    #####:  935:	timersub(&finish, start, &diff);	
+    #####:  936:	*ms -= (diff.tv_sec * 1000) + (diff.tv_usec / 1000);
+    #####:  937:}
+        -:  938:
+        -:  939:void
+    #####:  940:ms_to_timeval(struct timeval *tv, int ms)
+        -:  941:{
+    #####:  942:	if (ms < 0)
+    #####:  943:		ms = 0;
+    #####:  944:	tv->tv_sec = ms / 1000;
+    #####:  945:	tv->tv_usec = (ms % 1000) * 1000;
+    #####:  946:}
+        -:  947:
+        -:  948:time_t
+       94:  949:monotime(void)
+        -:  950:{
+        -:  951:#if defined(HAVE_CLOCK_GETTIME) && \
+        -:  952:    (defined(CLOCK_MONOTONIC) || defined(CLOCK_BOOTTIME))
+        -:  953:	struct timespec ts;
+        -:  954:	static int gettime_failed = 0;
+        -:  955:
+       94:  956:	if (!gettime_failed) {
+        -:  957:#if defined(CLOCK_BOOTTIME)
+       94:  958:		if (clock_gettime(CLOCK_BOOTTIME, &ts) == 0)
+       94:  959:			return (ts.tv_sec);
+        -:  960:#endif
+        -:  961:#if defined(CLOCK_MONOTONIC)
+    #####:  962:		if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
+    #####:  963:			return (ts.tv_sec);
+        -:  964:#endif
+    #####:  965:		debug3("clock_gettime: %s", strerror(errno));
+    #####:  966:		gettime_failed = 1;
+        -:  967:	}
+        -:  968:#endif /* HAVE_CLOCK_GETTIME && (CLOCK_MONOTONIC || CLOCK_BOOTTIME */
+        -:  969:
+    #####:  970:	return time(NULL);
+        -:  971:}
+        -:  972:
+        -:  973:double
+    #####:  974:monotime_double(void)
+        -:  975:{
+        -:  976:#if defined(HAVE_CLOCK_GETTIME) && \
+        -:  977:    (defined(CLOCK_MONOTONIC) || defined(CLOCK_BOOTTIME))
+        -:  978:	struct timespec ts;
+        -:  979:	static int gettime_failed = 0;
+        -:  980:
+    #####:  981:	if (!gettime_failed) {
+        -:  982:#if defined(CLOCK_BOOTTIME)
+    #####:  983:		if (clock_gettime(CLOCK_BOOTTIME, &ts) == 0)
+    #####:  984:			return (ts.tv_sec + (double)ts.tv_nsec / 1000000000);
+        -:  985:#endif
+        -:  986:#if defined(CLOCK_MONOTONIC)
+    #####:  987:		if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
+    #####:  988:			return (ts.tv_sec + (double)ts.tv_nsec / 1000000000);
+        -:  989:#endif
+    #####:  990:		debug3("clock_gettime: %s", strerror(errno));
+    #####:  991:		gettime_failed = 1;
+        -:  992:	}
+        -:  993:#endif /* HAVE_CLOCK_GETTIME && (CLOCK_MONOTONIC || CLOCK_BOOTTIME */
+        -:  994:
+    #####:  995:	return (double)time(NULL);
+        -:  996:}
+        -:  997:
+        -:  998:void
+    #####:  999:bandwidth_limit_init(struct bwlimit *bw, u_int64_t kbps, size_t buflen)
+        -: 1000:{
+    #####: 1001:	bw->buflen = buflen;
+    #####: 1002:	bw->rate = kbps;
+    #####: 1003:	bw->thresh = bw->rate;
+    #####: 1004:	bw->lamt = 0;
+    #####: 1005:	timerclear(&bw->bwstart);
+    #####: 1006:	timerclear(&bw->bwend);
+    #####: 1007:}	
+        -: 1008:
+        -: 1009:/* Callback from read/write loop to insert bandwidth-limiting delays */
+        -: 1010:void
+    #####: 1011:bandwidth_limit(struct bwlimit *bw, size_t read_len)
+        -: 1012:{
+        -: 1013:	u_int64_t waitlen;
+        -: 1014:	struct timespec ts, rm;
+        -: 1015:
+    #####: 1016:	if (!timerisset(&bw->bwstart)) {
+    #####: 1017:		gettimeofday(&bw->bwstart, NULL);
+    #####: 1018:		return;
+        -: 1019:	}
+        -: 1020:
+    #####: 1021:	bw->lamt += read_len;
+    #####: 1022:	if (bw->lamt < bw->thresh)
+    #####: 1023:		return;
+        -: 1024:
+    #####: 1025:	gettimeofday(&bw->bwend, NULL);
+    #####: 1026:	timersub(&bw->bwend, &bw->bwstart, &bw->bwend);
+    #####: 1027:	if (!timerisset(&bw->bwend))
+    #####: 1028:		return;
+        -: 1029:
+    #####: 1030:	bw->lamt *= 8;
+    #####: 1031:	waitlen = (double)1000000L * bw->lamt / bw->rate;
+        -: 1032:
+    #####: 1033:	bw->bwstart.tv_sec = waitlen / 1000000L;
+    #####: 1034:	bw->bwstart.tv_usec = waitlen % 1000000L;
+        -: 1035:
+    #####: 1036:	if (timercmp(&bw->bwstart, &bw->bwend, >)) {
+    #####: 1037:		timersub(&bw->bwstart, &bw->bwend, &bw->bwend);
+        -: 1038:
+        -: 1039:		/* Adjust the wait time */
+    #####: 1040:		if (bw->bwend.tv_sec) {
+    #####: 1041:			bw->thresh /= 2;
+    #####: 1042:			if (bw->thresh < bw->buflen / 4)
+    #####: 1043:				bw->thresh = bw->buflen / 4;
+    #####: 1044:		} else if (bw->bwend.tv_usec < 10000) {
+    #####: 1045:			bw->thresh *= 2;
+    #####: 1046:			if (bw->thresh > bw->buflen * 8)
+    #####: 1047:				bw->thresh = bw->buflen * 8;
+        -: 1048:		}
+        -: 1049:
+    #####: 1050:		TIMEVAL_TO_TIMESPEC(&bw->bwend, &ts);
+    #####: 1051:		while (nanosleep(&ts, &rm) == -1) {
+    #####: 1052:			if (errno != EINTR)
+    #####: 1053:				break;
+    #####: 1054:			ts = rm;
+        -: 1055:		}
+        -: 1056:	}
+        -: 1057:
+    #####: 1058:	bw->lamt = 0;
+    #####: 1059:	gettimeofday(&bw->bwstart, NULL);
+        -: 1060:}
+        -: 1061:
+        -: 1062:/* Make a template filename for mk[sd]temp() */
+        -: 1063:void
+    #####: 1064:mktemp_proto(char *s, size_t len)
+        -: 1065:{
+        -: 1066:	const char *tmpdir;
+        -: 1067:	int r;
+        -: 1068:
+    #####: 1069:	if ((tmpdir = getenv("TMPDIR")) != NULL) {
+    #####: 1070:		r = snprintf(s, len, "%s/ssh-XXXXXXXXXXXX", tmpdir);
+    #####: 1071:		if (r > 0 && (size_t)r < len)
+    #####: 1072:			return;
+        -: 1073:	}
+    #####: 1074:	r = snprintf(s, len, "/tmp/ssh-XXXXXXXXXXXX");
+    #####: 1075:	if (r < 0 || (size_t)r >= len)
+    #####: 1076:		fatal("%s: template string too short", __func__);
+        -: 1077:}
+        -: 1078:
+        -: 1079:static const struct {
+        -: 1080:	const char *name;
+        -: 1081:	int value;
+        -: 1082:} ipqos[] = {
+        -: 1083:	{ "af11", IPTOS_DSCP_AF11 },
+        -: 1084:	{ "af12", IPTOS_DSCP_AF12 },
+        -: 1085:	{ "af13", IPTOS_DSCP_AF13 },
+        -: 1086:	{ "af21", IPTOS_DSCP_AF21 },
+        -: 1087:	{ "af22", IPTOS_DSCP_AF22 },
+        -: 1088:	{ "af23", IPTOS_DSCP_AF23 },
+        -: 1089:	{ "af31", IPTOS_DSCP_AF31 },
+        -: 1090:	{ "af32", IPTOS_DSCP_AF32 },
+        -: 1091:	{ "af33", IPTOS_DSCP_AF33 },
+        -: 1092:	{ "af41", IPTOS_DSCP_AF41 },
+        -: 1093:	{ "af42", IPTOS_DSCP_AF42 },
+        -: 1094:	{ "af43", IPTOS_DSCP_AF43 },
+        -: 1095:	{ "cs0", IPTOS_DSCP_CS0 },
+        -: 1096:	{ "cs1", IPTOS_DSCP_CS1 },
+        -: 1097:	{ "cs2", IPTOS_DSCP_CS2 },
+        -: 1098:	{ "cs3", IPTOS_DSCP_CS3 },
+        -: 1099:	{ "cs4", IPTOS_DSCP_CS4 },
+        -: 1100:	{ "cs5", IPTOS_DSCP_CS5 },
+        -: 1101:	{ "cs6", IPTOS_DSCP_CS6 },
+        -: 1102:	{ "cs7", IPTOS_DSCP_CS7 },
+        -: 1103:	{ "ef", IPTOS_DSCP_EF },
+        -: 1104:	{ "lowdelay", IPTOS_LOWDELAY },
+        -: 1105:	{ "throughput", IPTOS_THROUGHPUT },
+        -: 1106:	{ "reliability", IPTOS_RELIABILITY },
+        -: 1107:	{ NULL, -1 }
+        -: 1108:};
+        -: 1109:
+        -: 1110:int
+    #####: 1111:parse_ipqos(const char *cp)
+        -: 1112:{
+        -: 1113:	u_int i;
+        -: 1114:	char *ep;
+        -: 1115:	long val;
+        -: 1116:
+    #####: 1117:	if (cp == NULL)
+    #####: 1118:		return -1;
+    #####: 1119:	for (i = 0; ipqos[i].name != NULL; i++) {
+    #####: 1120:		if (strcasecmp(cp, ipqos[i].name) == 0)
+    #####: 1121:			return ipqos[i].value;
+        -: 1122:	}
+        -: 1123:	/* Try parsing as an integer */
+    #####: 1124:	val = strtol(cp, &ep, 0);
+    #####: 1125:	if (*cp == '\0' || *ep != '\0' || val < 0 || val > 255)
+    #####: 1126:		return -1;
+    #####: 1127:	return val;
+        -: 1128:}
+        -: 1129:
+        -: 1130:const char *
+    #####: 1131:iptos2str(int iptos)
+        -: 1132:{
+        -: 1133:	int i;
+        -: 1134:	static char iptos_str[sizeof "0xff"];
+        -: 1135:
+    #####: 1136:	for (i = 0; ipqos[i].name != NULL; i++) {
+    #####: 1137:		if (ipqos[i].value == iptos)
+    #####: 1138:			return ipqos[i].name;
+        -: 1139:	}
+    #####: 1140:	snprintf(iptos_str, sizeof iptos_str, "0x%02x", iptos);
+    #####: 1141:	return iptos_str;
+        -: 1142:}
+        -: 1143:
+        -: 1144:void
+        2: 1145:lowercase(char *s)
+        -: 1146:{
+       30: 1147:	for (; *s; s++)
+       28: 1148:		*s = tolower((u_char)*s);
+        2: 1149:}
+        -: 1150:
+        -: 1151:int
+    #####: 1152:unix_listener(const char *path, int backlog, int unlink_first)
+        -: 1153:{
+        -: 1154:	struct sockaddr_un sunaddr;
+        -: 1155:	int saved_errno, sock;
+        -: 1156:
+    #####: 1157:	memset(&sunaddr, 0, sizeof(sunaddr));
+    #####: 1158:	sunaddr.sun_family = AF_UNIX;
+    #####: 1159:	if (strlcpy(sunaddr.sun_path, path, sizeof(sunaddr.sun_path)) >= sizeof(sunaddr.sun_path)) {
+    #####: 1160:		error("%s: \"%s\" too long for Unix domain socket", __func__,
+        -: 1161:		    path);
+    #####: 1162:		errno = ENAMETOOLONG;
+    #####: 1163:		return -1;
+        -: 1164:	}
+        -: 1165:
+    #####: 1166:	sock = socket(PF_UNIX, SOCK_STREAM, 0);
+    #####: 1167:	if (sock < 0) {
+    #####: 1168:		saved_errno = errno;
+    #####: 1169:		error("socket: %.100s", strerror(errno));
+    #####: 1170:		errno = saved_errno;
+    #####: 1171:		return -1;
+        -: 1172:	}
+    #####: 1173:	if (unlink_first == 1) {
+    #####: 1174:		if (unlink(path) != 0 && errno != ENOENT)
+    #####: 1175:			error("unlink(%s): %.100s", path, strerror(errno));
+        -: 1176:	}
+    #####: 1177:	if (bind(sock, (struct sockaddr *)&sunaddr, sizeof(sunaddr)) < 0) {
+    #####: 1178:		saved_errno = errno;
+    #####: 1179:		error("bind: %.100s", strerror(errno));
+    #####: 1180:		close(sock);
+    #####: 1181:		error("%s: cannot bind to path: %s", __func__, path);
+    #####: 1182:		errno = saved_errno;
+    #####: 1183:		return -1;
+        -: 1184:	}
+    #####: 1185:	if (listen(sock, backlog) < 0) {
+    #####: 1186:		saved_errno = errno;
+    #####: 1187:		error("listen: %.100s", strerror(errno));
+    #####: 1188:		close(sock);
+    #####: 1189:		unlink(path);
+    #####: 1190:		error("%s: cannot listen on path: %s", __func__, path);
+    #####: 1191:		errno = saved_errno;
+    #####: 1192:		return -1;
+        -: 1193:	}
+    #####: 1194:	return sock;
+        -: 1195:}
+        -: 1196:
+        -: 1197:void
+    #####: 1198:sock_set_v6only(int s)
+        -: 1199:{
+        -: 1200:#if defined(IPV6_V6ONLY) && !defined(__OpenBSD__)
+    #####: 1201:	int on = 1;
+        -: 1202:
+    #####: 1203:	debug3("%s: set socket %d IPV6_V6ONLY", __func__, s);
+    #####: 1204:	if (setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on)) == -1)
+    #####: 1205:		error("setsockopt IPV6_V6ONLY: %s", strerror(errno));
+        -: 1206:#endif
+    #####: 1207:}
+        -: 1208:
+        -: 1209:/*
+        -: 1210: * Compares two strings that maybe be NULL. Returns non-zero if strings
+        -: 1211: * are both NULL or are identical, returns zero otherwise.
+        -: 1212: */
+        -: 1213:static int
+    #####: 1214:strcmp_maybe_null(const char *a, const char *b)
+        -: 1215:{
+    #####: 1216:	if ((a == NULL && b != NULL) || (a != NULL && b == NULL))
+    #####: 1217:		return 0;
+    #####: 1218:	if (a != NULL && strcmp(a, b) != 0)
+    #####: 1219:		return 0;
+    #####: 1220:	return 1;
+        -: 1221:}
+        -: 1222:
+        -: 1223:/*
+        -: 1224: * Compare two forwards, returning non-zero if they are identical or
+        -: 1225: * zero otherwise.
+        -: 1226: */
+        -: 1227:int
+    #####: 1228:forward_equals(const struct Forward *a, const struct Forward *b)
+        -: 1229:{
+    #####: 1230:	if (strcmp_maybe_null(a->listen_host, b->listen_host) == 0)
+    #####: 1231:		return 0;
+    #####: 1232:	if (a->listen_port != b->listen_port)
+    #####: 1233:		return 0;
+    #####: 1234:	if (strcmp_maybe_null(a->listen_path, b->listen_path) == 0)
+    #####: 1235:		return 0;
+    #####: 1236:	if (strcmp_maybe_null(a->connect_host, b->connect_host) == 0)
+    #####: 1237:		return 0;
+    #####: 1238:	if (a->connect_port != b->connect_port)
+    #####: 1239:		return 0;
+    #####: 1240:	if (strcmp_maybe_null(a->connect_path, b->connect_path) == 0)
+    #####: 1241:		return 0;
+        -: 1242:	/* allocated_port and handle are not checked */
+    #####: 1243:	return 1;
+        -: 1244:}
+        -: 1245:
+        -: 1246:/* returns 1 if bind to specified port by specified user is permitted */
+        -: 1247:int
+    #####: 1248:bind_permitted(int port, uid_t uid)
+        -: 1249:{
+    #####: 1250:	if (port < IPPORT_RESERVED && uid != 0)
+    #####: 1251:		return 0;
+    #####: 1252:	return 1;
+        -: 1253:}
+        -: 1254:
+        -: 1255:/* returns 1 if process is already daemonized, 0 otherwise */
+        -: 1256:int
+    #####: 1257:daemonized(void)
+        -: 1258:{
+        -: 1259:	int fd;
+        -: 1260:
+    #####: 1261:	if ((fd = open(_PATH_TTY, O_RDONLY | O_NOCTTY)) >= 0) {
+    #####: 1262:		close(fd);
+    #####: 1263:		return 0;	/* have controlling terminal */
+        -: 1264:	}
+    #####: 1265:	if (getppid() != 1)
+    #####: 1266:		return 0;	/* parent is not init */
+    #####: 1267:	if (getsid(0) != getpid())
+    #####: 1268:		return 0;	/* not session leader */
+    #####: 1269:	debug3("already daemonized");
+    #####: 1270:	return 1;
+        -: 1271:}
