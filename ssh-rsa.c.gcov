@@ -39,11 +39,11 @@
         -:   37:static int openssh_RSA_verify(int, u_char *, size_t, u_char *, size_t, RSA *);
         -:   38:
         -:   39:static const char *
-        1:   40:rsa_hash_alg_ident(int hash_alg)
+        2:   40:rsa_hash_alg_ident(int hash_alg)
         -:   41:{
-        1:   42:	switch (hash_alg) {
+        2:   42:	switch (hash_alg) {
         -:   43:	case SSH_DIGEST_SHA1:
-        1:   44:		return "ssh-rsa";
+        2:   44:		return "ssh-rsa";
         -:   45:	case SSH_DIGEST_SHA256:
     #####:   46:		return "rsa-sha2-256";
         -:   47:	case SSH_DIGEST_SHA512:
@@ -53,11 +53,11 @@
         -:   51:}
         -:   52:
         -:   53:static int
-        1:   54:rsa_hash_alg_from_ident(const char *ident)
+        2:   54:rsa_hash_alg_from_ident(const char *ident)
         -:   55:{
-        1:   56:	if (strcmp(ident, "ssh-rsa") == 0 ||
+        2:   56:	if (strcmp(ident, "ssh-rsa") == 0 ||
     #####:   57:	    strcmp(ident, "ssh-rsa-cert-v01@openssh.com") == 0)
-        1:   58:		return SSH_DIGEST_SHA1;
+        2:   58:		return SSH_DIGEST_SHA1;
     #####:   59:	if (strcmp(ident, "rsa-sha2-256") == 0)
     #####:   60:		return SSH_DIGEST_SHA256;
     #####:   61:	if (strcmp(ident, "rsa-sha2-512") == 0)
@@ -66,11 +66,11 @@
         -:   64:}
         -:   65:
         -:   66:static int
-        1:   67:rsa_hash_alg_nid(int type)
+        2:   67:rsa_hash_alg_nid(int type)
         -:   68:{
-        1:   69:	switch (type) {
+        2:   69:	switch (type) {
         -:   70:	case SSH_DIGEST_SHA1:
-        1:   71:		return NID_sha1;
+        2:   71:		return NID_sha1;
         -:   72:	case SSH_DIGEST_SHA256:
     #####:   73:		return NID_sha256;
         -:   74:	case SSH_DIGEST_SHA512:
@@ -82,84 +82,84 @@
         -:   80:
         -:   81:/* RSASSA-PKCS1-v1_5 (PKCS #1 v2.0 signature) with SHA1 */
         -:   82:int
-        1:   83:ssh_rsa_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
+        2:   83:ssh_rsa_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
         -:   84:    const u_char *data, size_t datalen, const char *alg_ident)
         -:   85:{
-        1:   86:	u_char digest[SSH_DIGEST_MAX_LENGTH], *sig = NULL;
+        2:   86:	u_char digest[SSH_DIGEST_MAX_LENGTH], *sig = NULL;
         -:   87:	size_t slen;
         -:   88:	u_int dlen, len;
-        1:   89:	int nid, hash_alg, ret = SSH_ERR_INTERNAL_ERROR;
-        1:   90:	struct sshbuf *b = NULL;
+        2:   89:	int nid, hash_alg, ret = SSH_ERR_INTERNAL_ERROR;
+        2:   90:	struct sshbuf *b = NULL;
         -:   91:
-        1:   92:	if (lenp != NULL)
-        1:   93:		*lenp = 0;
-        1:   94:	if (sigp != NULL)
-        1:   95:		*sigp = NULL;
+        2:   92:	if (lenp != NULL)
+        2:   93:		*lenp = 0;
+        2:   94:	if (sigp != NULL)
+        2:   95:		*sigp = NULL;
         -:   96:
-        1:   97:	if (alg_ident == NULL || strlen(alg_ident) == 0)
+        2:   97:	if (alg_ident == NULL || strlen(alg_ident) == 0)
     #####:   98:		hash_alg = SSH_DIGEST_SHA1;
         -:   99:	else
-        1:  100:		hash_alg = rsa_hash_alg_from_ident(alg_ident);
-        2:  101:	if (key == NULL || key->rsa == NULL || hash_alg == -1 ||
-        2:  102:	    sshkey_type_plain(key->type) != KEY_RSA ||
-        1:  103:	    BN_num_bits(key->rsa->n) < SSH_RSA_MINIMUM_MODULUS_SIZE)
+        2:  100:		hash_alg = rsa_hash_alg_from_ident(alg_ident);
+        4:  101:	if (key == NULL || key->rsa == NULL || hash_alg == -1 ||
+        4:  102:	    sshkey_type_plain(key->type) != KEY_RSA ||
+        2:  103:	    BN_num_bits(key->rsa->n) < SSH_RSA_MINIMUM_MODULUS_SIZE)
     #####:  104:		return SSH_ERR_INVALID_ARGUMENT;
-        1:  105:	slen = RSA_size(key->rsa);
-        1:  106:	if (slen <= 0 || slen > SSHBUF_MAX_BIGNUM)
+        2:  105:	slen = RSA_size(key->rsa);
+        2:  106:	if (slen <= 0 || slen > SSHBUF_MAX_BIGNUM)
     #####:  107:		return SSH_ERR_INVALID_ARGUMENT;
         -:  108:
         -:  109:	/* hash the data */
-        1:  110:	nid = rsa_hash_alg_nid(hash_alg);
-        1:  111:	if ((dlen = ssh_digest_bytes(hash_alg)) == 0)
+        2:  110:	nid = rsa_hash_alg_nid(hash_alg);
+        2:  111:	if ((dlen = ssh_digest_bytes(hash_alg)) == 0)
     #####:  112:		return SSH_ERR_INTERNAL_ERROR;
-        1:  113:	if ((ret = ssh_digest_memory(hash_alg, data, datalen,
+        2:  113:	if ((ret = ssh_digest_memory(hash_alg, data, datalen,
         -:  114:	    digest, sizeof(digest))) != 0)
     #####:  115:		goto out;
         -:  116:
-        1:  117:	if ((sig = malloc(slen)) == NULL) {
+        2:  117:	if ((sig = malloc(slen)) == NULL) {
     #####:  118:		ret = SSH_ERR_ALLOC_FAIL;
     #####:  119:		goto out;
         -:  120:	}
         -:  121:
-        1:  122:	if (RSA_sign(nid, digest, dlen, sig, &len, key->rsa) != 1) {
+        2:  122:	if (RSA_sign(nid, digest, dlen, sig, &len, key->rsa) != 1) {
     #####:  123:		ret = SSH_ERR_LIBCRYPTO_ERROR;
     #####:  124:		goto out;
         -:  125:	}
-        1:  126:	if (len < slen) {
+        2:  126:	if (len < slen) {
     #####:  127:		size_t diff = slen - len;
     #####:  128:		memmove(sig + diff, sig, len);
     #####:  129:		explicit_bzero(sig, diff);
-        1:  130:	} else if (len > slen) {
+        2:  130:	} else if (len > slen) {
     #####:  131:		ret = SSH_ERR_INTERNAL_ERROR;
     #####:  132:		goto out;
         -:  133:	}
         -:  134:	/* encode signature */
-        1:  135:	if ((b = sshbuf_new()) == NULL) {
+        2:  135:	if ((b = sshbuf_new()) == NULL) {
     #####:  136:		ret = SSH_ERR_ALLOC_FAIL;
     #####:  137:		goto out;
         -:  138:	}
-        1:  139:	if ((ret = sshbuf_put_cstring(b, rsa_hash_alg_ident(hash_alg))) != 0 ||
+        2:  139:	if ((ret = sshbuf_put_cstring(b, rsa_hash_alg_ident(hash_alg))) != 0 ||
         -:  140:	    (ret = sshbuf_put_string(b, sig, slen)) != 0)
         -:  141:		goto out;
-        1:  142:	len = sshbuf_len(b);
-        1:  143:	if (sigp != NULL) {
-        1:  144:		if ((*sigp = malloc(len)) == NULL) {
+        2:  142:	len = sshbuf_len(b);
+        2:  143:	if (sigp != NULL) {
+        2:  144:		if ((*sigp = malloc(len)) == NULL) {
     #####:  145:			ret = SSH_ERR_ALLOC_FAIL;
     #####:  146:			goto out;
         -:  147:		}
-        1:  148:		memcpy(*sigp, sshbuf_ptr(b), len);
+        2:  148:		memcpy(*sigp, sshbuf_ptr(b), len);
         -:  149:	}
-        1:  150:	if (lenp != NULL)
-        1:  151:		*lenp = len;
-        1:  152:	ret = 0;
+        2:  150:	if (lenp != NULL)
+        2:  151:		*lenp = len;
+        2:  152:	ret = 0;
         -:  153: out:
-        1:  154:	explicit_bzero(digest, sizeof(digest));
-        1:  155:	if (sig != NULL) {
-        1:  156:		explicit_bzero(sig, slen);
-        1:  157:		free(sig);
+        2:  154:	explicit_bzero(digest, sizeof(digest));
+        2:  155:	if (sig != NULL) {
+        2:  156:		explicit_bzero(sig, slen);
+        2:  157:		free(sig);
         -:  158:	}
-        1:  159:	sshbuf_free(b);
-        1:  160:	return ret;
+        2:  159:	sshbuf_free(b);
+        2:  160:	return ret;
         -:  161:}
         -:  162:
         -:  163:int

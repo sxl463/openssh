@@ -54,20 +54,20 @@
         -:   52: */
         -:   53:
         -:   54:int
-      239:   55:match_pattern(const char *s, const char *pattern)
+      478:   55:match_pattern(const char *s, const char *pattern)
         -:   56:{
         -:   57:	for (;;) {
         -:   58:		/* If at end of pattern, accept if also at end of string. */
-      239:   59:		if (!*pattern)
-        3:   60:			return !*s;
+      478:   59:		if (!*pattern)
+        6:   60:			return !*s;
         -:   61:
-      236:   62:		if (*pattern == '*') {
+      472:   62:		if (*pattern == '*') {
         -:   63:			/* Skip the asterisk. */
-        1:   64:			pattern++;
+        2:   64:			pattern++;
         -:   65:
         -:   66:			/* If at end of pattern, accept immediately. */
-        1:   67:			if (!*pattern)
-        1:   68:				return 1;
+        2:   67:			if (!*pattern)
+        2:   68:				return 1;
         -:   69:
         -:   70:			/* If next character in pattern is known, optimize. */
     #####:   71:			if (*pattern != '?' && *pattern != '*') {
@@ -97,17 +97,17 @@
         -:   95:		 * There must be at least one more character in the string.
         -:   96:		 * If we are at the end, fail.
         -:   97:		 */
-      235:   98:		if (!*s)
-        1:   99:			return 0;
+      470:   98:		if (!*s)
+        2:   99:			return 0;
         -:  100:
         -:  101:		/* Check if the next character of the string is acceptable. */
-      234:  102:		if (*pattern != '?' && *pattern != *s)
-       29:  103:			return 0;
+      468:  102:		if (*pattern != '?' && *pattern != *s)
+       58:  103:			return 0;
         -:  104:
         -:  105:		/* Move to the next character, both in string and in pattern. */
-      205:  106:		s++;
-      205:  107:		pattern++;
-      205:  108:	}
+      410:  106:		s++;
+      410:  107:		pattern++;
+      410:  108:	}
         -:  109:	/* NOTREACHED */
         -:  110:}
         -:  111:
@@ -118,48 +118,48 @@
         -:  116: * a positive match, 0 if there is no match at all.
         -:  117: */
         -:  118:int
-       15:  119:match_pattern_list(const char *string, const char *pattern, int dolower)
+       30:  119:match_pattern_list(const char *string, const char *pattern, int dolower)
         -:  120:{
         -:  121:	char sub[1024];
         -:  122:	int negated;
         -:  123:	int got_positive;
-       15:  124:	u_int i, subi, len = strlen(pattern);
+       30:  124:	u_int i, subi, len = strlen(pattern);
         -:  125:
-       15:  126:	got_positive = 0;
-       64:  127:	for (i = 0; i < len;) {
+       30:  126:	got_positive = 0;
+      128:  127:	for (i = 0; i < len;) {
         -:  128:		/* Check if the subpattern is negated. */
-       34:  129:		if (pattern[i] == '!') {
+       68:  129:		if (pattern[i] == '!') {
     #####:  130:			negated = 1;
     #####:  131:			i++;
         -:  132:		} else
-       34:  133:			negated = 0;
+       68:  133:			negated = 0;
         -:  134:
         -:  135:		/*
         -:  136:		 * Extract the subpattern up to a comma or end.  Convert the
         -:  137:		 * subpattern to lowercase.
         -:  138:		 */
-      630:  139:		for (subi = 0;
-      581:  140:		    i < len && subi < sizeof(sub) - 1 && pattern[i] != ',';
-      562:  141:		    subi++, i++)
-     1124:  142:			sub[subi] = dolower && isupper((u_char)pattern[i]) ?
-      562:  143:			    tolower((u_char)pattern[i]) : pattern[i];
+     1260:  139:		for (subi = 0;
+     1162:  140:		    i < len && subi < sizeof(sub) - 1 && pattern[i] != ',';
+     1124:  141:		    subi++, i++)
+     2248:  142:			sub[subi] = dolower && isupper((u_char)pattern[i]) ?
+     1124:  143:			    tolower((u_char)pattern[i]) : pattern[i];
         -:  144:		/* If subpattern too long, return failure (no match). */
-       34:  145:		if (subi >= sizeof(sub) - 1)
+       68:  145:		if (subi >= sizeof(sub) - 1)
     #####:  146:			return 0;
         -:  147:
         -:  148:		/* If the subpattern was terminated by a comma, skip the comma. */
-       34:  149:		if (i < len && pattern[i] == ',')
-       19:  150:			i++;
+       68:  149:		if (i < len && pattern[i] == ',')
+       38:  150:			i++;
         -:  151:
         -:  152:		/* Null-terminate the subpattern. */
-       34:  153:		sub[subi] = '\0';
+       68:  153:		sub[subi] = '\0';
         -:  154:
         -:  155:		/* Try to match the subpattern against the string. */
-       34:  156:		if (match_pattern(string, sub)) {
-        4:  157:			if (negated)
+       68:  156:		if (match_pattern(string, sub)) {
+        8:  157:			if (negated)
     #####:  158:				return -1;		/* Negative */
         -:  159:			else
-        4:  160:				got_positive = 1;	/* Positive */
+        8:  160:				got_positive = 1;	/* Positive */
         -:  161:		}
         -:  162:	}
         -:  163:
@@ -167,7 +167,7 @@
         -:  165:	 * Return success if got a positive match.  If there was a negative
         -:  166:	 * match, we have already returned -1 and never get here.
         -:  167:	 */
-       15:  168:	return got_positive;
+       30:  168:	return got_positive;
         -:  169:}
         -:  170:
         -:  171:/*
@@ -177,9 +177,9 @@
         -:  175: * a positive match, 0 if there is no match at all.
         -:  176: */
         -:  177:int
-        2:  178:match_hostname(const char *host, const char *pattern)
+        4:  178:match_hostname(const char *host, const char *pattern)
         -:  179:{
-        2:  180:	return match_pattern_list(host, pattern, 1);
+        4:  180:	return match_pattern_list(host, pattern, 1);
         -:  181:}
         -:  182:
         -:  183:/*
@@ -248,41 +248,41 @@
         -:  246:#define	MAX_PROP	40
         -:  247:#define	SEP	","
         -:  248:char *
-        8:  249:match_list(const char *client, const char *server, u_int *next)
+       16:  249:match_list(const char *client, const char *server, u_int *next)
         -:  250:{
         -:  251:	char *sproposals[MAX_PROP];
         -:  252:	char *c, *s, *p, *ret, *cp, *sp;
         -:  253:	int i, j, nproposals;
         -:  254:
-        8:  255:	c = cp = xstrdup(client);
-        8:  256:	s = sp = xstrdup(server);
+       16:  255:	c = cp = xstrdup(client);
+       16:  256:	s = sp = xstrdup(server);
         -:  257:
-       67:  258:	for ((p = strsep(&sp, SEP)), i=0; p && *p != '\0';
-       51:  259:	    (p = strsep(&sp, SEP)), i++) {
-       51:  260:		if (i < MAX_PROP)
-       51:  261:			sproposals[i] = p;
+      134:  258:	for ((p = strsep(&sp, SEP)), i=0; p && *p != '\0';
+      102:  259:	    (p = strsep(&sp, SEP)), i++) {
+      102:  260:		if (i < MAX_PROP)
+      102:  261:			sproposals[i] = p;
         -:  262:		else
     #####:  263:			break;
         -:  264:	}
-        8:  265:	nproposals = i;
+       16:  265:	nproposals = i;
         -:  266:
-       31:  267:	for ((p = strsep(&cp, SEP)), i=0; p && *p != '\0';
-       15:  268:	    (p = strsep(&cp, SEP)), i++) {
-       69:  269:		for (j = 0; j < nproposals; j++) {
-       54:  270:			if (strcmp(p, sproposals[j]) == 0) {
-        7:  271:				ret = xstrdup(p);
-        7:  272:				if (next != NULL)
-        2:  273:					*next = (cp == NULL) ?
-        1:  274:					    strlen(c) : (u_int)(cp - c);
-        7:  275:				free(c);
-        7:  276:				free(s);
-        7:  277:				return ret;
+       62:  267:	for ((p = strsep(&cp, SEP)), i=0; p && *p != '\0';
+       30:  268:	    (p = strsep(&cp, SEP)), i++) {
+      138:  269:		for (j = 0; j < nproposals; j++) {
+      108:  270:			if (strcmp(p, sproposals[j]) == 0) {
+       14:  271:				ret = xstrdup(p);
+       14:  272:				if (next != NULL)
+        4:  273:					*next = (cp == NULL) ?
+        2:  274:					    strlen(c) : (u_int)(cp - c);
+       14:  275:				free(c);
+       14:  276:				free(s);
+       14:  277:				return ret;
         -:  278:			}
         -:  279:		}
         -:  280:	}
-        1:  281:	if (next != NULL)
+        2:  281:	if (next != NULL)
     #####:  282:		*next = strlen(c);
-        1:  283:	free(c);
-        1:  284:	free(s);
-        1:  285:	return NULL;
+        2:  283:	free(c);
+        2:  284:	free(s);
+        2:  285:	return NULL;
         -:  286:}

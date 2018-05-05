@@ -110,66 +110,66 @@
         -:  108:
         -:  109:/* ARGSUSED */
         -:  110:int
-        1:  111:ssh_ecdsa_verify(const struct sshkey *key,
+        2:  111:ssh_ecdsa_verify(const struct sshkey *key,
         -:  112:    const u_char *signature, size_t signaturelen,
         -:  113:    const u_char *data, size_t datalen, u_int compat)
         -:  114:{
-        1:  115:	ECDSA_SIG *sig = NULL;
+        2:  115:	ECDSA_SIG *sig = NULL;
         -:  116:	int hash_alg;
         -:  117:	u_char digest[SSH_DIGEST_MAX_LENGTH];
         -:  118:	size_t dlen;
-        1:  119:	int ret = SSH_ERR_INTERNAL_ERROR;
-        1:  120:	struct sshbuf *b = NULL, *sigbuf = NULL;
-        1:  121:	char *ktype = NULL;
+        2:  119:	int ret = SSH_ERR_INTERNAL_ERROR;
+        2:  120:	struct sshbuf *b = NULL, *sigbuf = NULL;
+        2:  121:	char *ktype = NULL;
         -:  122:
-        2:  123:	if (key == NULL || key->ecdsa == NULL ||
-        2:  124:	    sshkey_type_plain(key->type) != KEY_ECDSA ||
-        1:  125:	    signature == NULL || signaturelen == 0)
+        4:  123:	if (key == NULL || key->ecdsa == NULL ||
+        4:  124:	    sshkey_type_plain(key->type) != KEY_ECDSA ||
+        2:  125:	    signature == NULL || signaturelen == 0)
     #####:  126:		return SSH_ERR_INVALID_ARGUMENT;
         -:  127:
-        1:  128:	if ((hash_alg = sshkey_ec_nid_to_hash_alg(key->ecdsa_nid)) == -1 ||
+        2:  128:	if ((hash_alg = sshkey_ec_nid_to_hash_alg(key->ecdsa_nid)) == -1 ||
         -:  129:	    (dlen = ssh_digest_bytes(hash_alg)) == 0)
     #####:  130:		return SSH_ERR_INTERNAL_ERROR;
         -:  131:
         -:  132:	/* fetch signature */
-        1:  133:	if ((b = sshbuf_from(signature, signaturelen)) == NULL)
+        2:  133:	if ((b = sshbuf_from(signature, signaturelen)) == NULL)
     #####:  134:		return SSH_ERR_ALLOC_FAIL;
-        2:  135:	if (sshbuf_get_cstring(b, &ktype, NULL) != 0 ||
-        1:  136:	    sshbuf_froms(b, &sigbuf) != 0) {
+        4:  135:	if (sshbuf_get_cstring(b, &ktype, NULL) != 0 ||
+        2:  136:	    sshbuf_froms(b, &sigbuf) != 0) {
     #####:  137:		ret = SSH_ERR_INVALID_FORMAT;
     #####:  138:		goto out;
         -:  139:	}
-        1:  140:	if (strcmp(sshkey_ssh_name_plain(key), ktype) != 0) {
+        2:  140:	if (strcmp(sshkey_ssh_name_plain(key), ktype) != 0) {
     #####:  141:		ret = SSH_ERR_KEY_TYPE_MISMATCH;
     #####:  142:		goto out;
         -:  143:	}
-        1:  144:	if (sshbuf_len(b) != 0) {
+        2:  144:	if (sshbuf_len(b) != 0) {
     #####:  145:		ret = SSH_ERR_UNEXPECTED_TRAILING_DATA;
     #####:  146:		goto out;
         -:  147:	}
         -:  148:
         -:  149:	/* parse signature */
-        1:  150:	if ((sig = ECDSA_SIG_new()) == NULL) {
+        2:  150:	if ((sig = ECDSA_SIG_new()) == NULL) {
     #####:  151:		ret = SSH_ERR_ALLOC_FAIL;
     #####:  152:		goto out;
         -:  153:	}
-        2:  154:	if (sshbuf_get_bignum2(sigbuf, sig->r) != 0 ||
-        1:  155:	    sshbuf_get_bignum2(sigbuf, sig->s) != 0) {
+        4:  154:	if (sshbuf_get_bignum2(sigbuf, sig->r) != 0 ||
+        2:  155:	    sshbuf_get_bignum2(sigbuf, sig->s) != 0) {
     #####:  156:		ret = SSH_ERR_INVALID_FORMAT;
     #####:  157:		goto out;
         -:  158:	}
-        1:  159:	if (sshbuf_len(sigbuf) != 0) {
+        2:  159:	if (sshbuf_len(sigbuf) != 0) {
     #####:  160:		ret = SSH_ERR_UNEXPECTED_TRAILING_DATA;
     #####:  161:		goto out;
         -:  162:	}
-        1:  163:	if ((ret = ssh_digest_memory(hash_alg, data, datalen,
+        2:  163:	if ((ret = ssh_digest_memory(hash_alg, data, datalen,
         -:  164:	    digest, sizeof(digest))) != 0)
     #####:  165:		goto out;
         -:  166:
-        1:  167:	switch (ECDSA_do_verify(digest, dlen, sig, key->ecdsa)) {
+        2:  167:	switch (ECDSA_do_verify(digest, dlen, sig, key->ecdsa)) {
         -:  168:	case 1:
-        1:  169:		ret = 0;
-        1:  170:		break;
+        2:  169:		ret = 0;
+        2:  170:		break;
         -:  171:	case 0:
     #####:  172:		ret = SSH_ERR_SIGNATURE_INVALID;
     #####:  173:		goto out;
@@ -179,13 +179,13 @@
         -:  177:	}
         -:  178:
         -:  179: out:
-        1:  180:	explicit_bzero(digest, sizeof(digest));
-        1:  181:	sshbuf_free(sigbuf);
-        1:  182:	sshbuf_free(b);
-        1:  183:	if (sig != NULL)
-        1:  184:		ECDSA_SIG_free(sig);
-        1:  185:	free(ktype);
-        1:  186:	return ret;
+        2:  180:	explicit_bzero(digest, sizeof(digest));
+        2:  181:	sshbuf_free(sigbuf);
+        2:  182:	sshbuf_free(b);
+        2:  183:	if (sig != NULL)
+        2:  184:		ECDSA_SIG_free(sig);
+        2:  185:	free(ktype);
+        2:  186:	return ret;
         -:  187:}
         -:  188:
         -:  189:#endif /* WITH_OPENSSL && OPENSSL_HAS_ECC */

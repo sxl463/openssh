@@ -106,13 +106,13 @@
     #####:  104:}
         -:  105:
         -:  106:void
-       52:  107:buffer_put_int(Buffer *buffer, u_int value)
+      104:  107:buffer_put_int(Buffer *buffer, u_int value)
         -:  108:{
         -:  109:	int ret;
         -:  110:
-       52:  111:	if ((ret = sshbuf_put_u32(buffer, value)) != 0)
+      104:  111:	if ((ret = sshbuf_put_u32(buffer, value)) != 0)
     #####:  112:		fatal("%s: %s", __func__, ssh_err(ret));
-       52:  113:}
+      104:  113:}
         -:  114:
         -:  115:void
     #####:  116:buffer_put_int64(Buffer *buffer, u_int64_t value)
@@ -202,22 +202,22 @@
         -:  200:}
         -:  201:
         -:  202:void
-        3:  203:buffer_put_string(Buffer *buffer, const void *buf, u_int len)
+        6:  203:buffer_put_string(Buffer *buffer, const void *buf, u_int len)
         -:  204:{
         -:  205:	int ret;
         -:  206:
-        3:  207:	if ((ret = sshbuf_put_string(buffer, buf, len)) != 0)
+        6:  207:	if ((ret = sshbuf_put_string(buffer, buf, len)) != 0)
     #####:  208:		fatal("%s: %s", __func__, ssh_err(ret));
-        3:  209:}
+        6:  209:}
         -:  210:
         -:  211:void
-        4:  212:buffer_put_cstring(Buffer *buffer, const char *s)
+        8:  212:buffer_put_cstring(Buffer *buffer, const char *s)
         -:  213:{
         -:  214:	int ret;
         -:  215:
-        4:  216:	if ((ret = sshbuf_put_cstring(buffer, s)) != 0)
+        8:  216:	if ((ret = sshbuf_put_cstring(buffer, s)) != 0)
     #####:  217:		fatal("%s: %s", __func__, ssh_err(ret));
-        4:  218:}
+        8:  218:}
         -:  219:
         -:  220:int
     #####:  221:buffer_get_char_ret(char *v, Buffer *buffer)
@@ -242,13 +242,13 @@
         -:  240:}
         -:  241:
         -:  242:void
-       60:  243:buffer_put_char(Buffer *buffer, int value)
+      176:  243:buffer_put_char(Buffer *buffer, int value)
         -:  244:{
         -:  245:	int ret;
         -:  246:
-       60:  247:	if ((ret = sshbuf_put_u8(buffer, value)) != 0)
+      176:  247:	if ((ret = sshbuf_put_u8(buffer, value)) != 0)
     #####:  248:		fatal("%s: %s", __func__, ssh_err(ret));
-       60:  249:}
+      176:  249:}
         -:  250:
         -:  251:void
     #####:  252:buffer_put_bignum2_from_string(Buffer *buffer, const u_char *s, u_int l)

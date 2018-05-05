@@ -74,62 +74,62 @@
     #####:   72:}
         -:   73:
         -:   74:Key *
-        1:   75:key_from_private(const Key *k)
+        2:   75:key_from_private(const Key *k)
         -:   76:{
         -:   77:	int r;
-        1:   78:	Key *ret = NULL;
+        2:   78:	Key *ret = NULL;
         -:   79:
-        1:   80:	if ((r = sshkey_from_private(k, &ret)) != 0)
+        2:   80:	if ((r = sshkey_from_private(k, &ret)) != 0)
     #####:   81:		fatal("%s: %s", __func__, ssh_err(r));
-        1:   82:	return ret;
+        2:   82:	return ret;
         -:   83:}
         -:   84:
         -:   85:static void
-        7:   86:fatal_on_fatal_errors(int r, const char *func, int extra_fatal)
+       14:   86:fatal_on_fatal_errors(int r, const char *func, int extra_fatal)
         -:   87:{
-        7:   88:	if (r == SSH_ERR_INTERNAL_ERROR ||
-        7:   89:	    r == SSH_ERR_ALLOC_FAIL ||
-        7:   90:	    (extra_fatal != 0 && r == extra_fatal))
+       14:   88:	if (r == SSH_ERR_INTERNAL_ERROR ||
+       14:   89:	    r == SSH_ERR_ALLOC_FAIL ||
+       14:   90:	    (extra_fatal != 0 && r == extra_fatal))
     #####:   91:		fatal("%s: %s", func, ssh_err(r));
-        7:   92:}
+       14:   92:}
         -:   93:
         -:   94:Key *
-        1:   95:key_from_blob(const u_char *blob, u_int blen)
+        2:   95:key_from_blob(const u_char *blob, u_int blen)
         -:   96:{
         -:   97:	int r;
-        1:   98:	Key *ret = NULL;
+        2:   98:	Key *ret = NULL;
         -:   99:
-        1:  100:	if ((r = sshkey_from_blob(blob, blen, &ret)) != 0) {
+        2:  100:	if ((r = sshkey_from_blob(blob, blen, &ret)) != 0) {
     #####:  101:		fatal_on_fatal_errors(r, __func__, 0);
     #####:  102:		error("%s: %s", __func__, ssh_err(r));
     #####:  103:		return NULL;
         -:  104:	}
-        1:  105:	return ret;
+        2:  105:	return ret;
         -:  106:}
         -:  107:
         -:  108:int
-        2:  109:key_to_blob(const Key *key, u_char **blobp, u_int *lenp)
+        4:  109:key_to_blob(const Key *key, u_char **blobp, u_int *lenp)
         -:  110:{
         -:  111:	u_char *blob;
         -:  112:	size_t blen;
         -:  113:	int r;
         -:  114:
-        2:  115:	if (blobp != NULL)
-        2:  116:		*blobp = NULL;
-        2:  117:	if (lenp != NULL)
-        2:  118:		*lenp = 0;
-        2:  119:	if ((r = sshkey_to_blob(key, &blob, &blen)) != 0) {
+        4:  115:	if (blobp != NULL)
+        4:  116:		*blobp = NULL;
+        4:  117:	if (lenp != NULL)
+        4:  118:		*lenp = 0;
+        4:  119:	if ((r = sshkey_to_blob(key, &blob, &blen)) != 0) {
     #####:  120:		fatal_on_fatal_errors(r, __func__, 0);
     #####:  121:		error("%s: %s", __func__, ssh_err(r));
     #####:  122:		return 0;
         -:  123:	}
-        2:  124:	if (blen > INT_MAX)
+        4:  124:	if (blen > INT_MAX)
     #####:  125:		fatal("%s: giant len %zu", __func__, blen);
-        2:  126:	if (blobp != NULL)
-        2:  127:		*blobp = blob;
-        2:  128:	if (lenp != NULL)
-        2:  129:		*lenp = blen;
-        2:  130:	return blen;
+        4:  126:	if (blobp != NULL)
+        4:  127:		*blobp = blob;
+        4:  128:	if (lenp != NULL)
+        4:  129:		*lenp = blen;
+        4:  130:	return blen;
         -:  131:}
         -:  132:
         -:  133:int
@@ -341,21 +341,21 @@
         -:  339:}
         -:  340:
         -:  341:Key *
-        8:  342:key_load_public(const char *filename, char **commentp)
+       16:  342:key_load_public(const char *filename, char **commentp)
         -:  343:{
         -:  344:	int r;
-        8:  345:	Key *ret = NULL;
+       16:  345:	Key *ret = NULL;
         -:  346:
-        8:  347:	if ((r = sshkey_load_public(filename, &ret, commentp)) != 0) {
-        7:  348:		fatal_on_fatal_errors(r, __func__, SSH_ERR_LIBCRYPTO_ERROR);
+       16:  347:	if ((r = sshkey_load_public(filename, &ret, commentp)) != 0) {
+       14:  348:		fatal_on_fatal_errors(r, __func__, SSH_ERR_LIBCRYPTO_ERROR);
         -:  349:		/* Old authfile.c ignored all file errors. */
-        7:  350:		if (r == SSH_ERR_SYSTEM_ERROR)
-        7:  351:			debug("%s: %s", __func__, ssh_err(r));
+       14:  350:		if (r == SSH_ERR_SYSTEM_ERROR)
+       14:  351:			debug("%s: %s", __func__, ssh_err(r));
         -:  352:		else
     #####:  353:			error("%s: %s", __func__, ssh_err(r));
-        7:  354:		return NULL;
+       14:  354:		return NULL;
         -:  355:	}
-        1:  356:	return ret;
+        2:  356:	return ret;
         -:  357:}
         -:  358:
         -:  359:Key *

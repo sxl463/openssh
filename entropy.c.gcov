@@ -210,12 +210,12 @@
         -:  208:#endif /* OPENSSL_PRNG_ONLY */
         -:  209:
         -:  210:void
-        1:  211:seed_rng(void)
+        2:  211:seed_rng(void)
         -:  212:{
         -:  213:#ifndef OPENSSL_PRNG_ONLY
         -:  214:	unsigned char buf[RANDOM_SEED_SIZE];
         -:  215:#endif
-        1:  216:	if (!ssh_compatible_openssl(OPENSSL_VERSION_NUMBER, SSLeay()))
+        2:  216:	if (!ssh_compatible_openssl(OPENSSL_VERSION_NUMBER, SSLeay()))
     #####:  217:		fatal("OpenSSL version mismatch. Built against %lx, you "
         -:  218:		    "have %lx", (u_long)OPENSSL_VERSION_NUMBER, SSLeay());
         -:  219:
@@ -231,9 +231,9 @@
         -:  229:	memset(buf, '\0', sizeof(buf));
         -:  230:
         -:  231:#endif /* OPENSSL_PRNG_ONLY */
-        1:  232:	if (RAND_status() != 1)
+        2:  232:	if (RAND_status() != 1)
     #####:  233:		fatal("PRNG is not seeded");
-        1:  234:}
+        2:  234:}
         -:  235:
         -:  236:#else /* WITH_OPENSSL */
         -:  237:

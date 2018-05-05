@@ -248,11 +248,11 @@
         -:  246: */
         -:  247:
         -:  248:static double
-        2:  249:get_current_time(void)
+        4:  249:get_current_time(void)
         -:  250:{
         -:  251:	struct timeval tv;
-        2:  252:	gettimeofday(&tv, NULL);
-        2:  253:	return (double) tv.tv_sec + (double) tv.tv_usec / 1000000.0;
+        4:  252:	gettimeofday(&tv, NULL);
+        4:  253:	return (double) tv.tv_sec + (double) tv.tv_usec / 1000000.0;
         -:  254:}
         -:  255:
         -:  256:/*
@@ -262,12 +262,12 @@
         -:  260: * control master process, or if there is no ControlPersist timeout.
         -:  261: */
         -:  262:static void
-       31:  263:set_control_persist_exit_time(void)
+      312:  263:set_control_persist_exit_time(void)
         -:  264:{
-       31:  265:	if (muxserver_sock == -1 || !options.control_persist
+      312:  265:	if (muxserver_sock == -1 || !options.control_persist
     #####:  266:	    || options.control_persist_timeout == 0) {
         -:  267:		/* not using a ControlPersist timeout */
-       31:  268:		control_persist_exit_time = 0;
+      312:  268:		control_persist_exit_time = 0;
     #####:  269:	} else if (channel_still_open()) {
         -:  270:		/* some client connections are still open */
     #####:  271:		if (control_persist_exit_time > 0)
@@ -281,7 +281,7 @@
         -:  279:		    options.control_persist_timeout);
         -:  280:	}
         -:  281:	/* else we are already counting down to the timeout */
-       31:  282:}
+      312:  282:}
         -:  283:
         -:  284:#define SSH_X11_VALID_DISPLAY_CHARS ":/.-_"
         -:  285:static int
@@ -549,12 +549,12 @@
         -:  547: */
         -:  548:
         -:  549:static void
-       31:  550:client_check_window_change(void)
+      312:  550:client_check_window_change(void)
         -:  551:{
         -:  552:	struct winsize ws;
         -:  553:
-       31:  554:	if (! received_window_change_signal)
-       62:  555:		return;
+      312:  554:	if (! received_window_change_signal)
+      624:  555:		return;
         -:  556:	/** XXX race */
     #####:  557:	received_window_change_signal = 0;
         -:  558:
@@ -613,19 +613,19 @@
         -:  611: * one of the file descriptors).
         -:  612: */
         -:  613:static void
-       31:  614:client_wait_until_can_do_something(fd_set **readsetp, fd_set **writesetp,
+      312:  614:client_wait_until_can_do_something(fd_set **readsetp, fd_set **writesetp,
         -:  615:    int *maxfdp, u_int *nallocp, int rekeying)
         -:  616:{
         -:  617:	struct timeval tv, *tvp;
         -:  618:	int timeout_secs;
-       31:  619:	time_t minwait_secs = 0, server_alive_time = 0, now = monotime();
+      312:  619:	time_t minwait_secs = 0, server_alive_time = 0, now = monotime();
         -:  620:	int ret;
         -:  621:
         -:  622:	/* Add any selections by the channel mechanism. */
-       31:  623:	channel_prepare_select(readsetp, writesetp, maxfdp, nallocp,
+      312:  623:	channel_prepare_select(readsetp, writesetp, maxfdp, nallocp,
         -:  624:	    &minwait_secs, rekeying);
         -:  625:
-       31:  626:	if (!compat20) {
+      312:  626:	if (!compat20) {
         -:  627:		/* Read from the connection, unless our buffers are full. */
     #####:  628:		if (buffer_len(&stdout_buffer) < buffer_high &&
     #####:  629:		    buffer_len(&stderr_buffer) < buffer_high &&
@@ -645,20 +645,20 @@
     #####:  643:			FD_SET(fileno(stderr), *writesetp);
         -:  644:	} else {
         -:  645:		/* channel_prepare_select could have closed the last channel */
-       32:  646:		if (session_closed && !channel_still_open() &&
-        1:  647:		    !packet_have_data_to_write()) {
+      314:  646:		if (session_closed && !channel_still_open() &&
+        2:  647:		    !packet_have_data_to_write()) {
         -:  648:			/* clear mask since we did not call select() */
     #####:  649:			memset(*readsetp, 0, *nallocp);
     #####:  650:			memset(*writesetp, 0, *nallocp);
     #####:  651:			return;
         -:  652:		} else {
-       31:  653:			FD_SET(connection_in, *readsetp);
+      312:  653:			FD_SET(connection_in, *readsetp);
         -:  654:		}
         -:  655:	}
         -:  656:
         -:  657:	/* Select server connection if have data to write to the server. */
-       31:  658:	if (packet_have_data_to_write())
-        8:  659:		FD_SET(connection_out, *writesetp);
+      312:  658:	if (packet_have_data_to_write())
+       72:  659:		FD_SET(connection_out, *writesetp);
         -:  660:
         -:  661:	/*
         -:  662:	 * Wait for something to happen.  This will suspend the process until
@@ -666,32 +666,32 @@
         -:  664:	 * event pending, or a timeout expires.
         -:  665:	 */
         -:  666:
-       31:  667:	timeout_secs = INT_MAX; /* we use INT_MAX to mean no timeout */
-       31:  668:	if (options.server_alive_interval > 0 && compat20) {
+      312:  667:	timeout_secs = INT_MAX; /* we use INT_MAX to mean no timeout */
+      312:  668:	if (options.server_alive_interval > 0 && compat20) {
     #####:  669:		timeout_secs = options.server_alive_interval;
     #####:  670:		server_alive_time = now + options.server_alive_interval;
         -:  671:	}
-       31:  672:	if (options.rekey_interval > 0 && compat20 && !rekeying)
+      312:  672:	if (options.rekey_interval > 0 && compat20 && !rekeying)
     #####:  673:		timeout_secs = MINIMUM(timeout_secs, packet_get_rekey_timeout());
-       31:  674:	set_control_persist_exit_time();
-       31:  675:	if (control_persist_exit_time > 0) {
+      312:  674:	set_control_persist_exit_time();
+      312:  675:	if (control_persist_exit_time > 0) {
     #####:  676:		timeout_secs = MINIMUM(timeout_secs,
         -:  677:			control_persist_exit_time - now);
     #####:  678:		if (timeout_secs < 0)
     #####:  679:			timeout_secs = 0;
         -:  680:	}
-       31:  681:	if (minwait_secs != 0)
+      312:  681:	if (minwait_secs != 0)
     #####:  682:		timeout_secs = MINIMUM(timeout_secs, (int)minwait_secs);
-       31:  683:	if (timeout_secs == INT_MAX)
-       31:  684:		tvp = NULL;
+      312:  683:	if (timeout_secs == INT_MAX)
+      312:  684:		tvp = NULL;
         -:  685:	else {
     #####:  686:		tv.tv_sec = timeout_secs;
     #####:  687:		tv.tv_usec = 0;
     #####:  688:		tvp = &tv;
         -:  689:	}
         -:  690:
-       31:  691:	ret = select((*maxfdp)+1, *readsetp, *writesetp, NULL, tvp);
-       31:  692:	if (ret < 0) {
+      312:  691:	ret = select((*maxfdp)+1, *readsetp, *writesetp, NULL, tvp);
+      312:  692:	if (ret < 0) {
         -:  693:		char buf[100];
         -:  694:
         -:  695:		/*
@@ -708,7 +708,7 @@
     #####:  706:		snprintf(buf, sizeof buf, "select: %s\r\n", strerror(errno));
     #####:  707:		buffer_append(&stderr_buffer, buf, strlen(buf));
     #####:  708:		quit_pending = 1;
-       31:  709:	} else if (ret == 0) {
+      312:  709:	} else if (ret == 0) {
         -:  710:		/*
         -:  711:		 * Timeout.  Could have been either keepalive or rekeying.
         -:  712:		 * Keepalive we check here, rekeying is checked in clientloop.
@@ -755,7 +755,7 @@
     #####:  753:}
         -:  754:
         -:  755:static void
-       31:  756:client_process_net_input(fd_set *readset)
+      312:  756:client_process_net_input(fd_set *readset)
         -:  757:{
         -:  758:	int len;
         -:  759:	char buf[SSH_IOBUFSZ];
@@ -764,10 +764,10 @@
         -:  762:	 * Read input from the server, and add any such data to the buffer of
         -:  763:	 * the packet subsystem.
         -:  764:	 */
-       31:  765:	if (FD_ISSET(connection_in, readset)) {
+      312:  765:	if (FD_ISSET(connection_in, readset)) {
         -:  766:		/* Read as much as possible. */
-       10:  767:		len = read(connection_in, buf, sizeof(buf));
-       10:  768:		if (len == 0) {
+       91:  767:		len = read(connection_in, buf, sizeof(buf));
+       91:  768:		if (len == 0) {
         -:  769:			/*
         -:  770:			 * Received EOF.  The remote host has closed the
         -:  771:			 * connection.
@@ -783,11 +783,11 @@
         -:  781:		 * There is a kernel bug on Solaris that causes select to
         -:  782:		 * sometimes wake up even though there is no data available.
         -:  783:		 */
-       10:  784:		if (len < 0 &&
+       91:  784:		if (len < 0 &&
     #####:  785:		    (errno == EAGAIN || errno == EINTR || errno == EWOULDBLOCK))
     #####:  786:			len = 0;
         -:  787:
-       10:  788:		if (len < 0) {
+       91:  788:		if (len < 0) {
         -:  789:			/*
         -:  790:			 * An error has encountered.  Perhaps there is a
         -:  791:			 * network problem.
@@ -799,14 +799,14 @@
     #####:  797:			quit_pending = 1;
     #####:  798:			return;
         -:  799:		}
-       10:  800:		packet_process_incoming(buf, len);
+       91:  800:		packet_process_incoming(buf, len);
         -:  801:	}
         -:  802:}
         -:  803:
         -:  804:static void
-        2:  805:client_status_confirm(int type, Channel *c, void *ctx)
+        4:  805:client_status_confirm(int type, Channel *c, void *ctx)
         -:  806:{
-        2:  807:	struct channel_reply_ctx *cr = (struct channel_reply_ctx *)ctx;
+        4:  807:	struct channel_reply_ctx *cr = (struct channel_reply_ctx *)ctx;
         -:  808:	char errmsg[256];
         -:  809:	int tochan;
         -:  810:
@@ -814,17 +814,17 @@
         -:  812:	 * If a TTY was explicitly requested, then a failure to allocate
         -:  813:	 * one is fatal.
         -:  814:	 */
-        3:  815:	if (cr->action == CONFIRM_TTY &&
-        2:  816:	    (options.request_tty == REQUEST_TTY_FORCE ||
-        1:  817:	    options.request_tty == REQUEST_TTY_YES))
+        6:  815:	if (cr->action == CONFIRM_TTY &&
+        4:  816:	    (options.request_tty == REQUEST_TTY_FORCE ||
+        2:  817:	    options.request_tty == REQUEST_TTY_YES))
     #####:  818:		cr->action = CONFIRM_CLOSE;
         -:  819:
         -:  820:	/* XXX supress on mux _client_ quietmode */
-        6:  821:	tochan = options.log_level >= SYSLOG_LEVEL_ERROR &&
-        2:  822:	    c->ctl_chan != -1 && c->extended_usage == CHAN_EXTENDED_WRITE;
+       12:  821:	tochan = options.log_level >= SYSLOG_LEVEL_ERROR &&
+        4:  822:	    c->ctl_chan != -1 && c->extended_usage == CHAN_EXTENDED_WRITE;
         -:  823:
-        2:  824:	if (type == SSH2_MSG_CHANNEL_SUCCESS) {
-        2:  825:		debug2("%s request accepted on channel %d",
+        4:  824:	if (type == SSH2_MSG_CHANNEL_SUCCESS) {
+        4:  825:		debug2("%s request accepted on channel %d",
         -:  826:		    cr->request_type, c->self);
     #####:  827:	} else if (type == SSH2_MSG_CHANNEL_FAILURE) {
     #####:  828:		if (tochan) {
@@ -861,8 +861,8 @@
     #####:  859:			chan_write_failed(c);
         -:  860:		}
         -:  861:	}
-        2:  862:	free(cr);
-        2:  863:}
+        4:  862:	free(cr);
+        4:  863:}
         -:  864:
         -:  865:static void
     #####:  866:client_abandon_status_confirm(Channel *c, void *ctx)
@@ -871,17 +871,17 @@
     #####:  869:}
         -:  870:
         -:  871:void
-        2:  872:client_expect_confirm(int id, const char *request,
+        4:  872:client_expect_confirm(int id, const char *request,
         -:  873:    enum confirm_action action)
         -:  874:{
-        2:  875:	struct channel_reply_ctx *cr = xcalloc(1, sizeof(*cr));
+        4:  875:	struct channel_reply_ctx *cr = xcalloc(1, sizeof(*cr));
         -:  876:
-        2:  877:	cr->request_type = request;
-        2:  878:	cr->action = action;
+        4:  877:	cr->request_type = request;
+        4:  878:	cr->action = action;
         -:  879:
-        2:  880:	channel_register_status_confirm(id, client_status_confirm,
+        4:  880:	channel_register_status_confirm(id, client_status_confirm,
         -:  881:	    client_abandon_status_confirm, cr);
-        2:  882:}
+        4:  882:}
         -:  883:
         -:  884:void
     #####:  885:client_register_global_confirm(global_confirm_cb *cb, void *ctx)
@@ -1088,37 +1088,37 @@
         -: 1086: * Process the characters one by one, call with c==NULL for proto1 case.
         -: 1087: */
         -: 1088:static int
-        5: 1089:process_escapes(Channel *c, Buffer *bin, Buffer *bout, Buffer *berr,
+       66: 1089:process_escapes(Channel *c, Buffer *bin, Buffer *bout, Buffer *berr,
         -: 1090:    char *buf, int len)
         -: 1091:{
         -: 1092:	char string[1024];
         -: 1093:	pid_t pid;
-        5: 1094:	int bytes = 0;
+       66: 1094:	int bytes = 0;
         -: 1095:	u_int i;
         -: 1096:	u_char ch;
         -: 1097:	char *s;
         -: 1098:	int *escape_pendingp, escape_char;
         -: 1099:	struct escape_filter_ctx *efc;
         -: 1100:
-        5: 1101:	if (c == NULL) {
+       66: 1101:	if (c == NULL) {
     #####: 1102:		escape_pendingp = &escape_pending1;
     #####: 1103:		escape_char = escape_char1;
         -: 1104:	} else {
-        5: 1105:		if (c->filter_ctx == NULL)
+       66: 1105:		if (c->filter_ctx == NULL)
     #####: 1106:			return 0;
-        5: 1107:		efc = (struct escape_filter_ctx *)c->filter_ctx;
-        5: 1108:		escape_pendingp = &efc->escape_pending;
-        5: 1109:		escape_char = efc->escape_char;
+       66: 1107:		efc = (struct escape_filter_ctx *)c->filter_ctx;
+       66: 1108:		escape_pendingp = &efc->escape_pending;
+       66: 1109:		escape_char = efc->escape_char;
         -: 1110:	}
         -: 1111:	
-        5: 1112:	if (len <= 0)
+       66: 1112:	if (len <= 0)
     #####: 1113:		return (0);
         -: 1114:
-       10: 1115:	for (i = 0; i < (u_int)len; i++) {
+      132: 1115:	for (i = 0; i < (u_int)len; i++) {
         -: 1116:		/* Get one character at a time. */
-        5: 1117:		ch = buf[i];
+       66: 1117:		ch = buf[i];
         -: 1118:
-        5: 1119:		if (*escape_pendingp) {
+       66: 1119:		if (*escape_pendingp) {
         -: 1120:			/* We have previously seen an escape character. */
         -: 1121:			/* Clear the flag now. */
     #####: 1122:			*escape_pendingp = 0;
@@ -1306,7 +1306,7 @@
         -: 1304:			 * The previous character was not an escape char.
         -: 1305:			 * Check if this is an escape.
         -: 1306:			 */
-        5: 1307:			if (last_was_cr && ch == escape_char) {
+       66: 1307:			if (last_was_cr && ch == escape_char) {
         -: 1308:				/*
         -: 1309:				 * It is. Set the flag and continue to
         -: 1310:				 * next character.
@@ -1320,11 +1320,11 @@
         -: 1318:		 * Normal character.  Record whether it was a newline,
         -: 1319:		 * and append it to the buffer.
         -: 1320:		 */
-        5: 1321:		last_was_cr = (ch == '\r' || ch == '\n');
-        5: 1322:		buffer_put_char(bin, ch);
-        5: 1323:		bytes++;
+       66: 1321:		last_was_cr = (ch == '\r' || ch == '\n');
+       66: 1322:		buffer_put_char(bin, ch);
+       66: 1323:		bytes++;
         -: 1324:	}
-        5: 1325:	return bytes;
+       66: 1325:	return bytes;
         -: 1326:}
         -: 1327:
         -: 1328:static void
@@ -1449,49 +1449,49 @@
         -: 1447: */
         -: 1448:
         -: 1449:static void
-       32: 1450:client_process_buffered_input_packets(void)
+      314: 1450:client_process_buffered_input_packets(void)
         -: 1451:{
-       32: 1452:	dispatch_run(DISPATCH_NONBLOCK, &quit_pending, active_state);
-       32: 1453:}
+      314: 1452:	dispatch_run(DISPATCH_NONBLOCK, &quit_pending, active_state);
+      314: 1453:}
         -: 1454:
         -: 1455:/* scan buf[] for '~' before sending data to the peer */
         -: 1456:
         -: 1457:/* Helper: allocate a new escape_filter_ctx and fill in its escape char */
         -: 1458:void *
-        1: 1459:client_new_escape_filter_ctx(int escape_char)
+        2: 1459:client_new_escape_filter_ctx(int escape_char)
         -: 1460:{
         -: 1461:	struct escape_filter_ctx *ret;
         -: 1462:
-        1: 1463:	ret = xcalloc(1, sizeof(*ret));
-        1: 1464:	ret->escape_pending = 0;
-        1: 1465:	ret->escape_char = escape_char;
-        1: 1466:	return (void *)ret;
+        2: 1463:	ret = xcalloc(1, sizeof(*ret));
+        2: 1464:	ret->escape_pending = 0;
+        2: 1465:	ret->escape_char = escape_char;
+        2: 1466:	return (void *)ret;
         -: 1467:}
         -: 1468:
         -: 1469:/* Free the escape filter context on channel free */
         -: 1470:void
-        1: 1471:client_filter_cleanup(int cid, void *ctx)
+        2: 1471:client_filter_cleanup(int cid, void *ctx)
         -: 1472:{
-        1: 1473:	free(ctx);
-        1: 1474:}
+        2: 1473:	free(ctx);
+        2: 1474:}
         -: 1475:
         -: 1476:int
-        5: 1477:client_simple_escape_filter(Channel *c, char *buf, int len)
+       66: 1477:client_simple_escape_filter(Channel *c, char *buf, int len)
         -: 1478:{
-        5: 1479:	if (c->extended_usage != CHAN_EXTENDED_WRITE)
+       66: 1479:	if (c->extended_usage != CHAN_EXTENDED_WRITE)
     #####: 1480:		return 0;
         -: 1481:
-        5: 1482:	return process_escapes(c, &c->input, &c->output, &c->extended,
+       66: 1482:	return process_escapes(c, &c->input, &c->output, &c->extended,
         -: 1483:	    buf, len);
         -: 1484:}
         -: 1485:
         -: 1486:static void
-        1: 1487:client_channel_closed(int id, void *arg)
+        2: 1487:client_channel_closed(int id, void *arg)
         -: 1488:{
-        1: 1489:	channel_cancel_cleanup(id);
-        1: 1490:	session_closed = 1;
-        1: 1491:	leave_raw_mode(options.request_tty == REQUEST_TTY_FORCE);
-        1: 1492:}
+        2: 1489:	channel_cancel_cleanup(id);
+        2: 1490:	session_closed = 1;
+        2: 1491:	leave_raw_mode(options.request_tty == REQUEST_TTY_FORCE);
+        2: 1492:}
         -: 1493:
         -: 1494:/*
         -: 1495: * Implements the interactive session with the server.  This is called after
@@ -1501,68 +1501,68 @@
         -: 1499: */
         -: 1500:
         -: 1501:int
-        1: 1502:client_loop(int have_pty, int escape_char_arg, int ssh2_chan_id)
+        2: 1502:client_loop(int have_pty, int escape_char_arg, int ssh2_chan_id)
         -: 1503:{
-        1: 1504:	fd_set *readset = NULL, *writeset = NULL;
+        2: 1504:	fd_set *readset = NULL, *writeset = NULL;
         -: 1505:	double start_time, total_time;
-        1: 1506:	int r, max_fd = 0, max_fd2 = 0, len;
+        2: 1506:	int r, max_fd = 0, max_fd2 = 0, len;
         -: 1507:	u_int64_t ibytes, obytes;
-        1: 1508:	u_int nalloc = 0;
+        2: 1508:	u_int nalloc = 0;
         -: 1509:	char buf[100];
         -: 1510:
-        1: 1511:	debug("Entering interactive session.");
+        2: 1511:	debug("Entering interactive session.");
         -: 1512:
-        1: 1513:	if (options.control_master &&
+        2: 1513:	if (options.control_master &&
     #####: 1514:	    !option_clear_or_none(options.control_path)) {
     #####: 1515:		debug("pledge: id");
     #####: 1516:		if (pledge("stdio rpath wpath cpath unix inet dns recvfd proc exec id tty",
         -: 1517:		    NULL) == -1)
     #####: 1518:			fatal("%s pledge(): %s", __func__, strerror(errno));
         -: 1519:
-        1: 1520:	} else if (options.forward_x11 || options.permit_local_command) {
+        2: 1520:	} else if (options.forward_x11 || options.permit_local_command) {
     #####: 1521:		debug("pledge: exec");
     #####: 1522:		if (pledge("stdio rpath wpath cpath unix inet dns proc exec tty",
         -: 1523:		    NULL) == -1)
     #####: 1524:			fatal("%s pledge(): %s", __func__, strerror(errno));
         -: 1525:
-        1: 1526:	} else if (options.update_hostkeys) {
+        2: 1526:	} else if (options.update_hostkeys) {
     #####: 1527:		debug("pledge: filesystem full");
     #####: 1528:		if (pledge("stdio rpath wpath cpath unix inet dns proc tty",
         -: 1529:		    NULL) == -1)
     #####: 1530:			fatal("%s pledge(): %s", __func__, strerror(errno));
         -: 1531:
-        1: 1532:	} else if (!option_clear_or_none(options.proxy_command) ||
+        2: 1532:	} else if (!option_clear_or_none(options.proxy_command) ||
         -: 1533:	    fork_after_authentication_flag) {
     #####: 1534:		debug("pledge: proc");
     #####: 1535:		if (pledge("stdio cpath unix inet dns proc tty", NULL) == -1)
     #####: 1536:			fatal("%s pledge(): %s", __func__, strerror(errno));
         -: 1537:
         -: 1538:	} else {
-        1: 1539:		debug("pledge: network");
-        1: 1540:		if (pledge("stdio unix inet dns tty", NULL) == -1)
+        2: 1539:		debug("pledge: network");
+        2: 1540:		if (pledge("stdio unix inet dns tty", NULL) == -1)
     #####: 1541:			fatal("%s pledge(): %s", __func__, strerror(errno));
         -: 1542:	}
         -: 1543:	//shen added, calculate the end time
-        1: 1544:	shen_end = clock();
+        2: 1544:	shen_end = clock();
         -: 1545:
-        1: 1546:	cpu_time_used = ((double) (shen_end - shen_start)) / CLOCKS_PER_SEC;
-        1: 1547:	printf("***\n Time used for login: %f\n\n", cpu_time_used);
+        2: 1546:	cpu_time_used = ((double) (shen_end - shen_start)) / CLOCKS_PER_SEC;
+        2: 1547:	printf("***\n Time used for login: %f\n\n", cpu_time_used);
         -: 1548:	
         -: 1549:
         -: 1550:
-        1: 1551:	start_time = get_current_time();
+        2: 1551:	start_time = get_current_time();
         -: 1552:
         -: 1553:	/* Initialize variables. */
-        1: 1554:	escape_pending1 = 0;
-        1: 1555:	last_was_cr = 1;
-        1: 1556:	exit_status = -1;
-        1: 1557:	stdin_eof = 0;
-        1: 1558:	buffer_high = 64 * 1024;
-        1: 1559:	connection_in = packet_get_connection_in();
-        1: 1560:	connection_out = packet_get_connection_out();
-        1: 1561:	max_fd = MAXIMUM(connection_in, connection_out);
+        2: 1554:	escape_pending1 = 0;
+        2: 1555:	last_was_cr = 1;
+        2: 1556:	exit_status = -1;
+        2: 1557:	stdin_eof = 0;
+        2: 1558:	buffer_high = 64 * 1024;
+        2: 1559:	connection_in = packet_get_connection_in();
+        2: 1560:	connection_out = packet_get_connection_out();
+        2: 1561:	max_fd = MAXIMUM(connection_in, connection_out);
         -: 1562:
-        1: 1563:	if (!compat20) {
+        2: 1563:	if (!compat20) {
         -: 1564:		/* enable nonblocking unless tty */
     #####: 1565:		if (!isatty(fileno(stdin)))
     #####: 1566:			set_nonblock(fileno(stdin));
@@ -1574,44 +1574,44 @@
     #####: 1572:		max_fd = MAXIMUM(max_fd, fileno(stdout));
     #####: 1573:		max_fd = MAXIMUM(max_fd, fileno(stderr));
         -: 1574:	}
-        1: 1575:	quit_pending = 0;
-        1: 1576:	escape_char1 = escape_char_arg;
+        2: 1575:	quit_pending = 0;
+        2: 1576:	escape_char1 = escape_char_arg;
         -: 1577:
         -: 1578:	/* Initialize buffers. */
-        1: 1579:	buffer_init(&stdin_buffer);
-        1: 1580:	buffer_init(&stdout_buffer);
-        1: 1581:	buffer_init(&stderr_buffer);
+        2: 1579:	buffer_init(&stdin_buffer);
+        2: 1580:	buffer_init(&stdout_buffer);
+        2: 1581:	buffer_init(&stderr_buffer);
         -: 1582:
-        1: 1583:	client_init_dispatch();
+        2: 1583:	client_init_dispatch();
         -: 1584:
         -: 1585:	/*
         -: 1586:	 * Set signal handlers, (e.g. to restore non-blocking mode)
         -: 1587:	 * but don't overwrite SIG_IGN, matches behaviour from rsh(1)
         -: 1588:	 */
-        1: 1589:	if (signal(SIGHUP, SIG_IGN) != SIG_IGN)
-        1: 1590:		signal(SIGHUP, signal_handler);
-        1: 1591:	if (signal(SIGINT, SIG_IGN) != SIG_IGN)
-        1: 1592:		signal(SIGINT, signal_handler);
-        1: 1593:	if (signal(SIGQUIT, SIG_IGN) != SIG_IGN)
-        1: 1594:		signal(SIGQUIT, signal_handler);
-        1: 1595:	if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
-        1: 1596:		signal(SIGTERM, signal_handler);
-        1: 1597:	signal(SIGWINCH, window_change_handler);
+        2: 1589:	if (signal(SIGHUP, SIG_IGN) != SIG_IGN)
+        2: 1590:		signal(SIGHUP, signal_handler);
+        2: 1591:	if (signal(SIGINT, SIG_IGN) != SIG_IGN)
+        2: 1592:		signal(SIGINT, signal_handler);
+        2: 1593:	if (signal(SIGQUIT, SIG_IGN) != SIG_IGN)
+        2: 1594:		signal(SIGQUIT, signal_handler);
+        2: 1595:	if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
+        2: 1596:		signal(SIGTERM, signal_handler);
+        2: 1597:	signal(SIGWINCH, window_change_handler);
         -: 1598:
-        1: 1599:	if (have_pty)
-        1: 1600:		enter_raw_mode(options.request_tty == REQUEST_TTY_FORCE);
+        2: 1599:	if (have_pty)
+        2: 1600:		enter_raw_mode(options.request_tty == REQUEST_TTY_FORCE);
         -: 1601:
-        1: 1602:	if (compat20) {
-        1: 1603:		session_ident = ssh2_chan_id;
-        1: 1604:		if (session_ident != -1) {
-        1: 1605:			if (escape_char_arg != SSH_ESCAPECHAR_NONE) {
-        1: 1606:				channel_register_filter(session_ident,
+        2: 1602:	if (compat20) {
+        2: 1603:		session_ident = ssh2_chan_id;
+        2: 1604:		if (session_ident != -1) {
+        2: 1605:			if (escape_char_arg != SSH_ESCAPECHAR_NONE) {
+        2: 1606:				channel_register_filter(session_ident,
         -: 1607:				    client_simple_escape_filter, NULL,
         -: 1608:				    client_filter_cleanup,
         -: 1609:				    client_new_escape_filter_ctx(
         -: 1610:				    escape_char_arg));
         -: 1611:			}
-        1: 1612:			channel_register_cleanup(session_ident,
+        2: 1612:			channel_register_cleanup(session_ident,
         -: 1613:			    client_channel_closed, 0);
         -: 1614:		}
         -: 1615:	} else {
@@ -1620,17 +1620,17 @@
         -: 1618:	}
         -: 1619:
         -: 1620:	/* Main loop of the client for the interactive session mode. */
-       33: 1621:	while (!quit_pending) {
+      316: 1621:	while (!quit_pending) {
         -: 1622:
         -: 1623:		/* Process buffered packets sent by the server. */
-       32: 1624:		client_process_buffered_input_packets();
+      314: 1624:		client_process_buffered_input_packets();
         -: 1625:
-       32: 1626:		if (compat20 && session_closed && !channel_still_open())
-        1: 1627:			break;
+      314: 1626:		if (compat20 && session_closed && !channel_still_open())
+        2: 1627:			break;
         -: 1628:
-       31: 1629:		if (ssh_packet_is_rekeying(active_state)) {
+      312: 1629:		if (ssh_packet_is_rekeying(active_state)) {
     #####: 1630:			debug("rekeying in progress");
-       31: 1631:		} else if (need_rekeying) {
+      312: 1631:		} else if (need_rekeying) {
         -: 1632:			/* manual rekey request */
     #####: 1633:			debug("need rekeying");
     #####: 1634:			if ((r = kex_start_rekex(active_state)) != 0)
@@ -1642,47 +1642,47 @@
         -: 1640:			 * Make packets of buffered stdin data, and buffer
         -: 1641:			 * them for sending to the server.
         -: 1642:			 */
-       31: 1643:			if (!compat20)
+      312: 1643:			if (!compat20)
     #####: 1644:				client_make_packets_from_stdin_data();
         -: 1645:
         -: 1646:			/*
         -: 1647:			 * Make packets from buffered channel data, and
         -: 1648:			 * enqueue them for sending to the server.
         -: 1649:			 */
-       31: 1650:			if (packet_not_very_much_data_to_write())
-       31: 1651:				channel_output_poll();
+      312: 1650:			if (packet_not_very_much_data_to_write())
+      312: 1651:				channel_output_poll();
         -: 1652:
         -: 1653:			/*
         -: 1654:			 * Check if the window size has changed, and buffer a
         -: 1655:			 * message about it to the server if so.
         -: 1656:			 */
-       31: 1657:			client_check_window_change();
+      312: 1657:			client_check_window_change();
         -: 1658:
-       31: 1659:			if (quit_pending)
+      312: 1659:			if (quit_pending)
     #####: 1660:				break;
         -: 1661:		}
         -: 1662:		/*
         -: 1663:		 * Wait until we have something to do (something becomes
         -: 1664:		 * available on one of the descriptors).
         -: 1665:		 */
-       31: 1666:		max_fd2 = max_fd;
-       31: 1667:		client_wait_until_can_do_something(&readset, &writeset,
+      312: 1666:		max_fd2 = max_fd;
+      312: 1667:		client_wait_until_can_do_something(&readset, &writeset,
         -: 1668:		    &max_fd2, &nalloc, ssh_packet_is_rekeying(active_state));
         -: 1669:
-       31: 1670:		if (quit_pending)
+      312: 1670:		if (quit_pending)
     #####: 1671:			break;
         -: 1672:
         -: 1673:		/* Do channel operations unless rekeying in progress. */
-       31: 1674:		if (!ssh_packet_is_rekeying(active_state))
-       31: 1675:			channel_after_select(readset, writeset);
+      312: 1674:		if (!ssh_packet_is_rekeying(active_state))
+      312: 1675:			channel_after_select(readset, writeset);
         -: 1676:
         -: 1677:		/* Buffer input from the connection.  */
-       31: 1678:		client_process_net_input(readset);
+      312: 1678:		client_process_net_input(readset);
         -: 1679:
-       31: 1680:		if (quit_pending)
+      312: 1680:		if (quit_pending)
     #####: 1681:			break;
         -: 1682:
-       31: 1683:		if (!compat20) {
+      312: 1683:		if (!compat20) {
         -: 1684:			/* Buffer data from stdin */
     #####: 1685:			client_process_input(readset);
         -: 1686:			/*
@@ -1696,49 +1696,49 @@
         -: 1694:		 * Send as much buffered packet data as possible to the
         -: 1695:		 * sender.
         -: 1696:		 */
-       31: 1697:		if (FD_ISSET(connection_out, writeset))
-        8: 1698:			packet_write_poll();
+      312: 1697:		if (FD_ISSET(connection_out, writeset))
+       72: 1698:			packet_write_poll();
         -: 1699:
         -: 1700:		/*
         -: 1701:		 * If we are a backgrounded control master, and the
         -: 1702:		 * timeout has expired without any active client
         -: 1703:		 * connections, then quit.
         -: 1704:		 */
-       31: 1705:		if (control_persist_exit_time > 0) {
+      312: 1705:		if (control_persist_exit_time > 0) {
     #####: 1706:			if (monotime() >= control_persist_exit_time) {
     #####: 1707:				debug("ControlPersist timeout expired");
     #####: 1708:				break;
         -: 1709:			}
         -: 1710:		}
         -: 1711:	}
-        1: 1712:	free(readset);
-        1: 1713:	free(writeset);
+        2: 1712:	free(readset);
+        2: 1713:	free(writeset);
         -: 1714:
         -: 1715:	/* Terminate the session. */
         -: 1716:
         -: 1717:	/* Stop watching for window change. */
-        1: 1718:	signal(SIGWINCH, SIG_DFL);
+        2: 1718:	signal(SIGWINCH, SIG_DFL);
         -: 1719:
-        1: 1720:	if (compat20) {
-        1: 1721:		packet_start(SSH2_MSG_DISCONNECT);
-        1: 1722:		packet_put_int(SSH2_DISCONNECT_BY_APPLICATION);
-        1: 1723:		packet_put_cstring("disconnected by user");
-        1: 1724:		packet_put_cstring(""); /* language tag */
-        1: 1725:		packet_send();
-        1: 1726:		packet_write_wait();
+        2: 1720:	if (compat20) {
+        2: 1721:		packet_start(SSH2_MSG_DISCONNECT);
+        2: 1722:		packet_put_int(SSH2_DISCONNECT_BY_APPLICATION);
+        2: 1723:		packet_put_cstring("disconnected by user");
+        2: 1724:		packet_put_cstring(""); /* language tag */
+        2: 1725:		packet_send();
+        2: 1726:		packet_write_wait();
         -: 1727:	}
         -: 1728:
-        1: 1729:	channel_free_all();
+        2: 1729:	channel_free_all();
         -: 1730:
-        1: 1731:	if (have_pty)
-        1: 1732:		leave_raw_mode(options.request_tty == REQUEST_TTY_FORCE);
+        2: 1731:	if (have_pty)
+        2: 1732:		leave_raw_mode(options.request_tty == REQUEST_TTY_FORCE);
         -: 1733:
         -: 1734:	/* restore blocking io */
-        1: 1735:	if (!isatty(fileno(stdin)))
+        2: 1735:	if (!isatty(fileno(stdin)))
     #####: 1736:		unset_nonblock(fileno(stdin));
-        1: 1737:	if (!isatty(fileno(stdout)))
+        2: 1737:	if (!isatty(fileno(stdout)))
     #####: 1738:		unset_nonblock(fileno(stdout));
-        1: 1739:	if (!isatty(fileno(stderr)))
+        2: 1739:	if (!isatty(fileno(stderr)))
     #####: 1740:		unset_nonblock(fileno(stderr));
         -: 1741:
         -: 1742:	/*
@@ -1746,26 +1746,26 @@
         -: 1744:	 * exit status to be returned.  In that case, clear error code if the
         -: 1745:	 * connection was deliberately terminated at this end.
         -: 1746:	 */
-        1: 1747:	if (no_shell_flag && received_signal == SIGTERM) {
+        2: 1747:	if (no_shell_flag && received_signal == SIGTERM) {
     #####: 1748:		received_signal = 0;
     #####: 1749:		exit_status = 0;
         -: 1750:	}
         -: 1751:
-        1: 1752:	if (received_signal)
+        2: 1752:	if (received_signal)
     #####: 1753:		fatal("Killed by signal %d.", (int) received_signal);
         -: 1754:
         -: 1755:	/*
         -: 1756:	 * In interactive mode (with pseudo tty) display a message indicating
         -: 1757:	 * that the connection has been closed.
         -: 1758:	 */
-        1: 1759:	if (have_pty && options.log_level != SYSLOG_LEVEL_QUIET) {
-        1: 1760:		snprintf(buf, sizeof buf,
+        2: 1759:	if (have_pty && options.log_level != SYSLOG_LEVEL_QUIET) {
+        2: 1760:		snprintf(buf, sizeof buf,
         -: 1761:		    "Connection to %.64s closed.\r\n", host);
-        1: 1762:		buffer_append(&stderr_buffer, buf, strlen(buf));
+        2: 1762:		buffer_append(&stderr_buffer, buf, strlen(buf));
         -: 1763:	}
         -: 1764:
         -: 1765:	/* Output any buffered data for stdout. */
-        1: 1766:	if (buffer_len(&stdout_buffer) > 0) {
+        2: 1766:	if (buffer_len(&stdout_buffer) > 0) {
     #####: 1767:		len = atomicio(vwrite, fileno(stdout),
     #####: 1768:		    buffer_ptr(&stdout_buffer), buffer_len(&stdout_buffer));
     #####: 1769:		if (len < 0 || (u_int)len != buffer_len(&stdout_buffer))
@@ -1775,32 +1775,32 @@
         -: 1773:	}
         -: 1774:
         -: 1775:	/* Output any buffered data for stderr. */
-        1: 1776:	if (buffer_len(&stderr_buffer) > 0) {
-        2: 1777:		len = atomicio(vwrite, fileno(stderr),
-        1: 1778:		    buffer_ptr(&stderr_buffer), buffer_len(&stderr_buffer));
-        1: 1779:		if (len < 0 || (u_int)len != buffer_len(&stderr_buffer))
+        2: 1776:	if (buffer_len(&stderr_buffer) > 0) {
+        4: 1777:		len = atomicio(vwrite, fileno(stderr),
+        2: 1778:		    buffer_ptr(&stderr_buffer), buffer_len(&stderr_buffer));
+        2: 1779:		if (len < 0 || (u_int)len != buffer_len(&stderr_buffer))
     #####: 1780:			error("Write failed flushing stderr buffer.");
         -: 1781:		else
-        1: 1782:			buffer_consume(&stderr_buffer, len);
+        2: 1782:			buffer_consume(&stderr_buffer, len);
         -: 1783:	}
         -: 1784:
         -: 1785:	/* Clear and free any buffers. */
-        1: 1786:	explicit_bzero(buf, sizeof(buf));
-        1: 1787:	buffer_free(&stdin_buffer);
-        1: 1788:	buffer_free(&stdout_buffer);
-        1: 1789:	buffer_free(&stderr_buffer);
+        2: 1786:	explicit_bzero(buf, sizeof(buf));
+        2: 1787:	buffer_free(&stdin_buffer);
+        2: 1788:	buffer_free(&stdout_buffer);
+        2: 1789:	buffer_free(&stderr_buffer);
         -: 1790:
         -: 1791:	/* Report bytes transferred, and transfer rates. */
-        1: 1792:	total_time = get_current_time() - start_time;
-        1: 1793:	packet_get_bytes(&ibytes, &obytes);
-        1: 1794:	verbose("Transferred: sent %llu, received %llu bytes, in %.1f seconds",
+        2: 1792:	total_time = get_current_time() - start_time;
+        2: 1793:	packet_get_bytes(&ibytes, &obytes);
+        2: 1794:	verbose("Transferred: sent %llu, received %llu bytes, in %.1f seconds",
         -: 1795:	    (unsigned long long)obytes, (unsigned long long)ibytes, total_time);
-        1: 1796:	if (total_time > 0)
-        1: 1797:		verbose("Bytes per second: sent %.1f, received %.1f",
+        2: 1796:	if (total_time > 0)
+        2: 1797:		verbose("Bytes per second: sent %.1f, received %.1f",
         -: 1798:		    obytes / total_time, ibytes / total_time);
         -: 1799:	/* Return the exit status of the program. */
-        1: 1800:	debug("Exit status %d", exit_status);
-        1: 1801:	return exit_status;
+        2: 1800:	debug("Exit status %d", exit_status);
+        2: 1801:	return exit_status;
         -: 1802:}
         -: 1803:
         -: 1804:/*********/
@@ -2134,54 +2134,54 @@
         -: 2132:}
         -: 2133:
         -: 2134:static int
-        2: 2135:client_input_channel_req(int type, u_int32_t seq, void *ctxt)
+        4: 2135:client_input_channel_req(int type, u_int32_t seq, void *ctxt)
         -: 2136:{
-        2: 2137:	Channel *c = NULL;
-        2: 2138:	int exitval, id, reply, success = 0;
+        4: 2137:	Channel *c = NULL;
+        4: 2138:	int exitval, id, reply, success = 0;
         -: 2139:	char *rtype;
         -: 2140:
-        2: 2141:	id = packet_get_int();
-        2: 2142:	c = channel_lookup(id);
-        2: 2143:	if (channel_proxy_upstream(c, type, seq, ctxt))
+        4: 2141:	id = packet_get_int();
+        4: 2142:	c = channel_lookup(id);
+        4: 2143:	if (channel_proxy_upstream(c, type, seq, ctxt))
     #####: 2144:		return 0;
-        2: 2145:	rtype = packet_get_string(NULL);
-        2: 2146:	reply = packet_get_char();
+        4: 2145:	rtype = packet_get_string(NULL);
+        4: 2146:	reply = packet_get_char();
         -: 2147:
-        2: 2148:	debug("client_input_channel_req: channel %d rtype %s reply %d",
+        4: 2148:	debug("client_input_channel_req: channel %d rtype %s reply %d",
         -: 2149:	    id, rtype, reply);
         -: 2150:
-        2: 2151:	if (id == -1) {
+        4: 2151:	if (id == -1) {
     #####: 2152:		error("client_input_channel_req: request for channel -1");
-        2: 2153:	} else if (c == NULL) {
+        4: 2153:	} else if (c == NULL) {
     #####: 2154:		error("client_input_channel_req: channel %d: "
         -: 2155:		    "unknown channel", id);
-        2: 2156:	} else if (strcmp(rtype, "eow@openssh.com") == 0) {
-        1: 2157:		packet_check_eom();
-        1: 2158:		chan_rcvd_eow(c);
-        1: 2159:	} else if (strcmp(rtype, "exit-status") == 0) {
-        1: 2160:		exitval = packet_get_int();
-        1: 2161:		if (c->ctl_chan != -1) {
+        4: 2156:	} else if (strcmp(rtype, "eow@openssh.com") == 0) {
+        2: 2157:		packet_check_eom();
+        2: 2158:		chan_rcvd_eow(c);
+        2: 2159:	} else if (strcmp(rtype, "exit-status") == 0) {
+        2: 2160:		exitval = packet_get_int();
+        2: 2161:		if (c->ctl_chan != -1) {
     #####: 2162:			mux_exit_message(c, exitval);
     #####: 2163:			success = 1;
-        1: 2164:		} else if (id == session_ident) {
+        2: 2164:		} else if (id == session_ident) {
         -: 2165:			/* Record exit value of local session */
-        1: 2166:			success = 1;
-        1: 2167:			exit_status = exitval;
+        2: 2166:			success = 1;
+        2: 2167:			exit_status = exitval;
         -: 2168:		} else {
         -: 2169:			/* Probably for a mux channel that has already closed */
     #####: 2170:			debug("%s: no sink for exit-status on channel %d",
         -: 2171:			    __func__, id);
         -: 2172:		}
-        1: 2173:		packet_check_eom();
+        2: 2173:		packet_check_eom();
         -: 2174:	}
-        2: 2175:	if (reply && c != NULL && !(c->flags & CHAN_CLOSE_SENT)) {
+        4: 2175:	if (reply && c != NULL && !(c->flags & CHAN_CLOSE_SENT)) {
     #####: 2176:		packet_start(success ?
         -: 2177:		    SSH2_MSG_CHANNEL_SUCCESS : SSH2_MSG_CHANNEL_FAILURE);
     #####: 2178:		packet_put_int(c->remote_id);
     #####: 2179:		packet_send();
         -: 2180:	}
-        2: 2181:	free(rtype);
-        2: 2182:	return 0;
+        4: 2181:	free(rtype);
+        4: 2182:	return 0;
         -: 2183:}
         -: 2184:
         -: 2185:struct hostkeys_update_ctx {
@@ -2581,44 +2581,44 @@
         -: 2579:}
         -: 2580:
         -: 2581:void
-        1: 2582:client_session2_setup(int id, int want_tty, int want_subsystem,
+        2: 2582:client_session2_setup(int id, int want_tty, int want_subsystem,
         -: 2583:    const char *term, struct termios *tiop, int in_fd, Buffer *cmd, char **env)
         -: 2584:{
         -: 2585:	int len;
-        1: 2586:	Channel *c = NULL;
+        2: 2586:	Channel *c = NULL;
         -: 2587:
-        1: 2588:	debug2("%s: id %d", __func__, id);
+        2: 2588:	debug2("%s: id %d", __func__, id);
         -: 2589:
-        1: 2590:	if ((c = channel_lookup(id)) == NULL)
+        2: 2590:	if ((c = channel_lookup(id)) == NULL)
     #####: 2591:		fatal("client_session2_setup: channel %d: unknown channel", id);
         -: 2592:
-        1: 2593:	packet_set_interactive(want_tty,
+        2: 2593:	packet_set_interactive(want_tty,
         -: 2594:	    options.ip_qos_interactive, options.ip_qos_bulk);
         -: 2595:
-        1: 2596:	if (want_tty) {
+        2: 2596:	if (want_tty) {
         -: 2597:		struct winsize ws;
         -: 2598:
         -: 2599:		/* Store window size in the packet. */
-        1: 2600:		if (ioctl(in_fd, TIOCGWINSZ, &ws) < 0)
+        2: 2600:		if (ioctl(in_fd, TIOCGWINSZ, &ws) < 0)
     #####: 2601:			memset(&ws, 0, sizeof(ws));
         -: 2602:
-        1: 2603:		channel_request_start(id, "pty-req", 1);
-        1: 2604:		client_expect_confirm(id, "PTY allocation", CONFIRM_TTY);
-        1: 2605:		packet_put_cstring(term != NULL ? term : "");
-        1: 2606:		packet_put_int((u_int)ws.ws_col);
-        1: 2607:		packet_put_int((u_int)ws.ws_row);
-        1: 2608:		packet_put_int((u_int)ws.ws_xpixel);
-        1: 2609:		packet_put_int((u_int)ws.ws_ypixel);
-        1: 2610:		if (tiop == NULL)
-        1: 2611:			tiop = get_saved_tio();
-        1: 2612:		tty_make_modes(-1, tiop);
-        1: 2613:		packet_send();
+        2: 2603:		channel_request_start(id, "pty-req", 1);
+        2: 2604:		client_expect_confirm(id, "PTY allocation", CONFIRM_TTY);
+        2: 2605:		packet_put_cstring(term != NULL ? term : "");
+        2: 2606:		packet_put_int((u_int)ws.ws_col);
+        2: 2607:		packet_put_int((u_int)ws.ws_row);
+        2: 2608:		packet_put_int((u_int)ws.ws_xpixel);
+        2: 2609:		packet_put_int((u_int)ws.ws_ypixel);
+        2: 2610:		if (tiop == NULL)
+        2: 2611:			tiop = get_saved_tio();
+        2: 2612:		tty_make_modes(-1, tiop);
+        2: 2613:		packet_send();
         -: 2614:		/* XXX wait for reply */
-        1: 2615:		c->client_tty = 1;
+        2: 2615:		c->client_tty = 1;
         -: 2616:	}
         -: 2617:
         -: 2618:	/* Transfer any environment variables from client to server */
-        1: 2619:	if (options.num_send_env != 0 && env != NULL) {
+        2: 2619:	if (options.num_send_env != 0 && env != NULL) {
         -: 2620:		int i, j, matched;
         -: 2621:		char *name, *val;
         -: 2622:
@@ -2655,8 +2655,8 @@
         -: 2653:		}
         -: 2654:	}
         -: 2655:
-        1: 2656:	len = buffer_len(cmd);
-        1: 2657:	if (len > 0) {
+        2: 2656:	len = buffer_len(cmd);
+        2: 2657:	if (len > 0) {
     #####: 2658:		if (len > 900)
     #####: 2659:			len = 900;
     #####: 2660:		if (want_subsystem) {
@@ -2673,37 +2673,37 @@
     #####: 2671:		packet_put_string(buffer_ptr(cmd), buffer_len(cmd));
     #####: 2672:		packet_send();
         -: 2673:	} else {
-        1: 2674:		channel_request_start(id, "shell", 1);
-        1: 2675:		client_expect_confirm(id, "shell", CONFIRM_CLOSE);
-        1: 2676:		packet_send();
+        2: 2674:		channel_request_start(id, "shell", 1);
+        2: 2675:		client_expect_confirm(id, "shell", CONFIRM_CLOSE);
+        2: 2676:		packet_send();
         -: 2677:	}
-        1: 2678:}
+        2: 2678:}
         -: 2679:
         -: 2680:static void
-        1: 2681:client_init_dispatch_20(void)
+        2: 2681:client_init_dispatch_20(void)
         -: 2682:{
-        1: 2683:	dispatch_init(&dispatch_protocol_error);
+        2: 2683:	dispatch_init(&dispatch_protocol_error);
         -: 2684:
-        1: 2685:	dispatch_set(SSH2_MSG_CHANNEL_CLOSE, &channel_input_oclose);
-        1: 2686:	dispatch_set(SSH2_MSG_CHANNEL_DATA, &channel_input_data);
-        1: 2687:	dispatch_set(SSH2_MSG_CHANNEL_EOF, &channel_input_ieof);
-        1: 2688:	dispatch_set(SSH2_MSG_CHANNEL_EXTENDED_DATA, &channel_input_extended_data);
-        1: 2689:	dispatch_set(SSH2_MSG_CHANNEL_OPEN, &client_input_channel_open);
-        1: 2690:	dispatch_set(SSH2_MSG_CHANNEL_OPEN_CONFIRMATION, &channel_input_open_confirmation);
-        1: 2691:	dispatch_set(SSH2_MSG_CHANNEL_OPEN_FAILURE, &channel_input_open_failure);
-        1: 2692:	dispatch_set(SSH2_MSG_CHANNEL_REQUEST, &client_input_channel_req);
-        1: 2693:	dispatch_set(SSH2_MSG_CHANNEL_WINDOW_ADJUST, &channel_input_window_adjust);
-        1: 2694:	dispatch_set(SSH2_MSG_CHANNEL_SUCCESS, &channel_input_status_confirm);
-        1: 2695:	dispatch_set(SSH2_MSG_CHANNEL_FAILURE, &channel_input_status_confirm);
-        1: 2696:	dispatch_set(SSH2_MSG_GLOBAL_REQUEST, &client_input_global_request);
+        2: 2685:	dispatch_set(SSH2_MSG_CHANNEL_CLOSE, &channel_input_oclose);
+        2: 2686:	dispatch_set(SSH2_MSG_CHANNEL_DATA, &channel_input_data);
+        2: 2687:	dispatch_set(SSH2_MSG_CHANNEL_EOF, &channel_input_ieof);
+        2: 2688:	dispatch_set(SSH2_MSG_CHANNEL_EXTENDED_DATA, &channel_input_extended_data);
+        2: 2689:	dispatch_set(SSH2_MSG_CHANNEL_OPEN, &client_input_channel_open);
+        2: 2690:	dispatch_set(SSH2_MSG_CHANNEL_OPEN_CONFIRMATION, &channel_input_open_confirmation);
+        2: 2691:	dispatch_set(SSH2_MSG_CHANNEL_OPEN_FAILURE, &channel_input_open_failure);
+        2: 2692:	dispatch_set(SSH2_MSG_CHANNEL_REQUEST, &client_input_channel_req);
+        2: 2693:	dispatch_set(SSH2_MSG_CHANNEL_WINDOW_ADJUST, &channel_input_window_adjust);
+        2: 2694:	dispatch_set(SSH2_MSG_CHANNEL_SUCCESS, &channel_input_status_confirm);
+        2: 2695:	dispatch_set(SSH2_MSG_CHANNEL_FAILURE, &channel_input_status_confirm);
+        2: 2696:	dispatch_set(SSH2_MSG_GLOBAL_REQUEST, &client_input_global_request);
         -: 2697:
         -: 2698:	/* rekeying */
-        1: 2699:	dispatch_set(SSH2_MSG_KEXINIT, &kex_input_kexinit);
+        2: 2699:	dispatch_set(SSH2_MSG_KEXINIT, &kex_input_kexinit);
         -: 2700:
         -: 2701:	/* global request reply messages */
-        1: 2702:	dispatch_set(SSH2_MSG_REQUEST_FAILURE, &client_global_request_reply);
-        1: 2703:	dispatch_set(SSH2_MSG_REQUEST_SUCCESS, &client_global_request_reply);
-        1: 2704:}
+        2: 2702:	dispatch_set(SSH2_MSG_REQUEST_FAILURE, &client_global_request_reply);
+        2: 2703:	dispatch_set(SSH2_MSG_REQUEST_SUCCESS, &client_global_request_reply);
+        2: 2704:}
         -: 2705:
         -: 2706:static void
     #####: 2707:client_init_dispatch_13(void)
@@ -2734,15 +2734,15 @@
     #####: 2732:}
         -: 2733:
         -: 2734:static void
-        1: 2735:client_init_dispatch(void)
+        2: 2735:client_init_dispatch(void)
         -: 2736:{
-        1: 2737:	if (compat20)
-        1: 2738:		client_init_dispatch_20();
+        2: 2737:	if (compat20)
+        2: 2738:		client_init_dispatch_20();
     #####: 2739:	else if (compat13)
     #####: 2740:		client_init_dispatch_13();
         -: 2741:	else
     #####: 2742:		client_init_dispatch_15();
-        1: 2743:}
+        2: 2743:}
         -: 2744:
         -: 2745:void
     #####: 2746:client_stop_mux(void)

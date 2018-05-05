@@ -31,10 +31,10 @@
         -:   29:#include "misc.h"
         -:   30:
         -:   31:static inline int
-     2202:   32:sshbuf_check_sanity(const struct sshbuf *buf)
+    10913:   32:sshbuf_check_sanity(const struct sshbuf *buf)
         -:   33:{
         -:   34:	SSHBUF_TELL("sanity");
-     2202:   35:	if (__predict_false(buf == NULL ||
+    10913:   35:	if (__predict_false(buf == NULL ||
         -:   36:	    (!buf->readonly && buf->d != buf->cd) ||
         -:   37:	    buf->refcount < 1 || buf->refcount > SSHBUF_REFS_MAX ||
         -:   38:	    buf->cd == NULL ||
@@ -49,159 +49,159 @@
     #####:   47:		raise(SIGSEGV);
     #####:   48:		return SSH_ERR_INTERNAL_ERROR;
         -:   49:	}
-     2202:   50:	return 0;
+    10913:   50:	return 0;
         -:   51:}
         -:   52:
         -:   53:static void
-      370:   54:sshbuf_maybe_pack(struct sshbuf *buf, int force)
+     1307:   54:sshbuf_maybe_pack(struct sshbuf *buf, int force)
         -:   55:{
         -:   56:	SSHBUF_DBG(("force %d", force));
         -:   57:	SSHBUF_TELL("pre-pack");
-      370:   58:	if (buf->off == 0 || buf->readonly || buf->refcount > 1)
-      697:   59:		return;
-       86:   60:	if (force ||
-       43:   61:	    (buf->off >= SSHBUF_PACK_MIN && buf->off >= buf->size / 2)) {
-    #####:   62:		memmove(buf->d, buf->d + buf->off, buf->size - buf->off);
-    #####:   63:		buf->size -= buf->off;
-    #####:   64:		buf->off = 0;
+     1307:   58:	if (buf->off == 0 || buf->readonly || buf->refcount > 1)
+     2271:   59:		return;
+      686:   60:	if (force ||
+      350:   61:	    (buf->off >= SSHBUF_PACK_MIN && buf->off >= buf->size / 2)) {
+        7:   62:		memmove(buf->d, buf->d + buf->off, buf->size - buf->off);
+        7:   63:		buf->size -= buf->off;
+        7:   64:		buf->off = 0;
         -:   65:		SSHBUF_TELL("packed");
         -:   66:	}
         -:   67:}
         -:   68:
         -:   69:struct sshbuf *
-       21:   70:sshbuf_new(void)
+       42:   70:sshbuf_new(void)
         -:   71:{
         -:   72:	struct sshbuf *ret;
         -:   73:
-       21:   74:	if ((ret = calloc(sizeof(*ret), 1)) == NULL)
+       42:   74:	if ((ret = calloc(sizeof(*ret), 1)) == NULL)
     #####:   75:		return NULL;
-       21:   76:	ret->alloc = SSHBUF_SIZE_INIT;
-       21:   77:	ret->max_size = SSHBUF_SIZE_MAX;
-       21:   78:	ret->readonly = 0;
-       21:   79:	ret->refcount = 1;
-       21:   80:	ret->parent = NULL;
-       21:   81:	if ((ret->cd = ret->d = calloc(1, ret->alloc)) == NULL) {
+       42:   76:	ret->alloc = SSHBUF_SIZE_INIT;
+       42:   77:	ret->max_size = SSHBUF_SIZE_MAX;
+       42:   78:	ret->readonly = 0;
+       42:   79:	ret->refcount = 1;
+       42:   80:	ret->parent = NULL;
+       42:   81:	if ((ret->cd = ret->d = calloc(1, ret->alloc)) == NULL) {
     #####:   82:		free(ret);
     #####:   83:		return NULL;
         -:   84:	}
-       21:   85:	return ret;
+       42:   85:	return ret;
         -:   86:}
         -:   87:
         -:   88:struct sshbuf *
-       14:   89:sshbuf_from(const void *blob, size_t len)
+       28:   89:sshbuf_from(const void *blob, size_t len)
         -:   90:{
         -:   91:	struct sshbuf *ret;
         -:   92:
-       14:   93:	if (blob == NULL || len > SSHBUF_SIZE_MAX ||
+       28:   93:	if (blob == NULL || len > SSHBUF_SIZE_MAX ||
         -:   94:	    (ret = calloc(sizeof(*ret), 1)) == NULL)
     #####:   95:		return NULL;
-       14:   96:	ret->alloc = ret->size = ret->max_size = len;
-       14:   97:	ret->readonly = 1;
-       14:   98:	ret->refcount = 1;
-       14:   99:	ret->parent = NULL;
-       14:  100:	ret->cd = blob;
-       14:  101:	ret->d = NULL;
-       14:  102:	return ret;
+       28:   96:	ret->alloc = ret->size = ret->max_size = len;
+       28:   97:	ret->readonly = 1;
+       28:   98:	ret->refcount = 1;
+       28:   99:	ret->parent = NULL;
+       28:  100:	ret->cd = blob;
+       28:  101:	ret->d = NULL;
+       28:  102:	return ret;
         -:  103:}
         -:  104:
         -:  105:int
-        8:  106:sshbuf_set_parent(struct sshbuf *child, struct sshbuf *parent)
+       16:  106:sshbuf_set_parent(struct sshbuf *child, struct sshbuf *parent)
         -:  107:{
         -:  108:	int r;
         -:  109:
-        8:  110:	if ((r = sshbuf_check_sanity(child)) != 0 ||
+       16:  110:	if ((r = sshbuf_check_sanity(child)) != 0 ||
         -:  111:	    (r = sshbuf_check_sanity(parent)) != 0)
     #####:  112:		return r;
-        8:  113:	child->parent = parent;
-        8:  114:	child->parent->refcount++;
-        8:  115:	return 0;
+       16:  113:	child->parent = parent;
+       16:  114:	child->parent->refcount++;
+       16:  115:	return 0;
         -:  116:}
         -:  117:
         -:  118:struct sshbuf *
-        7:  119:sshbuf_fromb(struct sshbuf *buf)
+       14:  119:sshbuf_fromb(struct sshbuf *buf)
         -:  120:{
         -:  121:	struct sshbuf *ret;
         -:  122:
-        7:  123:	if (sshbuf_check_sanity(buf) != 0)
+       14:  123:	if (sshbuf_check_sanity(buf) != 0)
     #####:  124:		return NULL;
-        7:  125:	if ((ret = sshbuf_from(sshbuf_ptr(buf), sshbuf_len(buf))) == NULL)
+       14:  125:	if ((ret = sshbuf_from(sshbuf_ptr(buf), sshbuf_len(buf))) == NULL)
     #####:  126:		return NULL;
-        7:  127:	if (sshbuf_set_parent(ret, buf) != 0) {
+       14:  127:	if (sshbuf_set_parent(ret, buf) != 0) {
     #####:  128:		sshbuf_free(ret);
     #####:  129:		return NULL;
         -:  130:	}
-        7:  131:	return ret;
+       14:  131:	return ret;
         -:  132:}
         -:  133:
         -:  134:void
-       11:  135:sshbuf_init(struct sshbuf *ret)
+       22:  135:sshbuf_init(struct sshbuf *ret)
         -:  136:{
-       11:  137:	explicit_bzero(ret, sizeof(*ret));
-       11:  138:	ret->alloc = SSHBUF_SIZE_INIT;
-       11:  139:	ret->max_size = SSHBUF_SIZE_MAX;
-       11:  140:	ret->readonly = 0;
-       11:  141:	ret->dont_free = 1;
-       11:  142:	ret->refcount = 1;
-       11:  143:	if ((ret->cd = ret->d = calloc(1, ret->alloc)) == NULL)
+       22:  137:	explicit_bzero(ret, sizeof(*ret));
+       22:  138:	ret->alloc = SSHBUF_SIZE_INIT;
+       22:  139:	ret->max_size = SSHBUF_SIZE_MAX;
+       22:  140:	ret->readonly = 0;
+       22:  141:	ret->dont_free = 1;
+       22:  142:	ret->refcount = 1;
+       22:  143:	if ((ret->cd = ret->d = calloc(1, ret->alloc)) == NULL)
     #####:  144:		ret->alloc = 0;
-       11:  145:}
+       22:  145:}
         -:  146:
         -:  147:void
-       95:  148:sshbuf_free(struct sshbuf *buf)
+      190:  148:sshbuf_free(struct sshbuf *buf)
         -:  149:{
-       95:  150:	int dont_free = 0;
+      190:  150:	int dont_free = 0;
         -:  151:
-       95:  152:	if (buf == NULL)
-       44:  153:		return;
+      190:  152:	if (buf == NULL)
+       88:  153:		return;
         -:  154:	/*
         -:  155:	 * The following will leak on insane buffers, but this is the safest
         -:  156:	 * course of action - an invalid pointer or already-freed pointer may
         -:  157:	 * have been passed to us and continuing to scribble over memory would
         -:  158:	 * be bad.
         -:  159:	 */
-       51:  160:	if (sshbuf_check_sanity(buf) != 0)
+      102:  160:	if (sshbuf_check_sanity(buf) != 0)
     #####:  161:		return;
         -:  162:	/*
         -:  163:	 * If we are a child, the free our parent to decrement its reference
         -:  164:	 * count and possibly free it.
         -:  165:	 */
-       51:  166:	sshbuf_free(buf->parent);
-       51:  167:	buf->parent = NULL;
+      102:  166:	sshbuf_free(buf->parent);
+      102:  167:	buf->parent = NULL;
         -:  168:	/*
         -:  169:	 * If we are a parent with still-extant children, then don't free just
         -:  170:	 * yet. The last child's call to sshbuf_free should decrement our
         -:  171:	 * refcount to 0 and trigger the actual free.
         -:  172:	 */
-       51:  173:	buf->refcount--;
-       51:  174:	if (buf->refcount > 0)
-        8:  175:		return;
-       43:  176:	dont_free = buf->dont_free;
-       43:  177:	if (!buf->readonly) {
-       29:  178:		explicit_bzero(buf->d, buf->alloc);
-       29:  179:		free(buf->d);
+      102:  173:	buf->refcount--;
+      102:  174:	if (buf->refcount > 0)
+       16:  175:		return;
+       86:  176:	dont_free = buf->dont_free;
+       86:  177:	if (!buf->readonly) {
+       58:  178:		explicit_bzero(buf->d, buf->alloc);
+       58:  179:		free(buf->d);
         -:  180:	}
-       43:  181:	explicit_bzero(buf, sizeof(*buf));
-       43:  182:	if (!dont_free)
-       33:  183:		free(buf);
+       86:  181:	explicit_bzero(buf, sizeof(*buf));
+       86:  182:	if (!dont_free)
+       66:  183:		free(buf);
         -:  184:}
         -:  185:
         -:  186:void
-       64:  187:sshbuf_reset(struct sshbuf *buf)
+      320:  187:sshbuf_reset(struct sshbuf *buf)
         -:  188:{
         -:  189:	u_char *d;
         -:  190:
-       64:  191:	if (buf->readonly || buf->refcount > 1) {
+      320:  191:	if (buf->readonly || buf->refcount > 1) {
         -:  192:		/* Nonsensical. Just make buffer appear empty */
     #####:  193:		buf->off = buf->size;
-       64:  194:		return;
+      320:  194:		return;
         -:  195:	}
-       64:  196:	if (sshbuf_check_sanity(buf) == 0)
-       64:  197:		explicit_bzero(buf->d, buf->alloc);
-       64:  198:	buf->off = buf->size = 0;
-       64:  199:	if (buf->alloc != SSHBUF_SIZE_INIT) {
-       10:  200:		if ((d = realloc(buf->d, SSHBUF_SIZE_INIT)) != NULL) {
-       10:  201:			buf->cd = buf->d = d;
-       10:  202:			buf->alloc = SSHBUF_SIZE_INIT;
+      320:  196:	if (sshbuf_check_sanity(buf) == 0)
+      320:  197:		explicit_bzero(buf->d, buf->alloc);
+      320:  198:	buf->off = buf->size = 0;
+      320:  199:	if (buf->alloc != SSHBUF_SIZE_INIT) {
+       38:  200:		if ((d = realloc(buf->d, SSHBUF_SIZE_INIT)) != NULL) {
+       38:  201:			buf->cd = buf->d = d;
+       38:  202:			buf->alloc = SSHBUF_SIZE_INIT;
         -:  203:		}
         -:  204:	}
         -:  205:}
@@ -270,11 +270,11 @@
         -:  268:}
         -:  269:
         -:  270:size_t
-      954:  271:sshbuf_len(const struct sshbuf *buf)
+     5571:  271:sshbuf_len(const struct sshbuf *buf)
         -:  272:{
-      954:  273:	if (sshbuf_check_sanity(buf) != 0)
+     5571:  273:	if (sshbuf_check_sanity(buf) != 0)
     #####:  274:		return 0;
-      954:  275:	return buf->size - buf->off;
+     5571:  275:	return buf->size - buf->off;
         -:  276:}
         -:  277:
         -:  278:size_t
@@ -286,131 +286,131 @@
         -:  284:}
         -:  285:
         -:  286:const u_char *
-      392:  287:sshbuf_ptr(const struct sshbuf *buf)
+     1738:  287:sshbuf_ptr(const struct sshbuf *buf)
         -:  288:{
-      392:  289:	if (sshbuf_check_sanity(buf) != 0)
+     1738:  289:	if (sshbuf_check_sanity(buf) != 0)
     #####:  290:		return NULL;
-      392:  291:	return buf->cd + buf->off;
+     1738:  291:	return buf->cd + buf->off;
         -:  292:}
         -:  293:
         -:  294:u_char *
-       37:  295:sshbuf_mutable_ptr(const struct sshbuf *buf)
+      253:  295:sshbuf_mutable_ptr(const struct sshbuf *buf)
         -:  296:{
-       37:  297:	if (sshbuf_check_sanity(buf) != 0 || buf->readonly || buf->refcount > 1)
+      253:  297:	if (sshbuf_check_sanity(buf) != 0 || buf->readonly || buf->refcount > 1)
     #####:  298:		return NULL;
-       37:  299:	return buf->d + buf->off;
+      253:  299:	return buf->d + buf->off;
         -:  300:}
         -:  301:
         -:  302:int
-      441:  303:sshbuf_check_reserve(const struct sshbuf *buf, size_t len)
+     1744:  303:sshbuf_check_reserve(const struct sshbuf *buf, size_t len)
         -:  304:{
         -:  305:	int r;
         -:  306:
-      441:  307:	if ((r = sshbuf_check_sanity(buf)) != 0)
+     1744:  307:	if ((r = sshbuf_check_sanity(buf)) != 0)
     #####:  308:		return r;
-      441:  309:	if (buf->readonly || buf->refcount > 1)
+     1744:  309:	if (buf->readonly || buf->refcount > 1)
     #####:  310:		return SSH_ERR_BUFFER_READ_ONLY;
         -:  311:	SSHBUF_TELL("check");
         -:  312:	/* Check that len is reasonable and that max_size + available < len */
-      441:  313:	if (len > buf->max_size || buf->max_size - len < buf->size - buf->off)
+     1744:  313:	if (len > buf->max_size || buf->max_size - len < buf->size - buf->off)
     #####:  314:		return SSH_ERR_NO_BUFFER_SPACE;
-      441:  315:	return 0;
+     1744:  315:	return 0;
         -:  316:}
         -:  317:
         -:  318:int
-      370:  319:sshbuf_allocate(struct sshbuf *buf, size_t len)
+     1307:  319:sshbuf_allocate(struct sshbuf *buf, size_t len)
         -:  320:{
         -:  321:	size_t rlen, need;
         -:  322:	u_char *dp;
         -:  323:	int r;
         -:  324:
         -:  325:	SSHBUF_DBG(("allocate buf = %p len = %zu", buf, len));
-      370:  326:	if ((r = sshbuf_check_reserve(buf, len)) != 0)
+     1307:  326:	if ((r = sshbuf_check_reserve(buf, len)) != 0)
     #####:  327:		return r;
         -:  328:	/*
         -:  329:	 * If the requested allocation appended would push us past max_size
         -:  330:	 * then pack the buffer, zeroing buf->off.
         -:  331:	 */
-      370:  332:	sshbuf_maybe_pack(buf, buf->size + len > buf->max_size);
+     1307:  332:	sshbuf_maybe_pack(buf, buf->size + len > buf->max_size);
         -:  333:	SSHBUF_TELL("allocate");
-      370:  334:	if (len + buf->size <= buf->alloc)
-      325:  335:		return 0; /* already have it. */
+     1307:  334:	if (len + buf->size <= buf->alloc)
+     1172:  335:		return 0; /* already have it. */
         -:  336:
         -:  337:	/*
         -:  338:	 * Prefer to alloc in SSHBUF_SIZE_INC units, but
         -:  339:	 * allocate less if doing so would overflow max_size.
         -:  340:	 */
-       45:  341:	need = len + buf->size - buf->alloc;
-       45:  342:	rlen = ROUNDUP(buf->alloc + need, SSHBUF_SIZE_INC);
+      135:  341:	need = len + buf->size - buf->alloc;
+      135:  342:	rlen = ROUNDUP(buf->alloc + need, SSHBUF_SIZE_INC);
         -:  343:	SSHBUF_DBG(("need %zu initial rlen %zu", need, rlen));
-       45:  344:	if (rlen > buf->max_size)
+      135:  344:	if (rlen > buf->max_size)
     #####:  345:		rlen = buf->alloc + need;
         -:  346:	SSHBUF_DBG(("adjusted rlen %zu", rlen));
-       45:  347:	if ((dp = realloc(buf->d, rlen)) == NULL) {
+      135:  347:	if ((dp = realloc(buf->d, rlen)) == NULL) {
         -:  348:		SSHBUF_DBG(("realloc fail"));
     #####:  349:		return SSH_ERR_ALLOC_FAIL;
         -:  350:	}
-       45:  351:	buf->alloc = rlen;
-       45:  352:	buf->cd = buf->d = dp;
-       45:  353:	if ((r = sshbuf_check_reserve(buf, len)) < 0) {
+      135:  351:	buf->alloc = rlen;
+      135:  352:	buf->cd = buf->d = dp;
+      135:  353:	if ((r = sshbuf_check_reserve(buf, len)) < 0) {
         -:  354:		/* shouldn't fail */
     #####:  355:		return r;
         -:  356:	}
         -:  357:	SSHBUF_TELL("done");
-       45:  358:	return 0;
+      135:  358:	return 0;
         -:  359:}
         -:  360:
         -:  361:int
-      369:  362:sshbuf_reserve(struct sshbuf *buf, size_t len, u_char **dpp)
+     1305:  362:sshbuf_reserve(struct sshbuf *buf, size_t len, u_char **dpp)
         -:  363:{
         -:  364:	u_char *dp;
         -:  365:	int r;
         -:  366:
-      369:  367:	if (dpp != NULL)
-      369:  368:		*dpp = NULL;
+     1305:  367:	if (dpp != NULL)
+     1305:  368:		*dpp = NULL;
         -:  369:
         -:  370:	SSHBUF_DBG(("reserve buf = %p len = %zu", buf, len));
-      369:  371:	if ((r = sshbuf_allocate(buf, len)) != 0)
+     1305:  371:	if ((r = sshbuf_allocate(buf, len)) != 0)
     #####:  372:		return r;
         -:  373:
-      369:  374:	dp = buf->d + buf->size;
-      369:  375:	buf->size += len;
-      369:  376:	if (dpp != NULL)
-      369:  377:		*dpp = dp;
-      369:  378:	return 0;
+     1305:  374:	dp = buf->d + buf->size;
+     1305:  375:	buf->size += len;
+     1305:  376:	if (dpp != NULL)
+     1305:  377:		*dpp = dp;
+     1305:  378:	return 0;
         -:  379:}
         -:  380:
         -:  381:int
-      217:  382:sshbuf_consume(struct sshbuf *buf, size_t len)
+     1013:  382:sshbuf_consume(struct sshbuf *buf, size_t len)
         -:  383:{
         -:  384:	int r;
         -:  385:
         -:  386:	SSHBUF_DBG(("len = %zu", len));
-      217:  387:	if ((r = sshbuf_check_sanity(buf)) != 0)
+     1013:  387:	if ((r = sshbuf_check_sanity(buf)) != 0)
     #####:  388:		return r;
-      217:  389:	if (len == 0)
+     1013:  389:	if (len == 0)
     #####:  390:		return 0;
-      217:  391:	if (len > sshbuf_len(buf))
+     1013:  391:	if (len > sshbuf_len(buf))
     #####:  392:		return SSH_ERR_MESSAGE_INCOMPLETE;
-      217:  393:	buf->off += len;
+     1013:  393:	buf->off += len;
         -:  394:	SSHBUF_TELL("done");
-      217:  395:	return 0;
+     1013:  395:	return 0;
         -:  396:}
         -:  397:
         -:  398:int
-       23:  399:sshbuf_consume_end(struct sshbuf *buf, size_t len)
+      126:  399:sshbuf_consume_end(struct sshbuf *buf, size_t len)
         -:  400:{
         -:  401:	int r;
         -:  402:
         -:  403:	SSHBUF_DBG(("len = %zu", len));
-       23:  404:	if ((r = sshbuf_check_sanity(buf)) != 0)
+      126:  404:	if ((r = sshbuf_check_sanity(buf)) != 0)
     #####:  405:		return r;
-       23:  406:	if (len == 0)
+      126:  406:	if (len == 0)
     #####:  407:		return 0;
-       23:  408:	if (len > sshbuf_len(buf))
+      126:  408:	if (len > sshbuf_len(buf))
     #####:  409:		return SSH_ERR_MESSAGE_INCOMPLETE;
-       23:  410:	buf->size -= len;
+      126:  410:	buf->size -= len;
         -:  411:	SSHBUF_TELL("done");
-       23:  412:	return 0;
+      126:  412:	return 0;
         -:  413:}
         -:  414:

@@ -98,16 +98,16 @@
         -:   96:/* Load a key from a fd into a buffer */
         -:   97:__attribute__((annotate("declassified")))
         -:   98:int
-        1:   99:sshkey_load_file(int fd, struct sshbuf *blob)
+        2:   99:sshkey_load_file(int fd, struct sshbuf *blob)
         -:  100:{
         -:  101:	u_char buf[1024];
         -:  102:	size_t len;
         -:  103:	struct stat st;
-        1:  104:	int r, dontmax = 0;
+        2:  104:	int r, dontmax = 0;
         -:  105:
-        1:  106:	if (fstat(fd, &st) < 0)
+        2:  106:	if (fstat(fd, &st) < 0)
     #####:  107:		return SSH_ERR_SYSTEM_ERROR;
-        1:  108:	if ((st.st_mode & (S_IFSOCK|S_IFCHR|S_IFIFO)) == 0 &&
+        2:  108:	if ((st.st_mode & (S_IFSOCK|S_IFCHR|S_IFIFO)) == 0 &&
     #####:  109:	    st.st_size > MAX_KEY_FILE_SIZE)
     #####:  110:		return SSH_ERR_INVALID_FORMAT;
         -:  111:	/*
@@ -115,39 +115,39 @@
         -:  113:	 * maximum size. This ensures that key contents are never leaked via
         -:  114:	 * implicit realloc() in the sshbuf code.
         -:  115:	 */
-        1:  116:	if ((st.st_mode & S_IFREG) == 0 || st.st_size <= 0) {
+        2:  116:	if ((st.st_mode & S_IFREG) == 0 || st.st_size <= 0) {
     #####:  117:		st.st_size = 64*1024; /* 64k should be enough for anyone :) */
     #####:  118:		dontmax = 1;
         -:  119:	}
-        1:  120:	if ((r = sshbuf_allocate(blob, st.st_size)) != 0 ||
+        2:  120:	if ((r = sshbuf_allocate(blob, st.st_size)) != 0 ||
     #####:  121:	    (dontmax && (r = sshbuf_set_max_size(blob, st.st_size)) != 0))
     #####:  122:		return r;
         -:  123:	for (;;) {
-        3:  124:		if ((len = atomicio(read, fd, buf, sizeof(buf))) == 0) {
-        1:  125:			if (errno == EPIPE)
-        1:  126:				break;
+        6:  124:		if ((len = atomicio(read, fd, buf, sizeof(buf))) == 0) {
+        2:  125:			if (errno == EPIPE)
+        2:  126:				break;
     #####:  127:			r = SSH_ERR_SYSTEM_ERROR;
     #####:  128:			goto out;
         -:  129:		}
-        2:  130:		if ((r = sshbuf_put(blob, buf, len)) != 0)
+        4:  130:		if ((r = sshbuf_put(blob, buf, len)) != 0)
     #####:  131:			goto out;
-        2:  132:		if (sshbuf_len(blob) > MAX_KEY_FILE_SIZE) {
+        4:  132:		if (sshbuf_len(blob) > MAX_KEY_FILE_SIZE) {
     #####:  133:			r = SSH_ERR_INVALID_FORMAT;
     #####:  134:			goto out;
         -:  135:		}
-        2:  136:	}
-        1:  137:	if ((st.st_mode & (S_IFSOCK|S_IFCHR|S_IFIFO)) == 0 &&
+        4:  136:	}
+        2:  137:	if ((st.st_mode & (S_IFSOCK|S_IFCHR|S_IFIFO)) == 0 &&
     #####:  138:	    st.st_size != (off_t)sshbuf_len(blob)) {
     #####:  139:		r = SSH_ERR_FILE_CHANGED;
     #####:  140:		goto out;
         -:  141:	}
-        1:  142:	r = 0;
+        2:  142:	r = 0;
         -:  143:
         -:  144: out:
-        1:  145:	explicit_bzero(buf, sizeof(buf));
-        1:  146:	if (r != 0)
+        2:  145:	explicit_bzero(buf, sizeof(buf));
+        2:  146:	if (r != 0)
     #####:  147:		sshbuf_reset(blob);
-        1:  148:	return r;
+        2:  148:	return r;
         -:  149:}
         -:  150:
         -:  151:#ifdef WITH_SSH1
@@ -182,11 +182,11 @@
         -:  180:
         -:  181:/* XXX remove error() calls from here? */
         -:  182:int
-        1:  183:sshkey_perm_ok(int fd, const char *filename)
+        2:  183:sshkey_perm_ok(int fd, const char *filename)
         -:  184:{
         -:  185:	struct stat st;
         -:  186:
-        1:  187:	if (fstat(fd, &st) < 0)
+        2:  187:	if (fstat(fd, &st) < 0)
     #####:  188:		return SSH_ERR_SYSTEM_ERROR;
         -:  189:	/*
         -:  190:	 * if a key owned by the user is accessed, then we check the
@@ -196,7 +196,7 @@
         -:  194:#ifdef HAVE_CYGWIN
         -:  195:	if (check_ntsec(filename))
         -:  196:#endif
-        1:  197:	if ((st.st_uid == getuid()) && (st.st_mode & 077) != 0) {
+        2:  197:	if ((st.st_uid == getuid()) && (st.st_mode & 077) != 0) {
     #####:  198:		error("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
     #####:  199:		error("@         WARNING: UNPROTECTED PRIVATE KEY FILE!          @");
     #####:  200:		error("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
@@ -206,66 +206,66 @@
     #####:  204:		error("This private key will be ignored.");
     #####:  205:		return SSH_ERR_KEY_BAD_PERMISSIONS;
         -:  206:	}
-        1:  207:	return 0;
+        2:  207:	return 0;
         -:  208:}
         -:  209:
         -:  210:/* XXX kill perm_ok now that we have SSH_ERR_KEY_BAD_PERMISSIONS? */
         -:  211://__attribute__((annotate("declassified")))
         -:  212:int
-        1:  213:sshkey_load_private_type(int type, const char *filename, const char *passphrase,
+        2:  213:sshkey_load_private_type(int type, const char *filename, const char *passphrase,
         -:  214:    struct sshkey **keyp, char **commentp, int *perm_ok)
         -:  215:{
         -:  216:	int fd, r;
         -:  217:
-        1:  218:	if (keyp != NULL)
-        1:  219:		*keyp = NULL;
-        1:  220:	if (commentp != NULL)
-        1:  221:		*commentp = NULL;
+        2:  218:	if (keyp != NULL)
+        2:  219:		*keyp = NULL;
+        2:  220:	if (commentp != NULL)
+        2:  221:		*commentp = NULL;
         -:  222:
-        1:  223:	if ((fd = open(filename, O_RDONLY)) < 0) {
+        2:  223:	if ((fd = open(filename, O_RDONLY)) < 0) {
     #####:  224:		if (perm_ok != NULL)
     #####:  225:			*perm_ok = 0;
     #####:  226:		return SSH_ERR_SYSTEM_ERROR;
         -:  227:	}
-        1:  228:	if (sshkey_perm_ok(fd, filename) != 0) {
+        2:  228:	if (sshkey_perm_ok(fd, filename) != 0) {
     #####:  229:		if (perm_ok != NULL)
     #####:  230:			*perm_ok = 0;
     #####:  231:		r = SSH_ERR_KEY_BAD_PERMISSIONS;
     #####:  232:		goto out;
         -:  233:	}
-        1:  234:	if (perm_ok != NULL)
-        1:  235:		*perm_ok = 1;
+        2:  234:	if (perm_ok != NULL)
+        2:  235:		*perm_ok = 1;
         -:  236:
-        1:  237:	r = sshkey_load_private_type_fd(fd, type, passphrase, keyp, commentp);
+        2:  237:	r = sshkey_load_private_type_fd(fd, type, passphrase, keyp, commentp);
         -:  238: out:
-        1:  239:	close(fd);
-        1:  240:	return r;
+        2:  239:	close(fd);
+        2:  240:	return r;
         -:  241:}
         -:  242:
         -:  243:int
-        1:  244:sshkey_load_private_type_fd(int fd, int type, const char *passphrase,
+        2:  244:sshkey_load_private_type_fd(int fd, int type, const char *passphrase,
         -:  245:    struct sshkey **keyp, char **commentp)
         -:  246:{
-        1:  247:	struct sshbuf __attribute__((annotate("sensitive"))) *buffer = NULL;
+        2:  247:	struct sshbuf __attribute__((annotate("sensitive"))) *buffer = NULL;
         -:  248:
         -:  249:	int r;
         -:  250:
-        1:  251:	if (keyp != NULL)
-        1:  252:		*keyp = NULL;
-        1:  253:	if ((buffer = sshbuf_new()) == NULL) {
+        2:  251:	if (keyp != NULL)
+        2:  252:		*keyp = NULL;
+        2:  253:	if ((buffer = sshbuf_new()) == NULL) {
     #####:  254:		r = SSH_ERR_ALLOC_FAIL;
     #####:  255:		goto out;
         -:  256:	}
-        1:  257:	if ((r = sshkey_load_file(fd, buffer)) != 0 ||
+        2:  257:	if ((r = sshkey_load_file(fd, buffer)) != 0 ||
         -:  258:	    (r = sshkey_parse_private_fileblob_type(buffer, type,
         -:  259:	    passphrase, keyp, commentp)) != 0)
         -:  260:		goto out;
         -:  261:
         -:  262:	/* success */
-        1:  263:	r = 0;
+        2:  263:	r = 0;
         -:  264: out:
-        1:  265:	sshbuf_free(buffer);
-        1:  266:	return r;
+        2:  265:	sshbuf_free(buffer);
+        2:  266:	return r;
         -:  267:}
         -:  268:
         -:  269:/* XXX this is almost identical to sshkey_load_private_type() */
@@ -306,69 +306,69 @@
         -:  304:}
         -:  305:
         -:  306:static int
-        9:  307:sshkey_try_load_public(struct sshkey *k, const char *filename, char **commentp)
+       18:  307:sshkey_try_load_public(struct sshkey *k, const char *filename, char **commentp)
         -:  308:{
         -:  309:	FILE *f;
         -:  310:	char line[SSH_MAX_PUBKEY_BYTES];
         -:  311:	char *cp;
-        9:  312:	u_long linenum = 0;
+       18:  312:	u_long linenum = 0;
         -:  313:	int r;
         -:  314:
-        9:  315:	if (commentp != NULL)
+       18:  315:	if (commentp != NULL)
     #####:  316:		*commentp = NULL;
-        9:  317:	if ((f = fopen(filename, "r")) == NULL)
-        7:  318:		return SSH_ERR_SYSTEM_ERROR;
-        4:  319:	while (read_keyfile_line(f, filename, line, sizeof(line),
+       18:  317:	if ((f = fopen(filename, "r")) == NULL)
+       14:  318:		return SSH_ERR_SYSTEM_ERROR;
+        8:  319:	while (read_keyfile_line(f, filename, line, sizeof(line),
         -:  320:		    &linenum) != -1) {
-        2:  321:		cp = line;
-        2:  322:		switch (*cp) {
+        4:  321:		cp = line;
+        4:  322:		switch (*cp) {
         -:  323:		case '#':
         -:  324:		case '\n':
         -:  325:		case '\0':
     #####:  326:			continue;
         -:  327:		}
         -:  328:		/* Abort loading if this looks like a private key */
-        3:  329:		if (strncmp(cp, "-----BEGIN", 10) == 0 ||
-        1:  330:		    strcmp(cp, "SSH PRIVATE KEY FILE") == 0)
+        6:  329:		if (strncmp(cp, "-----BEGIN", 10) == 0 ||
+        2:  330:		    strcmp(cp, "SSH PRIVATE KEY FILE") == 0)
         -:  331:			break;
         -:  332:		/* Skip leading whitespace. */
-        1:  333:		for (; *cp && (*cp == ' ' || *cp == '\t'); cp++)
+        2:  333:		for (; *cp && (*cp == ' ' || *cp == '\t'); cp++)
         -:  334:			;
-        1:  335:		if (*cp) {
-        1:  336:			if ((r = sshkey_read(k, &cp)) == 0) {
-        1:  337:				cp[strcspn(cp, "\r\n")] = '\0';
-        1:  338:				if (commentp) {
+        2:  335:		if (*cp) {
+        2:  336:			if ((r = sshkey_read(k, &cp)) == 0) {
+        2:  337:				cp[strcspn(cp, "\r\n")] = '\0';
+        2:  338:				if (commentp) {
     #####:  339:					*commentp = strdup(*cp ?
         -:  340:					    cp : filename);
     #####:  341:					if (*commentp == NULL)
     #####:  342:						r = SSH_ERR_ALLOC_FAIL;
         -:  343:				}
-        1:  344:				fclose(f);
-        1:  345:				return r;
+        2:  344:				fclose(f);
+        2:  345:				return r;
         -:  346:			}
         -:  347:		}
         -:  348:	}
-        1:  349:	fclose(f);
-        1:  350:	return SSH_ERR_INVALID_FORMAT;
+        2:  349:	fclose(f);
+        2:  350:	return SSH_ERR_INVALID_FORMAT;
         -:  351:}
         -:  352:
         -:  353:/* load public key from ssh v1 private or any pubkey file */
         -:  354:int
-        8:  355:sshkey_load_public(const char *filename, struct sshkey **keyp, char **commentp)
+       16:  355:sshkey_load_public(const char *filename, struct sshkey **keyp, char **commentp)
         -:  356:{
-        8:  357:	struct sshkey *pub = NULL;
+       16:  357:	struct sshkey *pub = NULL;
         -:  358:	char file[PATH_MAX];
         -:  359:	int r, fd;
         -:  360:
-        8:  361:	if (keyp != NULL)
-        8:  362:		*keyp = NULL;
-        8:  363:	if (commentp != NULL)
+       16:  361:	if (keyp != NULL)
+       16:  362:		*keyp = NULL;
+       16:  363:	if (commentp != NULL)
     #####:  364:		*commentp = NULL;
         -:  365:
         -:  366:	/* XXX should load file once and attempt to parse each format */
         -:  367:
-        8:  368:	if ((fd = open(filename, O_RDONLY)) < 0)
-        7:  369:		goto skip;
+       16:  368:	if ((fd = open(filename, O_RDONLY)) < 0)
+       14:  369:		goto skip;
         -:  370:#ifdef WITH_SSH1
         -:  371:	/* try rsa1 private key */
         -:  372:	r = sshkey_load_public_rsa1(fd, keyp, commentp);
@@ -382,18 +382,18 @@
         -:  380:		return r;
         -:  381:	}
         -:  382:#else /* WITH_SSH1 */
-        1:  383:	close(fd);
+        2:  383:	close(fd);
         -:  384:#endif /* WITH_SSH1 */
         -:  385:
         -:  386:	/* try ssh2 public key */
-        1:  387:	if ((pub = sshkey_new(KEY_UNSPEC)) == NULL)
+        2:  387:	if ((pub = sshkey_new(KEY_UNSPEC)) == NULL)
     #####:  388:		return SSH_ERR_ALLOC_FAIL;
-        1:  389:	if ((r = sshkey_try_load_public(pub, filename, commentp)) == 0) {
+        2:  389:	if ((r = sshkey_try_load_public(pub, filename, commentp)) == 0) {
     #####:  390:		if (keyp != NULL)
     #####:  391:			*keyp = pub;
     #####:  392:		return 0;
         -:  393:	}
-        1:  394:	sshkey_free(pub);
+        2:  394:	sshkey_free(pub);
         -:  395:
         -:  396:#ifdef WITH_SSH1
         -:  397:	/* try rsa1 public key */
@@ -409,19 +409,19 @@
         -:  407:
         -:  408: skip:
         -:  409:	/* try .pub suffix */
-        8:  410:	if ((pub = sshkey_new(KEY_UNSPEC)) == NULL)
+       16:  410:	if ((pub = sshkey_new(KEY_UNSPEC)) == NULL)
     #####:  411:		return SSH_ERR_ALLOC_FAIL;
-        8:  412:	r = SSH_ERR_ALLOC_FAIL;	/* in case strlcpy or strlcat fail */
-       16:  413:	if ((strlcpy(file, filename, sizeof file) < sizeof(file)) &&
-       16:  414:	    (strlcat(file, ".pub", sizeof file) < sizeof(file)) &&
+       16:  412:	r = SSH_ERR_ALLOC_FAIL;	/* in case strlcpy or strlcat fail */
+       32:  413:	if ((strlcpy(file, filename, sizeof file) < sizeof(file)) &&
+       32:  414:	    (strlcat(file, ".pub", sizeof file) < sizeof(file)) &&
         -:  415:	    (r = sshkey_try_load_public(pub, file, commentp)) == 0) {
-        1:  416:		if (keyp != NULL)
-        1:  417:			*keyp = pub;
-        1:  418:		return 0;
+        2:  416:		if (keyp != NULL)
+        2:  417:			*keyp = pub;
+        2:  418:		return 0;
         -:  419:	}
-        7:  420:	sshkey_free(pub);
+       14:  420:	sshkey_free(pub);
         -:  421:
-        7:  422:	return r;
+       14:  422:	return r;
         -:  423:}
         -:  424:
         -:  425:/* Load the certificate associated with the named private key */

@@ -29,80 +29,80 @@
         -:   27:#include "log.h"
         -:   28:
         -:   29:void
-        1:   30:ssh_malloc_init(void)
+        2:   30:ssh_malloc_init(void)
         -:   31:{
         -:   32:#if defined(__OpenBSD__)
         -:   33:	extern char *malloc_options;
         -:   34:
         -:   35:	malloc_options = "S";
         -:   36:#endif /* __OpenBSD__ */
-        1:   37:}
+        2:   37:}
         -:   38:
         -:   39:void *
-       68:   40:xmalloc(size_t size)
+      137:   40:xmalloc(size_t size)
         -:   41:{
         -:   42:	void *ptr;
         -:   43:
-       68:   44:	if (size == 0)
+      137:   44:	if (size == 0)
     #####:   45:		fatal("xmalloc: zero size");
-       68:   46:	ptr = malloc(size);
-       68:   47:	if (ptr == NULL)
+      137:   46:	ptr = malloc(size);
+      137:   47:	if (ptr == NULL)
     #####:   48:		fatal("xmalloc: out of memory (allocating %zu bytes)", size);
-       68:   49:	return ptr;
+      137:   49:	return ptr;
         -:   50:}
         -:   51:
         -:   52:void *
-       17:   53:xcalloc(size_t nmemb, size_t size)
+       34:   53:xcalloc(size_t nmemb, size_t size)
         -:   54:{
         -:   55:	void *ptr;
         -:   56:
-       17:   57:	if (size == 0 || nmemb == 0)
+       34:   57:	if (size == 0 || nmemb == 0)
     #####:   58:		fatal("xcalloc: zero size");
-       17:   59:	if (SIZE_MAX / nmemb < size)
+       34:   59:	if (SIZE_MAX / nmemb < size)
     #####:   60:		fatal("xcalloc: nmemb * size > SIZE_MAX");
-       17:   61:	ptr = calloc(nmemb, size);
-       17:   62:	if (ptr == NULL)
+       34:   61:	ptr = calloc(nmemb, size);
+       34:   62:	if (ptr == NULL)
     #####:   63:		fatal("xcalloc: out of memory (allocating %zu bytes)",
         -:   64:		    size * nmemb);
-       17:   65:	return ptr;
+       34:   65:	return ptr;
         -:   66:}
         -:   67:
         -:   68:void *
-        2:   69:xreallocarray(void *ptr, size_t nmemb, size_t size)
+        4:   69:xreallocarray(void *ptr, size_t nmemb, size_t size)
         -:   70:{
         -:   71:	void *new_ptr;
         -:   72:
-        2:   73:	new_ptr = reallocarray(ptr, nmemb, size);
-        2:   74:	if (new_ptr == NULL)
+        4:   73:	new_ptr = reallocarray(ptr, nmemb, size);
+        4:   74:	if (new_ptr == NULL)
     #####:   75:		fatal("xreallocarray: out of memory (%zu elements of %zu bytes)",
         -:   76:		    nmemb, size);
-        2:   77:	return new_ptr;
+        4:   77:	return new_ptr;
         -:   78:}
         -:   79:
         -:   80:char *
-       66:   81:xstrdup(const char *str)
+      133:   81:xstrdup(const char *str)
         -:   82:{
         -:   83:	size_t len;
         -:   84:	char *cp;
         -:   85:
-       66:   86:	len = strlen(str) + 1;
-       66:   87:	cp = xmalloc(len);
-       66:   88:	strlcpy(cp, str, len);
-       66:   89:	return cp;
+      133:   86:	len = strlen(str) + 1;
+      133:   87:	cp = xmalloc(len);
+      133:   88:	strlcpy(cp, str, len);
+      133:   89:	return cp;
         -:   90:}
         -:   91:
         -:   92:int
-       16:   93:xasprintf(char **ret, const char *fmt, ...)
+       32:   93:xasprintf(char **ret, const char *fmt, ...)
         -:   94:{
         -:   95:	va_list ap;
         -:   96:	int i;
         -:   97:
-       16:   98:	va_start(ap, fmt);
-       16:   99:	i = vasprintf(ret, fmt, ap);
-       16:  100:	va_end(ap);
+       32:   98:	va_start(ap, fmt);
+       32:   99:	i = vasprintf(ret, fmt, ap);
+       32:  100:	va_end(ap);
         -:  101:
-       16:  102:	if (i < 0 || *ret == NULL)
+       32:  102:	if (i < 0 || *ret == NULL)
     #####:  103:		fatal("xasprintf: could not allocate memory");
         -:  104:
-       16:  105:	return (i);
+       32:  105:	return (i);
         -:  106:}

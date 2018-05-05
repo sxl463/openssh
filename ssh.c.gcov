@@ -1,8 +1,5 @@
         -:    0:Source:ssh.c
-        -:    0:Graph:./ssh.gcno
-        -:    0:Data:./ssh.gcda
-        -:    0:Runs:2
-        -:    0:Programs:1
+        -:    0:Programs:78
         -:    1:/* $OpenBSD: ssh.c,v 1.448 2016/12/06 07:48:01 djm Exp $ */
         -:    2:/*
         -:    3: * Author: Tatu Ylonen <ylo@cs.hut.fi>
